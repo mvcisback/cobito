@@ -1,0 +1,75 @@
+@file fixtures/md.nw
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Markdown fixture
+@nl
+@text 
+@nl
+@text A tiny document authored in the *Markdown* dialect. It exercises the
+@nl
+@text post-`markup` prose transform: paragraphs and **emphasis** become HTML, and the
+@nl
+@text fenced float directives produce numbered, labelled equations, figures, and
+@nl
+@text tables. The mass–energy relation is \ref{eq:mass}, sketched in
+@nl
+@text \ref{fig:diagram} and tabulated in \ref{tbl:units}.
+@nl
+@text 
+@nl
+@text ```math \label{eq:mass}
+@nl
+@text E = mc^2
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ```figure \label{fig:diagram}
+@nl
+@text \caption{A *schematic* of $E = mc^2$.}
+@nl
+@text <img src="diagram.svg" alt="mass to energy">
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ```table \label{tbl:units}
+@nl
+@text \caption{Symbols and their units.}
+@nl
+@text | Symbol | Unit |
+@nl
+@text |--------|------|
+@nl
+@text | `E`    | J    |
+@nl
+@text | `m`    | kg   |
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text The inline tail $O(1)$ still renders. The code lives in
+@nl
+@text \ref{chunk:src/answer.rs}.
+@nl
+@text 
+@nl
+@end docs 1
+@begin code 2
+@defn src/answer.rs
+@nl
+@text pub fn answer() -> u32 {
+@nl
+@text     42
+@nl
+@text }
+@nl
+@end code 2
+@begin docs 3
+@text 
+@nl
+@end docs 3

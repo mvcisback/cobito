@@ -1,0 +1,119 @@
+@file fixtures/book.nw
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text <h1>Front matter</h1>
+@nl
+@text <p>Everything before the first boundary is the index page, so this chunk
+@nl
+@text lands on <code>index.html</code>. It refers forward to
+@nl
+@text <a data-ref="fig:pipeline"></a> and to <a data-ref="eq:cost">the cost
+@nl
+@text bound</a>, both of which live on a later page.</p>
+@nl
+@text 
+@nl
+@end docs 1
+@begin docs 2
+@text <h1>Parsing</h1>
+@nl
+@text <p>This chunk opens with an <code>h1</code>, so it starts a new page.
+@nl
+@text <aside class="sidenote">Sidenotes stay where the author put them; CSS
+@nl
+@text floats them into the margin.</aside>
+@nl
+@text The lexer is <a data-ref="chunk:lex a token"></a>.</p>
+@nl
+@text 
+@nl
+@text <h2>Lexing</h2>
+@nl
+@text <p>A second-level heading, which the nav tree picks up.</p>
+@nl
+@text 
+@nl
+@text <figure id="fig:pipeline">
+@nl
+@text <img src="pipeline.svg" alt="the weave pipeline">
+@nl
+@text <figcaption>The weave pipeline.</figcaption>
+@nl
+@text </figure>
+@nl
+@text 
+@nl
+@end docs 2
+@begin code 3
+@defn lex a token
+@nl
+@text tokens.push(next());
+@nl
+@end code 3
+@begin docs 4
+@text 
+@nl
+@text 
+@nl
+@end docs 4
+@begin docs 5
+@text <h3>Cost</h3>
+@nl
+@text <p>A third-level heading. The bound is $O(n \log n)$.</p>
+@nl
+@text 
+@nl
+@text <div class="equation" id="eq:cost">
+@nl
+@text \[ T(n) = 2T(n/2) + O(n) \]
+@nl
+@text </div>
+@nl
+@text 
+@nl
+@text <div class="equation" data-nonumber>
+@nl
+@text \[ \text{this one opts out of numbering} \]
+@nl
+@text </div>
+@nl
+@text 
+@nl
+@end docs 5
+@begin docs 6
+@text <h1>Codegen</h1>
+@nl
+@text <p>A third page, so pagination has a middle with both neighbours.
+@nl
+@text See also <a data-ref="fig:pipeline"></a>, referenced twice.</p>
+@nl
+@text 
+@nl
+@text <table id="tbl:opcodes">
+@nl
+@text <caption>Opcodes.</caption>
+@nl
+@text <tr><td>nop</td></tr>
+@nl
+@text </table>
+@nl
+@text 
+@nl
+@end docs 6
+@begin code 7
+@defn src/main.rs
+@nl
+@text fn main() {
+@nl
+@text     
+@use lex a token
+@text 
+@nl
+@text }
+@nl
+@end code 7
+@begin docs 8
+@text 
+@nl
+@end docs 8

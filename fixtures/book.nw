@@ -1,0 +1,49 @@
+@ <h1>Front matter</h1>
+<p>Everything before the first boundary is the index page, so this chunk
+lands on <code>index.html</code>. It refers forward to
+<a data-ref="fig:pipeline"></a> and to <a data-ref="eq:cost">the cost
+bound</a>, both of which live on a later page.</p>
+
+@ <h1>Parsing</h1>
+<p>This chunk opens with an <code>h1</code>, so it starts a new page.
+<aside class="sidenote">Sidenotes stay where the author put them; CSS
+floats them into the margin.</aside>
+The lexer is <a data-ref="chunk:lex a token"></a>.</p>
+
+<h2>Lexing</h2>
+<p>A second-level heading, which the nav tree picks up.</p>
+
+<figure id="fig:pipeline">
+<img src="pipeline.svg" alt="the weave pipeline">
+<figcaption>The weave pipeline.</figcaption>
+</figure>
+
+<<lex a token>>=
+tokens.push(next());
+@
+
+@ <h3>Cost</h3>
+<p>A third-level heading. The bound is $O(n \log n)$.</p>
+
+<div class="equation" id="eq:cost">
+\[ T(n) = 2T(n/2) + O(n) \]
+</div>
+
+<div class="equation" data-nonumber>
+\[ \text{this one opts out of numbering} \]
+</div>
+
+@ <h1>Codegen</h1>
+<p>A third page, so pagination has a middle with both neighbours.
+See also <a data-ref="fig:pipeline"></a>, referenced twice.</p>
+
+<table id="tbl:opcodes">
+<caption>Opcodes.</caption>
+<tr><td>nop</td></tr>
+</table>
+
+<<src/main.rs>>=
+fn main() {
+    <<lex a token>>
+}
+@

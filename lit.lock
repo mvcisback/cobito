@@ -1,0 +1,33 @@
+# lit.lock — generated (SPEC.md §7.1). label → frozen opaque id.
+# Edit only to retire a label; ids never change once minted.
+["examples/ring.nw"."eq:wrap"]
+id = "5lYN"
+kind = "equation"
+
+["examples/ring.nw"."tbl:api"]
+id = "dryu"
+kind = "table"
+
+["fixtures/book.nw"."eq:cost"]
+id = "xVmZ"
+kind = "equation"
+
+["fixtures/book.nw"."fig:pipeline"]
+id = "qe1t"
+kind = "figure"
+
+["fixtures/book.nw"."tbl:opcodes"]
+id = "JWD7"
+kind = "table"
+
+["fixtures/md.nw"."eq:mass"]
+id = "SWHo"
+kind = "equation"
+
+["fixtures/md.nw"."fig:diagram"]
+id = "Z5QH"
+kind = "figure"
+
+["fixtures/md.nw"."tbl:units"]
+id = "EaO1"
+kind = "table"

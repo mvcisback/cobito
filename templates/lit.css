@@ -1,0 +1,208 @@
+/* Tufte-flavoured layout (SPEC.md §16). The page is a single centred column
+   with a wide right margin; sidenotes, and later the annotation overlay's
+   margin slots (§9.3), live in that margin. A float's identity is drawn here
+   from its data-id attribute (the frozen opaque id of §7.1), never written into
+   the text (§7, §9.2). */
+
+:root {
+  --measure: 40rem;      /* the reading column */
+  --margin: 18rem;       /* the note column to its right */
+  --gap: 2.5rem;
+  --rule: #ccc9b8;
+  --ink: #111;
+  --faint: #a09c88;
+  --link: #4a4a8a;
+}
+
+body {
+  font-family: Palatino, "Palatino Linotype", Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  margin: 0;
+  color: var(--ink);
+  background: #fffff8;
+}
+
+main {
+  max-width: var(--measure);
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+/* Give the margin column somewhere to be: on wide screens the reading column
+   sits left-of-centre so the right margin can hold notes. */
+@media (min-width: 100rem) {
+  main {
+    margin-left: calc((100vw - var(--measure) - var(--margin) - var(--gap)) / 2);
+    margin-right: 0;
+  }
+}
+
+section {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+/* --- Margin column: annotation slot + sidenotes ------------------------- */
+
+.margin-slot {
+  float: right;
+  clear: right;
+  width: 0;
+  margin-right: -0%;
+}
+
+.sidenote {
+  float: right;
+  clear: right;
+  width: var(--margin);
+  margin-right: calc(-1 * (var(--margin) + var(--gap)));
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #333;
+}
+
+@media (max-width: 100rem) {
+  /* No room for a margin: inline the note as an indented aside. */
+  .sidenote {
+    float: none;
+    width: auto;
+    margin: 0.6rem 0 0.6rem 1.5rem;
+    padding-left: 0.8rem;
+    border-left: 2px solid var(--rule);
+  }
+}
+
+/* --- Numbering (generated, never selectable) ---------------------------- */
+
+figure {
+  margin: 1.5rem 0;
+}
+
+figcaption[data-id]::before {
+  content: "Figure " attr(data-id) ". ";
+  font-weight: bold;
+}
+
+caption[data-id]::before {
+  content: "Table " attr(data-id) ". ";
+  font-weight: bold;
+}
+
+figcaption,
+caption {
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.equation {
+  position: relative;
+  margin: 1rem 0;
+  text-align: center;
+}
+
+.equation[data-id]::after {
+  content: "(" attr(data-id) ")";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--faint);
+}
+
+/* --- Navigation and pagination ------------------------------------------ */
+
+nav.toc {
+  max-width: var(--measure);
+  margin: 1rem auto 0;
+  padding: 0 1rem;
+  font-size: 0.85rem;
+}
+
+nav.toc ul {
+  list-style: none;
+  padding-left: 1rem;
+  margin: 0.2rem 0;
+}
+
+nav.toc a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+nav.toc a:hover {
+  text-decoration: underline;
+}
+
+footer.pagination {
+  max-width: var(--measure);
+  margin: 2rem auto;
+  padding: 1rem 1rem 0;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+footer.pagination a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+/* --- Code chunks (SPEC.md §5.4) ----------------------------------------- */
+
+details.chunk {
+  background: #f4f4ec;
+  border-left: 3px solid var(--rule);
+  margin: 1rem 0;
+}
+
+details.chunk > summary {
+  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
+  font-size: 0.9rem;
+  font-weight: bold;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+pre.chunk-body {
+  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0 0.8rem 0.6rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Line numbers are generated content so they stay out of selections, copies,
+   and the text-quote selectors the annotation layer anchors on (SPEC.md §9.2). */
+pre.chunk-body .line {
+  display: block;
+}
+
+pre.chunk-body .line::before {
+  content: attr(data-line);
+  display: inline-block;
+  width: 3ch;
+  margin-right: 1ch;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+
+details.chunk a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+details.chunk a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
+  font-size: 0.9em;
+  background: #f4f4ec;
+  padding: 0.05em 0.25em;
+}

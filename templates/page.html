@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="katex/katex.min.css">
+<link rel="stylesheet" href="lit.css">
+{{ embed }}
+</head>
+<body>
+<nav class="toc">
+{% macro tree(nodes) %}<ul>
+{% for n in nodes %}<li><a href="{{ n.href }}">{{ n.title }}</a>{% if n.children %}{{ tree(n.children) }}{% endif %}</li>
+{% endfor %}</ul>{% endmacro %}
+{{ tree(nav) }}
+</nav>
+<main>
+{% for section in sections %}{{ section }}
+{% endfor %}</main>
+<footer class="pagination">
+{% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% endif %}
+{% if next %}<a rel="next" href="{{ next.href }}">{{ next.title }} &rarr;</a>{% endif %}
+</footer>
+</body>
+</html>
