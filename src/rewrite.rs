@@ -318,6 +318,9 @@ pub struct ResolvedRef {
 /// Cursor shared across `apply` calls so per-site indices keep advancing.
 pub struct Plan<'a> {
     pub heading_anchors: &'a [String],
+    /// Parallel to `heading_anchors`: a `sec:`-labelled heading's frozen opaque
+    /// id (§7.1), stamped as a clickable permalink prefix; `None` otherwise.
+    pub heading_uids: &'a [Option<String>],
     pub refs: &'a [ResolvedRef],
     /// Human label → frozen opaque id (§7.1), for the floats being stamped.
     pub label_ids: &'a BTreeMap<String, String>,
@@ -328,11 +331,13 @@ pub struct Plan<'a> {
 impl<'a> Plan<'a> {
     pub fn new(
         heading_anchors: &'a [String],
+        heading_uids: &'a [Option<String>],
         refs: &'a [ResolvedRef],
         label_ids: &'a BTreeMap<String, String>,
     ) -> Self {
         Plan {
             heading_anchors,
+            heading_uids,
             refs,
             label_ids,
             heading: 0,
@@ -346,6 +351,7 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     let heading_idx = RefCell::new(plan.heading);
     let ref_idx = RefCell::new(plan.reference);
     let heading_anchors = plan.heading_anchors;
+    let heading_uids = plan.heading_uids;
     let refs = plan.refs;
     let label_ids = plan.label_ids;
     // The id a figure/table just took, so its caption — the next element — can
@@ -367,6 +373,12 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 let mut i = heading_idx.borrow_mut();
                 if let Some(anchor) = heading_anchors.get(*i) {
                     el.set_attribute("id", anchor).ok();
+                    if let Some(Some(uid)) = heading_uids.get(*i) {
+                        let tag = format!(
+                            "<a class=\"sec-uid\" href=\"#{anchor}\" data-id=\"{uid}\"></a>"
+                        );
+                        el.prepend(&tag, ContentType::Html);
+                    }
                 }
                 *i += 1;
                 Ok(())
@@ -530,7 +542,7 @@ mod tests {
         let anchors: Vec<String> = vec![];
         let refs: Vec<ResolvedRef> = vec![];
         let label_ids = ids(&[("fig:pipeline", "k3f9")]);
-        let mut plan = Plan::new(&anchors, &refs, &label_ids);
+        let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
         let out = apply(
             "<figure id=\"fig:pipeline\"><figcaption>The pipeline.</figcaption></figure>",
             &mut plan,
@@ -548,7 +560,7 @@ mod tests {
         let anchors: Vec<String> = vec![];
         let refs: Vec<ResolvedRef> = vec![];
         let label_ids = BTreeMap::new();
-        let mut plan = Plan::new(&anchors, &refs, &label_ids);
+        let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
         let out = apply("<figure><figcaption>Anon.</figcaption></figure>", &mut plan).unwrap();
         assert!(!out.contains("data-id"));
     }
@@ -561,7 +573,7 @@ mod tests {
             ResolvedRef { href: "parsing.html#eq-c".into(), text: None },
         ];
         let label_ids = BTreeMap::new();
-        let mut plan = Plan::new(&anchors, &refs, &label_ids);
+        let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
         let out = apply(
             "<a data-ref=\"fig:a\"></a><a data-ref=\"eq:c\">the bound</a>",
             &mut plan,
@@ -578,10 +590,25 @@ mod tests {
         let anchors = vec!["parsing".to_string(), "lexing".to_string()];
         let refs: Vec<ResolvedRef> = vec![];
         let label_ids = BTreeMap::new();
-        let mut plan = Plan::new(&anchors, &refs, &label_ids);
+        let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
         let out = apply("<h1>Parsing</h1><h2>Lexing</h2>", &mut plan).unwrap();
         assert!(out.contains("<h1 id=\"parsing\">"));
         assert!(out.contains("<h2 id=\"lexing\">"));
+    }
+
+    #[test]
+    fn apply_prepends_a_clickable_uid_to_a_labelled_section() {
+        let anchors = vec!["parsing".to_string(), "sec-lexing".to_string()];
+        let uids = vec![None, Some("k3f9".to_string())];
+        let refs: Vec<ResolvedRef> = vec![];
+        let label_ids = BTreeMap::new();
+        let mut plan = Plan::new(&anchors, &uids, &refs, &label_ids);
+        let out = apply("<h1>Parsing</h1><h2>Lexing</h2>", &mut plan).unwrap();
+        assert!(out.contains("<h1 id=\"parsing\">Parsing</h1>"));
+        assert!(out.contains(
+            "<h2 id=\"sec-lexing\"><a class=\"sec-uid\" href=\"#sec-lexing\" data-id=\"k3f9\"></a>Lexing</h2>"
+        ));
+        assert!(!out.contains(">k3f9<"));
     }
 
     #[test]
@@ -589,7 +616,7 @@ mod tests {
         let anchors: Vec<String> = vec![];
         let refs: Vec<ResolvedRef> = vec![];
         let label_ids = BTreeMap::new();
-        let mut plan = Plan::new(&anchors, &refs, &label_ids);
+        let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
         let src = "<p class='x'>a &amp; b <br> <span data-lit-math=\"0\"></span></p>";
         assert_eq!(apply(src, &mut plan).unwrap(), src);
     }

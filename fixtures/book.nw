@@ -10,8 +10,9 @@ bound</a>, both of which live on a later page.</p>
 floats them into the margin.</aside>
 The lexer is <a data-ref="chunk:lex a token"></a>.</p>
 
-<h2>Lexing</h2>
-<p>A second-level heading, which the nav tree picks up.</p>
+<h2 id="sec:lexing">Lexing</h2>
+<p>A second-level heading, which the nav tree picks up, and which the author
+labelled so it can be linked with a stable id.</p>
 
 <figure id="fig:pipeline">
 <img src="pipeline.svg" alt="the weave pipeline">
@@ -35,7 +36,8 @@ tokens.push(next());
 
 @ <h1>Codegen</h1>
 <p>A third page, so pagination has a middle with both neighbours.
-See also <a data-ref="fig:pipeline"></a>, referenced twice.</p>
+See also <a data-ref="fig:pipeline"></a>, referenced twice, and
+<a data-ref="sec:lexing"></a> back on the second page.</p>
 
 <table id="tbl:opcodes">
 <caption>Opcodes.</caption>

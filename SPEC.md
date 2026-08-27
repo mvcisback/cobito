@@ -14,7 +14,7 @@
 ## 2. Non-goals
 
 - PDF/print output (a `--tex` backend may come later; §6.6).
-- Pretty-printing or syntax-aware code formatting, including syntax highlighting. Code chunks are text — noweb's position, and we keep it. Reconsidered during M1 and reaffirmed; the reasoning is in §5.4.
+- Pretty-printing or syntax-aware code *reformatting* — reflowing, re-indenting, or otherwise rewriting the bytes a reader sees. Code chunks are rendered exactly as written; noweb's position, and we keep it. (Syntax *highlighting* — coloring the unchanged bytes — was a non-goal through M1 and is now planned: §5.5 reverses that call. It does not reformat, so this line still stands.)
 - cweb's `@d` macros. noweb has no equivalent because `#define` is C-specific. Named chunks cover the need.
 - A WYSIWYG authoring UI.
 - A comment/annotation server — that is a separate tool (`ANNOTATIONS.md`), and possibly an adopted one rather than ours.
@@ -216,7 +216,80 @@ Three decisions, all satisfiable with zero client JS:
 
 They are rendered as **CSS generated content** — `data-line` on the span, `content: attr(data-line)` in the stylesheet — never as text nodes. This is not cosmetic. Text-node numbers would be copied along with a code selection, and they would appear inside the exact-quote selectors the annotation layer anchors with (§9.2), so re-weaving a file after an edit above it would orphan every annotation on the code below. Generated content is invisible to both.
 
-**No syntax highlighting.** The §2 non-goal stands as written. Highlighting is feasible (syntect has a pure-Rust engine) but it buys colored keywords at the cost of a lexer that does not understand chunk uses — `let c = <<next char>>;` is not Rust, and `<<` lexes as a shift operator — plus a dependency, a theme decision, and a per-root language configuration. Considered and declined; revisit only if reader feedback demands it.
+**Syntax highlighting** was declined through M1 and is now planned — §5.5. The objection that killed it the first time was real: a lexer does not understand chunk uses, `let c = <<next char>>;` is not Rust, and `<<` lexes as a shift operator. §5.5 answers it by treating each chunk use as an opaque hole the tokenizer never sees, resolving the language out of band, and coloring with CSS classes rather than injecting text — so the copy-paste and annotation-anchor invariants above (line numbers, quote selectors) survive untouched.
+
+### 5.5 Syntax highlighting
+
+Highlighting colors the bytes a reader already sees; it never changes them (§2). The
+hard part is not the coloring — it is that a code chunk is not, in general, a valid
+program in any one language. It is target-language text with **chunk uses** (`<<next
+char>>`) spliced in, and those are lit's syntax, not the target's. A naïve lexer chokes
+on them. Three moves make highlighting safe:
+
+**1. Chunk uses are opaque holes.** By §5.4 a chunk use is already rendered as an `<a>`
+anchor inside the `<span class="line">`, and its opaque id (§7.1) — never target-language
+source — is what the reader sees. The tokenizer is handed only the *literal* runs
+between those anchors and told the offsets they occupy; it never scans across a hole.
+This is the same discipline the math pass uses (§6.2): extract the foreign spans first,
+tokenize the remainder, splice the untouched spans back. `let c = <<next char>>;`
+tokenizes as `let`·`c`·`=` … `;` with the middle left alone, so `<<` never lexes as a
+shift operator.
+
+**2. The language is resolved out of band, once, by lit — not guessed by the engine.**
+Resolution has three tiers, most specific wins:
+
+1. **Per-chunk override.** An optional `{lang=…}` on a code chunk's definition line
+   (`<<lex a token>>= {lang=rust}`) names the language for that chunk. This is the escape
+   hatch for a shell snippet inside a Rust document, or an abstract chunk whose name
+   carries no extension.
+2. **Project/file default.** `lit.toml` may set `[weave] lang = "rust"` for the document,
+   or a per-root default keyed by tangle target.
+3. **Root file-extension.** With nothing else said, a chunk inherits the language of the
+   tangle root it flows into: `<<src/main.rs>>` ⇒ `rust` from `.rs`. Most chunks need no
+   configuration at all.
+
+A chunk that resolves to no known language is highlighted as plain text — a warning, not
+an error; the page still renders.
+
+**3. One resolver, shared by weave and editor.** The resolution above is implemented once
+and exposed as `lit language <file> <chunk>`, which prints the resolved language id (or
+exits nonzero if none). Weave calls it internally; an editor plugin shells out to the
+same command. There is exactly one source of truth for "what language is this chunk,"
+so the docs and the editor can never disagree.
+
+**Weave-time pipeline.** Highlighting slots into §5.4's render *after* the chunk-use
+anchors exist and *within* each `<span class="line">`:
+
+```
+per code chunk:
+  lang ← lit language <file> <chunk>        (tier resolution above)
+  per line span:
+    holes ← the <a> chunk-use anchors, with their char offsets
+    tokens ← tree-sitter-highlight over the literal runs between holes
+    emit each token as <span class="tok-KIND">…</span>, holes spliced back verbatim
+```
+
+The engine is **tree-sitter** (`tree-sitter-highlight`): one grammar per language, a
+stable highlight-name set (`keyword`, `string`, `function`, `comment`, …) mapped to
+`tok-*` CSS classes in `lit.css`. Colors are pure CSS — no inline styles, no `<script>`,
+no theme baked into the HTML — so the archival invariant (§6.3) and determinism (§8) hold,
+and a token span carries no text of its own (the class colors the bytes already there),
+so §5.4's copy-paste and annotation-quote guarantees are untouched. Grammars are native
+deps pinned in the flake alongside `markup` (§4.2); each language added is one dependency,
+per §19.5.
+
+**The editor story.** In an editor the same three-tier resolution is the whole problem —
+tree-sitter can highlight `rust`, but *which* region is `rust` is lit's question, not the
+grammar's. A thin `.nw` grammar spans the file into docs regions, code-chunk regions, and
+chunk-use holes; for each code region the plugin calls `lit language` (the resolver, tier
+3 above) and injects the resolved grammar into just that region, holes excluded. A
+concrete chunk (`<<src/main.rs>>`) resolves from its own extension with no round-trip; an
+**abstract** chunk (`<<lex a token>>`) has no extension at its use site, so the editor
+*must* ask the resolver — which is exactly why the resolver, not the engine, owns language
+selection. This is the one unavoidable round-trip, and it is a feature: it is the same
+answer the woven page shows. Editor injection is a plugin concern (Neovim
+`language-injection` callbacks, VS Code semantic-tokens), out of scope for the weaver, but
+the resolver command is lit's contract to it.
 
 ## 6. The prose layer
 
@@ -413,10 +486,25 @@ lit is meant to be a **living document**, and eventually a **forest**: separate
 projects import and transclude each other's notes (§16, M12). A
 position-dependent "Figure 3" cannot survive that — it changes the moment content
 moves within a document or is pulled into another one. So the **identity** of a
-figure, table, or equation is not its position but a **frozen opaque id**, and a
-reference renders **kind-qualified with that id** ("Figure k3f9"), Forester-style,
-not "Figure 3". This subsection supersedes the numbering half of §7; the
-anchoring, `data-*`, and caption mechanics there survive unchanged.
+figure, table, equation, or **labelled section** is not its position but a **frozen
+opaque id**, and a reference renders **kind-qualified with that id** ("Figure k3f9",
+"Section k3f9"), Forester-style, not "Figure 3". This subsection supersedes the
+numbering half of §7; the anchoring, `data-*`, and caption mechanics there survive
+unchanged.
+
+**Sections earn an id the same way floats do — by carrying a label.** A heading
+the author pins with a `sec:` id (`## Lexing {#sec:lexing}` in Markdown, `<h2
+id="sec:lexing">` in HTML) is a first-class label: it is minted into `lit.lock`
+with `kind = "section"`, a `\ref{sec:lexing}` renders "Section k3f9", and the
+section leads with a small **clickable permalink** — an empty `<a class="sec-uid"
+href="#sec-lexing" data-id="k3f9">` whose id the stylesheet draws with `.sec-uid::before`
+(§16 templates). As everywhere in §7, the id lives in `data-id`, never a text node,
+so it stays out of selections and the annotation layer's quote selectors (§9.2); the
+`<a>` itself is the click target. An **h1** is addressed by its page id and needs no
+section id, so it is never minted. An **unlabelled** section has no stable identity
+and gets no id or prefix — the same rule that gives an unreferenceable float no
+`data-id`. This keeps the affordance opt-in: authors label the sections worth
+linking, exactly as they already do for figures.
 
 **The id.** A random **4-character base62** string (`[0-9A-Za-z]`, case-sensitive,
 ≈14.8M space). It is minted once and never recomputed. It is deliberately **not**
@@ -447,9 +535,9 @@ ever resolved relative to its own file. The opaque id is **global**.
 ```
 
 `kind` is carried from the fence/tag (the fence already knows it is
-figure/table/math), **not** parsed off the id. The `fig:`/`tbl:`/`eq:` label prefix
-survives only as the E030 human sanity check (§6.4); it no longer determines
-numbering or identity.
+figure/table/math; a labelled heading is a `section`), **not** parsed off the id.
+The `fig:`/`tbl:`/`eq:`/`sec:` label prefix survives only as the E030 human sanity
+check (§6.4); it no longer determines numbering or identity.
 
 **Mint on miss, write back.** A normal `weave` mints an id for any label missing
 from the lock and rewrites `lit.lock` (a dev-time side effect, like updating a
@@ -690,9 +778,10 @@ Because flakes only see git-tracked files, new files must be `git add`ed before 
 | **M8** | Markdown prose dialect (§6.4): CommonMark prose + fenced ```` ```math ```` display equations; raw-HTML islands for labeled/numbered elements; `dialect` in `lit.toml` — **done** (first slice; roadmap below pulled forward from R5) |
 | **M9** | Math macros (§6.5): `\def` (global) / `\let` (file-scoped) math-only definitions harvested into KaTeX's `macros` table |
 | **M10** | Citations: a `cite:` numbered namespace resolved by §7's machinery, plus an auto reference list from a bib source |
-| **M11** | Stable ids & the lock file (§7.1): frozen 4-char base62 id per label, committed `lit.lock` (`label → { id, kind }`), references render kind-qualified with the id, weave mints-on-miss + writes back, `--locked` frozen mode (E031), `lit lock`/`lit labels`/`lit id` tooling; `site.json` → `schema: 2` |
+| **M11** | Stable ids & the lock file (§7.1): frozen 4-char base62 id per label — every float and every `sec:`-labelled section, the latter also stamped as a clickable permalink prefix — committed `lit.lock` (`label → { id, kind }`), references render kind-qualified with the id, weave mints-on-miss + writes back, `--locked` frozen mode (E031), `lit lock`/`lit labels`/`lit id` tooling; `site.json` → `schema: 2` |
 | **M12** | Import vs include/transclude (Forester-inspired): `import` brings another note's *definitions* into scope without rendering; `include`/`transclude` inlines another note's *rendered* content — composed at the model/prose layer, never a pre-`markup` `.nw` preprocessor (§11). Cross-note references use the opaque id (§7.1) |
 | **M13** | Self-host |
+| **M14** | Syntax highlighting (§5.5): tree-sitter tokenizing within each line span, chunk uses treated as opaque holes; three-tier language resolution (per-chunk `{lang=…}` → `lit.toml` default → root extension) behind a shared `lit language` resolver; `tok-*` CSS classes, no `<script>`; editor plugins consume the same resolver |
 
 **Not scheduled.** Replacing noweb with a Rust `markup`/`notangle` is a contingency with explicit triggers (§11), not a planned milestone. It is listed nowhere in this table on purpose.
 

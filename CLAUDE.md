@@ -51,6 +51,10 @@ or they silently won't exist. Do not commit unless asked.
   and write the lock back; `weave --locked` (CI, the read-only Nix sandbox) never
   mints and errors (E031) on any label absent from the lock. Only labelled floats
   get an id — an unreferenceable float has no stable identity, so no `data-id`.
+  A heading the author pins with a `sec:` id (`kind = "section"`) joins the same
+  scheme: it earns an opaque id and leads with a clickable permalink prefix
+  (`<a class="sec-uid" … data-id>`, drawn by CSS). An h1 is its page and is never
+  minted; an unlabelled section gets no id or prefix.
 - Docs-chunk prose has two dialects, set by `dialect` in `lit.toml` (SPEC.md
   §6.1/§6.4): `markdown` (default — CommonMark plus fenced-float directives) and
   `html` (the raw-HTML escape hatch). The float directives are ```` ```math ````,

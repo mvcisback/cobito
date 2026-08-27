@@ -16,6 +16,10 @@ kind = "equation"
 id = "qe1t"
 kind = "figure"
 
+["fixtures/book.nw"."sec:lexing"]
+id = "Zbzy"
+kind = "section"
+
 ["fixtures/book.nw"."tbl:opcodes"]
 id = "JWD7"
 kind = "table"

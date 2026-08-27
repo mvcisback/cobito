@@ -11,7 +11,9 @@
   --rule: #ccc9b8;
   --ink: #111;
   --faint: #a09c88;
-  --link: #4a4a8a;
+  --link: #4a4a8a;       /* ordinary prose links */
+  --ref: #7a3b2e;        /* internal cross-references (§7) — a warmer accent */
+  --bg: #fffff8;         /* the page (a sticky heading paints over it) */
 }
 
 body {
@@ -20,7 +22,20 @@ body {
   line-height: 1.6;
   margin: 0;
   color: var(--ink);
-  background: #fffff8;
+  background: var(--bg);
+}
+
+/* The current section's heading sticks to the top of the viewport while that
+   section is on screen. Each heading is sticky *within its own <section>*, so
+   headings never stack: one scrolls away with its section exactly as the next
+   arrives. The background paints over prose sliding underneath. */
+main :is(h1, h2, h3, h4) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: 0;
+  padding: 0.4rem 0 0.3rem;
+  background: var(--bg);
 }
 
 main {
@@ -108,6 +123,52 @@ caption {
   top: 50%;
   transform: translateY(-50%);
   color: var(--faint);
+}
+
+/* --- Internal cross-references (§7) -------------------------------------- */
+
+/* A resolved <a data-ref> — "Figure k3f9", a chunk link, a section link — is
+   navigation, not prose, and its opaque id is a machine token. Set it in a sans
+   face at medium weight with a warm accent so it reads distinctly from both the
+   serif body and ordinary links, without the underline that would fight the id. */
+a[data-ref] {
+  font-family: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  font-size: 0.9em;
+  letter-spacing: 0.01em;
+  color: var(--ref);
+  text-decoration: none;
+}
+
+a[data-ref]:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* A `sec:`-labelled section leads with a clickable permalink carrying its opaque
+   id (§7.1). Like a float's number the id is generated content drawn from
+   data-id, never a text node, so it stays out of selections and the annotation
+   layer's quote selectors (§9.2); the <a> itself is the click target. It sits a
+   hair smaller than the heading and in the same warm sans accent as an inline
+   cross-reference, so a section id reads as the machine token it is. */
+.sec-uid {
+  font-family: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  font-size: 0.7em;
+  letter-spacing: 0.01em;
+  color: var(--ref);
+  text-decoration: none;
+  margin-right: 0.5em;
+  vertical-align: 0.15em;
+}
+
+.sec-uid::before {
+  content: "§" attr(data-id);
+}
+
+.sec-uid:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 /* --- Navigation and pagination ------------------------------------------ */

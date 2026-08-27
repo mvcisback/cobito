@@ -16,7 +16,7 @@ use crate::math::{MathError, Renderer};
 use crate::model::{CodeSpan, DocModel, Lint, SectionKind};
 use crate::prose::{self, Math, ProseError};
 use crate::resolve::{self, LabelIds, NavNode, PageMeta, ResolveError};
-use crate::rewrite::{self, Plan, RewriteError, Scan};
+use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
 
 #[derive(Debug)]
@@ -252,11 +252,26 @@ pub fn mint_lock(
     let mut math: Vec<Math> = Vec::new();
     let frags = render_frags(doc, dialect, &mut math)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
-    for l in &scan.labels {
-        let file = &doc.sections[l.section].file;
-        lock.mint(file, &l.id, l.kind, minter);
+    for (label, kind, section) in mintable(&scan) {
+        let file = &doc.sections[section].file;
+        lock.mint(file, label, kind, minter);
     }
     Ok(())
+}
+
+/// Every label that earns a frozen opaque id (§7.1), in document order: each
+/// labelled float, then each deeper heading the author pinned with a `sec:` id.
+/// An h1 is its own page and is addressed by the page id, so it needs no
+/// section id and is skipped. Yields `(label, kind, section)`.
+fn mintable(scan: &Scan) -> impl Iterator<Item = (&str, Kind, usize)> {
+    scan.labels
+        .iter()
+        .map(|l| (l.id.as_str(), l.kind, l.section))
+        .chain(scan.headings.iter().filter_map(|h| {
+            let given = h.given_id.as_deref()?;
+            (h.level != 1 && Kind::from_label(given) == Some(Kind::Section))
+                .then_some((given, Kind::Section, h.section))
+        }))
 }
 
 /// Steps 1–6 (§6.2) for the whole document, then the §5.3 page split. Docs
@@ -281,27 +296,27 @@ pub fn render(
     // let the caller persist the grown lock), or — under `--locked` — fail on any
     // label the committed lock does not already carry.
     let mut label_ids = LabelIds::new();
-    for l in &scan.labels {
-        let file = &doc.sections[l.section].file;
+    for (label, kind, section) in mintable(&scan) {
+        let file = &doc.sections[section].file;
         let id = match mode {
-            LockMode::Mint => lock.mint(file, &l.id, l.kind, minter),
-            LockMode::Locked => match lock.get(file, &l.id) {
+            LockMode::Mint => lock.mint(file, label, kind, minter),
+            LockMode::Locked => match lock.get(file, label) {
                 Some(entry) => entry.id.clone(),
                 None => {
                     return Err(WeaveError::Lock(LockError::Missing {
                         file: file.clone(),
-                        label: l.id.clone(),
+                        label: label.to_string(),
                     }))
                 }
             },
         };
-        label_ids.insert(l.id.clone(), id);
+        label_ids.insert(label.to_string(), id);
     }
 
     let res = resolve::plan(doc, &scan, &first_tags, &label_ids).map_err(WeaveError::Resolve)?;
 
     // Step 4b: rewrite each docs body against the resolved plan.
-    let mut plan = Plan::new(&res.heading_anchors, &res.refs, &label_ids);
+    let mut plan = Plan::new(&res.heading_anchors, &res.heading_uids, &res.refs, &label_ids);
     for frag in frags.iter_mut() {
         if let Frag::Docs(html) = frag {
             *html = rewrite::apply(html, &mut plan).map_err(WeaveError::Rewrite)?;
@@ -730,6 +745,28 @@ mod tests {
     }
 
     #[test]
+    fn labelled_section_carries_a_clickable_opaque_uid() {
+        let site = dev_render(&book(), Dialect::Html, "");
+        let parsing = &site.pages[1].html;
+        // The `sec:lexing` heading leads with an empty <a> permalink whose opaque
+        // id (§7.1) lives in data-id — drawn by CSS, never a text node.
+        let needle = "id=\"sec-lexing\"><a class=\"sec-uid\" href=\"#sec-lexing\" data-id=\"";
+        let start = parsing
+            .find(needle)
+            .expect("labelled section leads with a sec-uid permalink")
+            + needle.len();
+        let uid = &parsing[start..start + ID_LEN as usize];
+        assert_eq!(uid.len(), ID_LEN as usize);
+        // The id does not leak into the heading's own text run.
+        assert!(parsing.contains(&format!("data-id=\"{uid}\"></a>Lexing</h2>")));
+        // A cross-page \ref back to the section renders "Section <id>" (§7.1),
+        // links to the section anchor, and reuses the very same opaque id.
+        assert!(site.pages[2].html.contains(&format!(
+            "<a data-ref=\"sec:lexing\" href=\"parsing.html#sec-lexing\">Section {uid}</a>"
+        )));
+    }
+
+    #[test]
     fn chunk_ref_links_into_code() {
         let site = dev_render(&book(), Dialect::Html, "");
         // `<a data-ref="chunk:lex a token">` on the Parsing page points at the
@@ -745,7 +782,9 @@ mod tests {
         for page in &site.pages {
             assert!(page.html.contains("<nav"));
             assert!(page.html.contains("href=\"parsing.html\">Parsing</a>"));
-            assert!(page.html.contains("href=\"parsing.html#lexing\">Lexing</a>"));
+            // The author labelled this heading `sec:lexing`, so its anchor is the
+            // label's, not the text slug — the nav link follows.
+            assert!(page.html.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
         }
     }
 

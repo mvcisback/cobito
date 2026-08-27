@@ -28,9 +28,11 @@
 @nl
 @text 
 @nl
-@text <h2>Lexing</h2>
+@text <h2 id="sec:lexing">Lexing</h2>
 @nl
-@text <p>A second-level heading, which the nav tree picks up.</p>
+@text <p>A second-level heading, which the nav tree picks up, and which the author
+@nl
+@text labelled so it can be linked with a stable id.</p>
 @nl
 @text 
 @nl
@@ -86,7 +88,9 @@
 @nl
 @text <p>A third page, so pagination has a middle with both neighbours.
 @nl
-@text See also <a data-ref="fig:pipeline"></a>, referenced twice.</p>
+@text See also <a data-ref="fig:pipeline"></a>, referenced twice, and
+@nl
+@text <a data-ref="sec:lexing"></a> back on the second page.</p>
 @nl
 @text 
 @nl

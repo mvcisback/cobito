@@ -78,6 +78,12 @@
           # a sequential number, and the cross-page ref text is "Figure <id>".
           grep -qE '<figure id="fig-pipeline" data-id="[0-9A-Za-z]{4}">' $TMPDIR/a/parsing.html
           grep -qE 'href="parsing.html#fig-pipeline">Figure [0-9A-Za-z]{4}</a>' $TMPDIR/a/index.html
+          # §7.1 a labelled *section* joins the opaque-id scheme: its heading
+          # leads with a clickable permalink whose four-char id lives in data-id
+          # (drawn by CSS, never text), and a cross-page \ref renders "Section
+          # <id>" pointing at the section anchor.
+          grep -qE '<h2 id="sec-lexing"><a class="sec-uid" href="#sec-lexing" data-id="[0-9A-Za-z]{4}"></a>' $TMPDIR/a/parsing.html
+          grep -qE 'href="parsing.html#sec-lexing">Section [0-9A-Za-z]{4}</a>' $TMPDIR/a/codegen.html
           if grep -q 'data-number' $TMPDIR/a/parsing.html; then
             echo "float still carries a sequential data-number; §7.1 wants an opaque id" >&2
             exit 1
@@ -141,6 +147,10 @@
           lit=${self.packages.${system}.lit}/bin/lit
           $lit id fixtures/book.nw fig:pipeline | grep -qE '^[0-9A-Za-z]{4}$'
           $lit labels examples/ring.nw | grep -qE '^eq:wrap\s+[0-9A-Za-z]{4}\s+Equation$'
+          # §7.1 a `sec:`-labelled heading is a first-class label: it has an id
+          # and lists with kind Section, exactly like a float.
+          $lit id fixtures/book.nw sec:lexing | grep -qE '^[0-9A-Za-z]{4}$'
+          $lit labels fixtures/book.nw | grep -qE '^sec:lexing\s+[0-9A-Za-z]{4}\s+Section$'
           # An unknown label is a nonzero exit, not a silent empty line.
           if $lit id fixtures/book.nw fig:nope; then
             echo "lit id returned success for a label not in the lock" >&2

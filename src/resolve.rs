@@ -80,6 +80,9 @@ pub struct Resolution {
     pub labels: BTreeMap<String, Label>,
     /// Anchor to stamp on each heading, in `scan.headings` order.
     pub heading_anchors: Vec<String>,
+    /// Parallel to `heading_anchors`: the frozen opaque id (§7.1) of a
+    /// `sec:`-labelled heading, or `None` for an unlabelled one.
+    pub heading_uids: Vec<Option<String>>,
     /// One entry per `scan.refs` site, in order.
     pub refs: Vec<ResolvedRef>,
     pub lints: Vec<Lint>,
@@ -164,6 +167,9 @@ pub fn plan(
     let mut per_page_anchors: Vec<BTreeMap<String, u32>> =
         (0..pages.len()).map(|_| BTreeMap::new()).collect();
     let mut heading_anchors: Vec<String> = Vec::with_capacity(scan.headings.len());
+    // Parallel to `heading_anchors`: the frozen opaque id (§7.1) a `sec:`-labelled
+    // heading carries, so `apply` can stamp its clickable permalink prefix.
+    let mut heading_uids: Vec<Option<String>> = Vec::with_capacity(scan.headings.len());
     // (page, level, anchor, text) for nav construction.
     let mut nav_flat: Vec<(usize, u8, String, String)> = Vec::new();
     // Section-namespace labels the author declared via a heading id.
@@ -171,11 +177,13 @@ pub fn plan(
 
     for h in &scan.headings {
         let page = section_page[h.section];
+        let mut uid = None;
         let anchor = if h.level == 1 {
             pages[page].id.clone()
         } else if let Some(given) = &h.given_id {
             let a = anchor_of(given);
             if Kind::from_label(given) == Some(Kind::Section) {
+                uid = label_ids.get(given).cloned();
                 heading_labels.push((given.clone(), page, a.clone(), h.text.clone()));
             }
             a
@@ -184,6 +192,7 @@ pub fn plan(
         };
         nav_flat.push((page, h.level, anchor.clone(), h.text.clone()));
         heading_anchors.push(anchor);
+        heading_uids.push(uid);
     }
 
     let nav = build_nav(&pages, &nav_flat);
@@ -219,14 +228,23 @@ pub fn plan(
         )?;
     }
     for (id, page, anchor, text) in heading_labels {
+        // §7.1: a `\ref{sec:…}` renders the kind-qualified opaque id ("Section
+        // k3f9"), not the heading text, which rots on rename. The heading text
+        // survives only as a fallback if the id was never minted (Mint always
+        // mints; `--locked` would already have failed on a missing label).
+        let opaque = label_ids.get(&id).cloned();
+        let display = match &opaque {
+            Some(uid) => format!("{} {uid}", Kind::Section.word()),
+            None => text,
+        };
         insert(
             id,
             LabelInfo {
                 page,
                 anchor,
                 kind: Kind::Section,
-                id: None,
-                text,
+                id: opaque,
+                text: display,
             },
         )?;
     }
@@ -310,6 +328,7 @@ pub fn plan(
         nav,
         labels: pub_labels,
         heading_anchors,
+        heading_uids,
         refs,
         lints,
     })
