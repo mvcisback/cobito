@@ -51,6 +51,13 @@ or they silently won't exist. Do not commit unless asked.
   logic `lit language <file> <chunk>` prints): `[weave] lang` in `lit.toml`, else
   the tangle root's file extension. A chunk with no known language is plain text +
   a W104 warning, never an error. Grammars (Rust, Nix) are one dep each (§19.5).
+- `flake.nix` is **generated** from `flake.nix.nw` — lit's own build file told as a
+  literate program (the first self-host dogfood, SPEC.md §13). Edit the `.nw` and
+  re-tangle (`lit tangle flake.nix.nw --out .`), never hand-edit `flake.nix`. The
+  committed `flake.nix` stays the permanent bootstrap (it builds `lit` before any
+  tangle can run); `checks.dogfood` runs `lit tangle --check flake.nix.nw` so the two
+  never drift, and weaves the page to prove lit highlights its own Nix. Nix is the
+  reason the second grammar exists.
 - A labelled float's identity is a **frozen opaque id** (four base62 chars),
   minted once and stored in the committed `lit.lock` (keyed `file → label →
   {id, kind}`), never a sequential number — so a reference ("Figure k3f9")

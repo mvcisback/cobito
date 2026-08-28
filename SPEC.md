@@ -750,6 +750,8 @@ error[E014]: duplicate label `fig:pipeline`
 
 The bootstrap must always be buildable without a working `lit`, so the tangled output stays committed permanently.
 
+**First dogfood (done): the flake itself.** Before `lit.nw`, the smallest honest self-host is `flake.nix.nw` — lit's own build file told as a literate program. It tangles byte-for-byte into the committed `flake.nix` (the permanent bootstrap: `nix flake check` builds `lit` from that committed file, never from a tangle step), and `checks.dogfood` runs `lit tangle --check flake.nix.nw` so the literate source and the bootstrap can never silently drift. It also weaves the page (deterministically, no `<script>`) and asserts the Nix grammar coloured it — self-hosting the highlighter added in §5.5, which is *why* Nix was the second grammar. Editing the flake now means editing `flake.nix.nw` and re-tangling; the committed `flake.nix` is generated, never hand-edited.
+
 ## 14. Nix
 
 Flake-based (implemented — see `flake.nix`). `pkgs.noweb` is a genuine **runtime** dependency in Phase 1 (`markup` and `notangle`), not merely a test oracle, so the CLI is wrapped to put both `${noweb}/bin` *and* `${noweb}/lib/noweb` on `PATH` — the pipeline stages are not on `bin/` (§4.2).

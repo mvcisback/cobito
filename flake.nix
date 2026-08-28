@@ -35,6 +35,14 @@
               --set LIT_KATEX_ASSETS ${katexAssets pkgs}
           '';
         };
+        # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
+        # very output was built from — the dogfood loop as a buildable artifact
+        # (SPEC.md §13). checks.dogfood diffs the committed file against this.
+        flake = pkgs.runCommand "flake.nix" { } ''
+          cd ${self}
+          ${lit}/bin/lit tangle flake.nix.nw --out $TMPDIR
+          cp $TMPDIR/flake.nix $out
+        '';
         default = lit;
       });
 
@@ -224,6 +232,36 @@
             ${pkgs.noweb}/lib/noweb/markup "$f" > "$TMPDIR/got"
             diff -u "''${f%.nw}.markup" "$TMPDIR/got"
           done
+          touch $out
+        '';
+
+        # Dogfood (§13): flake.nix.nw is this flake told as a literate program, and
+        # packages.flake is `lit tangle flake.nix.nw` as a buildable output. The
+        # committed flake.nix must equal it, or the self-host loop has drifted.
+        dogfood = pkgs.runCommand "lit-dogfood" { } ''
+          cd ${self}
+          lit=${self.packages.${system}.lit}/bin/lit
+          # The committed flake.nix must be exactly the tangled output.
+          diff ${self}/flake.nix ${self.packages.${system}.flake}
+          # Weave the literate flake twice, byte-diff: the page is deterministic.
+          $lit weave --locked flake.nix.nw --out $TMPDIR/df-a
+          $lit weave --locked flake.nix.nw --out $TMPDIR/df-b
+          diff -r $TMPDIR/df-a $TMPDIR/df-b
+          # The Nix grammar coloured the page — an attribute path is a property and
+          # `let` is a keyword — so lit self-hosts its own highlighter (§5.5).
+          grep -q 'class="tok-property">' $TMPDIR/df-a/index.html
+          grep -q 'class="tok-keyword">' $TMPDIR/df-a/index.html
+          # A chunk-use hole is spliced back inside its `.line`, never coloured.
+          grep -qE '<span class="line" data-line="[0-9]+">[^<]*<a href="#[^"]*">&lt;<i>' $TMPDIR/df-a/index.html
+          if grep -qE 'tok-[a-z]+">&lt;<i>' $TMPDIR/df-a/index.html; then
+            echo "a chunk-use hole was wrapped in a highlight span; §5.5 wants it opaque" >&2
+            exit 1
+          fi
+          # Pure CSS coloring: the archival no-<script> rule holds here too.
+          if grep -q '<script' $TMPDIR/df-a/index.html; then
+            echo "dogfood weave emitted <script>; coloring must be pure CSS" >&2
+            exit 1
+          fi
           touch $out
         '';
       });
