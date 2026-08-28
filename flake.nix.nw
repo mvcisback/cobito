@@ -1,16 +1,18 @@
 # The lit flake, as a literate program
 
-This page is lit's own build file, told as a literate program. Everything you
-read here tangles back — byte for byte — into the `flake.nix` at the repository
-root, and a CI check re-tangles it on every run to prove the two never drift.
-It is the first step of lit's self-host path (SPEC.md §13): the Nix half of the
-toolchain now presents itself *as* a lit document, and the Nix grammar added
-for syntax highlighting (§5.5) exists precisely so this file can be coloured.
+This page is the build file for lit. It is a literate program. lit tangles this
+page to make the `flake.nix` file in the root of the repository. The two files
+are the same, byte for byte. A CI check tangles the page again on each run and
+compares the result. This makes sure that the two files stay the same.
 
-A flake is a single attribute set. Ours is one root chunk with a `description`,
-a pinned `nixpkgs` input, and an `outputs` function whose `let` block holds two
-shared helpers before it exposes the `packages`, `devShells`, and `checks` we
-build.
+This page is the first step in the self-host path of lit (SPEC.md §13). The Nix
+part of the toolchain is now a lit document. lit has a Nix grammar for syntax
+highlighting (§5.5). The grammar gives color to this page.
+
+A flake is one attribute set. This flake is one root chunk. The root chunk has a
+`description` and a pinned `nixpkgs` input. It also has an `outputs` function.
+The `outputs` function starts with a `let` block of two shared helpers. Then it
+gives the `packages`, `devShells`, and `checks`.
 <<flake.nix>>=
 {
   description = "lit — a web-first literate programming system built on noweb";
@@ -40,24 +42,24 @@ build.
     };
 }
 @
-## Iterating over systems
+## System iteration
 
-Every output is built for the four systems we support. `eachSystem` is the
-plumbing: it maps a `system → pkgs → value` function over that list with
-`genAttrs`, so each of `packages`, `devShells`, and `checks` is written once and
-instantiated per platform.
+lit builds each output for the four systems in the list. `eachSystem` is the
+helper for this. It maps a function of `system` and `pkgs` across the list with
+`genAttrs`. You write `packages`, `devShells`, and `checks` one time. lit then
+makes one instance for each system.
 <<system iteration>>=
 systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 eachSystem = f: nixpkgs.lib.genAttrs systems (system:
   f system nixpkgs.legacyPackages.${system});
 @
-## Pinning KaTeX
+## The KaTeX pin
 
-Math renders at weave time, and KaTeX's HTML is version-coupled to its own CSS
-and font metrics. The assets we ship must therefore match the exact version the
-`katex` crate embeds — nixpkgs' own `katex` is a different release and would
-render equations twice. So the version and the fetched asset bundle are pinned
-here together, by hash (SPEC.md §6.3).
+lit renders math at weave time. The HTML from KaTeX is coupled to its own CSS
+and font metrics. The assets must match the version of KaTeX that the `katex`
+crate contains. The `katex` package in nixpkgs is a different version. A wrong
+version makes each equation show two times. The flake pins the version and the
+asset bundle together, by hash (SPEC.md §6.3).
 <<pinned katex assets>>=
 # KaTeX renders to HTML that is version-coupled to its own CSS and font
 # metrics, so these assets must match the version the `katex` crate
@@ -71,11 +73,11 @@ katexAssets = pkgs: pkgs.fetchzip {
 @
 ## The package
 
-The package is a straightforward `buildRustPackage`, with one wrinkle: noweb's
-pipeline stages (`markup`, `nt`, …) live in `lib/noweb`, not `bin`, and the
-built `lit` needs both them and the KaTeX assets at runtime. `postFixup` wraps
-the binary to put noweb on `PATH` and hand it the assets through
-`LIT_KATEX_ASSETS`. Building the package also runs the hermetic cargo tests.
+The package is a `buildRustPackage` with one special step. The pipeline stages
+of noweb (`markup`, `nt`, and more) are in `lib/noweb`, not in `bin`. The `lit`
+binary needs these stages and the KaTeX assets at run time. `postFixup` wraps
+the binary. The wrap puts noweb on `PATH` and sets `LIT_KATEX_ASSETS` to the
+assets. The build of the package also runs the hermetic cargo tests.
 <<the lit package>>=
 lit = pkgs.rustPlatform.buildRustPackage {
   pname = "lit";
@@ -94,12 +96,11 @@ lit = pkgs.rustPlatform.buildRustPackage {
 @
 ## The tangled flake, as an output
 
-The dogfood loop as a buildable artifact: `nix build .#flake` re-tangles
-`flake.nix.nw` with the freshly built `lit` and emits the `flake.nix` this very
-output was built from. It is not circular — building it needs `lit`, which needs
-the *committed* `flake.nix` as its permanent bootstrap (SPEC.md §13) — and it
-gives `checks.dogfood` one thing to diff the committed file against, rather than
-re-tangling a second time.
+This output makes the dogfood loop a file that you can build. `nix build .#flake`
+tangles `flake.nix.nw` with the new `lit` binary. It makes the same `flake.nix`
+that built this output. The loop is not circular. The build needs `lit`, and
+`lit` needs the committed `flake.nix` as its permanent bootstrap (SPEC.md §13).
+`checks.dogfood` compares the committed file with this output.
 
 <<the tangled flake output>>=
 # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
@@ -113,9 +114,9 @@ flake = pkgs.runCommand "flake.nix" { } ''
 @
 ## The dev shell
 
-The dev shell carries the Rust toolchain and noweb, and reproduces the same two
-environment tweaks the wrapper bakes into the package so that `cargo run` inside
-`nix develop` behaves exactly like the installed binary.
+The dev shell has the Rust toolchain and noweb. It makes the same two changes to
+the environment that the wrapper makes in the package. With these changes, `cargo
+run` in `nix develop` behaves the same as the installed binary.
 <<the dev shell>>=
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer noweb ];
@@ -127,9 +128,9 @@ default = pkgs.mkShell {
 @
 ## The checks
 
-`nix flake check` is lit's whole test matrix. Each check is an independent
-derivation; together they guard the build, byte-determinism, the frozen label
-lock, the tangle differential, and noweb output drift.
+`nix flake check` runs the full test set of lit. Each check is an independent
+derivation. Together the checks guard the build, byte-determinism, the frozen
+label lock, the tangle differential, and the noweb output.
 <<the checks>>=
 <<the build check>>
 
@@ -145,21 +146,26 @@ lock, the tangle differential, and noweb output drift.
 @
 ### build
 
-The cheapest check: the package itself. Because `buildRustPackage` runs the
-cargo tests, a green build already means the unit suite passed.
+This is the cheapest check. It builds the package. `buildRustPackage` also runs
+the cargo tests. A green build shows that the unit tests passed.
 <<the build check>>=
 # Building the package also runs the (hermetic) cargo tests.
 build = self.packages.${system}.lit;
 @
 ### determinism
 
-The load-bearing check. Weave twice and byte-diff: determinism is the property
-that §8's JSON contract and the archival goal both rest on. The read-only Nix
-sandbox forces every weave to run `--locked`, which also proves the frozen float
-ids are stable across runs. Along the way it asserts the concrete invariants —
-page splitting, cross-page refs, opaque ids drawn from `data-id`, hoisted
-sidenotes, the Markdown dialect's fenced floats, syntax highlighting with opaque
-chunk-use holes, and the archival "no `<script>`" rule.
+This is the most important check. It weaves the document two times and compares
+the bytes. The JSON contract of §8 and the archival goal both need this property.
+The read-only Nix sandbox makes each weave use `--locked`. This also shows that
+the frozen float ids stay the same across runs. The check then tests these
+invariants:
+
+- page splitting and cross-page refs;
+- opaque ids drawn from `data-id`;
+- hoisted sidenotes;
+- the fenced floats of the Markdown dialect;
+- syntax highlighting with opaque chunk-use holes;
+- the "no `<script>`" rule.
 <<the determinism check>>=
 # Weave twice, compare bytes. Determinism is the property §8's JSON
 # contract and the archival goal both rest on. The book fixture also
@@ -271,11 +277,14 @@ determinism = pkgs.runCommand "lit-determinism" { } ''
 @
 ### lock
 
-The committed `lit.lock` is the source of truth for every label's frozen id.
-This check exercises the read-only CLI surface on top of it: `lit id` returns a
-four-char base62 id, `lit labels` lists them with their kind, an unknown label
-is a nonzero exit, and `lit language` — the shared highlighting resolver —
-answers the same way for roots, reachable chunks, and unknown chunks.
+The committed `lit.lock` is the source of truth for the frozen id of each label.
+This check tests the read-only CLI on top of the lock:
+
+- `lit id` returns a four-character base62 id;
+- `lit labels` lists the labels with their kind;
+- an unknown label gives a nonzero exit;
+- `lit language`, the shared resolver for highlighting, answers for roots,
+  reachable chunks, and unknown chunks.
 <<the lock check>>=
 # §7.1 the committed lit.lock is the source of truth. If a float were
 # added without running `lit lock` and committing the grown lock, a
@@ -312,9 +321,9 @@ lock = pkgs.runCommand "lit-lock" { } ''
 @
 ### tangle differential
 
-`lit tangle` must byte-match `notangle` itself, and `--check` must be clean
-right after a tangle and flag drift after an edit. This is also the acceptance
-test for the eventual Rust reimplementation of tangle (SPEC.md §11/§15).
+`lit tangle` must make the same bytes as `notangle`. `--check` must be clean just
+after a tangle. `--check` must report drift after an edit. This check is also the
+acceptance test for the future Rust version of tangle (SPEC.md §11/§15).
 <<the tangle check>>=
 # Tangle differential (§15): `lit tangle` must byte-match `notangle`
 # itself, and `--check` must be clean after a tangle and flag drift
@@ -340,9 +349,9 @@ tangle = pkgs.runCommand "lit-tangle" { } ''
 @
 ### noweb drift guard
 
-A golden guard: `markup`'s output for the fixture corpus must not shift under
-noweb or nixpkgs updates. If it does, this diff is where you see it, and the fix
-is to regenerate the affected `.markup` file.
+This is a golden guard. The output of `markup` for the fixtures must not change
+across noweb or nixpkgs updates. If it changes, this diff shows the change. To
+correct it, make the affected `.markup` file again.
 <<the noweb-drift check>>=
 # Golden guard: `markup` output for the fixture corpus must not drift
 # across noweb/nixpkgs updates. If this fails, inspect the diff, then
@@ -358,12 +367,14 @@ noweb-drift = pkgs.runCommand "noweb-drift" { } ''
 @
 ### dogfood
 
-The check that closes the loop. `flake.nix.nw` — this page — is the flake told
-as a literate program, and `lit tangle --check` proves the committed `flake.nix`
-is exactly what tangling it produces, so the two can never silently drift. Then
-it weaves the page twice and byte-diffs, and asserts the Nix grammar actually
-coloured it and a chunk-use hole stayed opaque inside its `.line`: lit
-highlighting its own build file is the smallest honest self-host (SPEC.md §13).
+This check closes the loop. `flake.nix.nw`, this page, is the flake as a literate
+program. `packages.flake` is the tangled output of this page. The check compares
+the committed `flake.nix` with `packages.flake`. A difference means that the
+self-host loop has drifted.
+
+The check then weaves the page two times and compares the bytes. It confirms that
+the Nix grammar gave color to the page. It also confirms that a chunk-use hole
+stays opaque inside its `.line`.
 <<the dogfood check>>=
 # Dogfood (§13): flake.nix.nw is this flake told as a literate program, and
 # packages.flake is `lit tangle flake.nix.nw` as a buildable output. The
