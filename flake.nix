@@ -134,6 +134,29 @@
           diff -r $TMPDIR/mdfx-a $TMPDIR/mdfx-b
           grep -qE '<figure id="fig-diagram" data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
           grep -qE '<figcaption data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
+          # §5.5 syntax highlighting: hl.nw has a Rust root and a Nix root, each
+          # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
+          # and confirm the coloring is deterministic and structurally sound.
+          $lit weave --locked fixtures/hl.nw --out $TMPDIR/hl-a
+          $lit weave --locked fixtures/hl.nw --out $TMPDIR/hl-b
+          diff -r $TMPDIR/hl-a $TMPDIR/hl-b
+          # Both grammars ran: `fn`/`let` are Rust keywords; a Nix attribute path
+          # is a property. A string token proves literals color in either.
+          grep -q 'class="tok-keyword">' $TMPDIR/hl-a/index.html
+          grep -q 'class="tok-property">' $TMPDIR/hl-a/index.html
+          grep -q 'class="tok-string">' $TMPDIR/hl-a/index.html
+          # The chunk-use hole is spliced back verbatim, still inside its `.line`,
+          # and is *never* wrapped in a color span (§5.4/§5.5).
+          grep -q '<a href="#sec-1">&lt;<i>greeting</i>&gt;</a>' $TMPDIR/hl-a/index.html
+          if grep -qE 'tok-[a-z]+">&lt;<i>' $TMPDIR/hl-a/index.html; then
+            echo "a chunk-use hole was wrapped in a highlight span; §5.5 wants it opaque" >&2
+            exit 1
+          fi
+          # Highlighting is pure CSS classes — the archival no-<script> rule holds.
+          if grep -q '<script' $TMPDIR/hl-a/index.html; then
+            echo "highlighted weave emitted <script>; coloring must be pure CSS" >&2
+            exit 1
+          fi
           touch $out
         '';
 
@@ -154,6 +177,17 @@
           # An unknown label is a nonzero exit, not a silent empty line.
           if $lit id fixtures/book.nw fig:nope; then
             echo "lit id returned success for a label not in the lock" >&2
+            exit 1
+          fi
+          # §5.5 `lit language` is the shared resolver: a root resolves from its
+          # own extension, an abstract chunk from the root that reaches it, and an
+          # unknown chunk is a nonzero exit (so a build can gate on it).
+          test "$($lit language fixtures/hl.nw src/demo.rs)" = rust
+          test "$($lit language fixtures/hl.nw flake.nix)" = nix
+          test "$($lit language fixtures/hl.nw greeting)" = rust
+          test "$($lit language fixtures/hl.nw packages)" = nix
+          if $lit language fixtures/hl.nw nope; then
+            echo "lit language returned success for a chunk with no known language" >&2
             exit 1
           fi
           touch $out

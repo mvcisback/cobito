@@ -1,5 +1,6 @@
 mod config;
 mod diag;
+mod highlight;
 mod lock;
 mod markdown;
 mod math;
@@ -23,6 +24,7 @@ USAGE:
     lit lock <file.nw>...         mint frozen ids for every label into lit.lock (§7.1)
     lit labels <file.nw>          list the file's label → id map from lit.lock
     lit id <file.nw> <label>      print the frozen id for one label
+    lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
     lit dump-ir <file.nw>...      run noweb markup, print the parsed IR events
     lit dump-model <file.nw>...   fold the IR into the document model, print it
     lit tangle <file.nw>...       tangle every root chunk (via notangle)
@@ -54,6 +56,7 @@ fn main() -> ExitCode {
         Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
+        Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
         Some(("--version" | "-V", _)) => {
             println!("lit {}", env!("CARGO_PKG_VERSION"));
@@ -158,6 +161,18 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     } else {
         lock::LockMode::Mint
     };
+    // The document-wide highlighting default (tier 2, §5.5). An unknown name is a
+    // config error, not a silent fallback — a typo'd `lang` should be caught.
+    let default_lang = match cfg.weave.lang.as_deref() {
+        None => None,
+        Some(name) => match highlight::Lang::from_id(name) {
+            Some(l) => Some(l),
+            None => {
+                eprintln!("error[E033]: lit.toml: [weave] lang = \"{name}\" is not a known language");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
     match weave::write_site(
         &doc,
         Path::new(&out),
@@ -165,6 +180,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         Path::new("lit.lock"),
         meta,
         dialect,
+        default_lang,
         archive,
         mode,
     ) {
@@ -283,6 +299,55 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
         }
         None => {
             eprintln!("lit: no id for label `{label}` in {file} (run `lit lock`)");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `lit language <file> <chunk>`: print the highlighting language lit resolves for
+/// a chunk (§5.5) — the shared resolver the weaver and any editor plugin agree on.
+/// Exits nonzero when the chunk resolves to no known language, so a build can gate
+/// on it.
+fn language_cmd(file: &str, chunk: &str) -> ExitCode {
+    let files = [file.to_string()];
+    let events = match noweb::run_markup(&files) {
+        Ok(events) => events,
+        Err(e) => {
+            eprintln!("lit: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let doc = match model::build(&events) {
+        Ok(doc) => doc,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let default_lang = match cfg.weave.lang.as_deref() {
+        None => None,
+        Some(name) => match highlight::Lang::from_id(name) {
+            Some(l) => Some(l),
+            None => {
+                eprintln!("error[E033]: lit.toml: [weave] lang = \"{name}\" is not a known language");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+    match highlight::resolve(&doc, chunk, default_lang) {
+        Some(lang) => {
+            println!("{}", lang.id());
+            ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!("lit: chunk `{chunk}` resolves to no known language");
             ExitCode::FAILURE
         }
     }

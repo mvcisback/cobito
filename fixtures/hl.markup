@@ -1,0 +1,89 @@
+@file fixtures/hl.nw
+@begin docs 0
+@text # Highlighting sampler
+@nl
+@text 
+@nl
+@text Two roots in two languages. Each root pulls an abstract chunk in through a
+@nl
+@text hole, so the weaver colors both grammars *and* splices a chunk-use back
+@nl
+@text inside the coloring (SPEC.md §5.5). The language is resolved out of band from
+@nl
+@text each root's file extension — no per-chunk annotation.
+@nl
+@text 
+@nl
+@end docs 0
+@begin code 1
+@defn greeting
+@nl
+@text "hello from a literate program"
+@nl
+@end code 1
+@begin docs 2
+@text 
+@nl
+@text 
+@nl
+@end docs 2
+@begin code 3
+@defn src/demo.rs
+@nl
+@text fn main() {
+@nl
+@text     let msg = 
+@use greeting
+@text ;
+@nl
+@text     println!("{msg}");
+@nl
+@text }
+@nl
+@end code 3
+@begin docs 4
+@text 
+@nl
+@text 
+@nl
+@text The Nix side is a tiny flake, so lit can eventually present its own `flake.nix`
+@nl
+@text as a literate document and self-host.
+@nl
+@text 
+@nl
+@end docs 4
+@begin code 5
+@defn packages
+@nl
+@text [ pkgs.hello pkgs.ripgrep ]
+@nl
+@end code 5
+@begin docs 6
+@text 
+@nl
+@text 
+@nl
+@end docs 6
+@begin code 7
+@defn flake.nix
+@nl
+@text {
+@nl
+@text   description = "a tiny flake";
+@nl
+@text   outputs = { self, nixpkgs }: {
+@nl
+@text     packages.x86_64-linux.default = 
+@use packages
+@text ;
+@nl
+@text   };
+@nl
+@text }
+@nl
+@end code 7
+@begin docs 8
+@text 
+@nl
+@end docs 8

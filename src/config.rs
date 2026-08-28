@@ -41,6 +41,20 @@ pub struct Config {
     pub documents: Vec<Document>,
     #[serde(default)]
     pub tangle: Tangle,
+    #[serde(default)]
+    pub weave: Weave,
+}
+
+/// The `[weave]` table (§5.5). Only the document-wide highlighting default lives
+/// here for now; the `[weave.annotate]` keys of §5.3/§10 arrive with their
+/// milestones and are parsed leniently (unknown keys ignored) until then.
+#[derive(Deserialize, Default)]
+pub struct Weave {
+    /// The document-wide language for syntax highlighting (tier 2, §5.5): the
+    /// value `lit language`/the weaver resolves against, e.g. `"rust"` or
+    /// `"nix"`. Absent means fall back to the tangle-root file extension.
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 /// One document's identity and file set (§5.2). A project may declare several;

@@ -42,7 +42,15 @@ or they silently won't exist. Do not commit unless asked.
   together. Details and the rejected MathML-only option: SPEC.md §6.3.
 - Code chunk line numbers are `.nw` source lines drawn by CSS from `data-line`,
   never text nodes — text-node numbers would be copy-pasted and would break the
-  annotation layer's quote selectors. No syntax highlighting (SPEC.md §5.4).
+  annotation layer's quote selectors (SPEC.md §5.4).
+- Syntax highlighting (SPEC.md §5.5) colors the existing bytes with `tok-*` CSS
+  classes only — no injected text, no `<script>`, so copy-paste, `data-line`, and
+  quote selectors survive. A chunk-use `<<hole>>` stays opaque: tree-sitter tokens
+  only the literal runs between holes and the `<a>` anchor is spliced back outside
+  any color span. Language is resolved out of band by `highlight::resolve` (the same
+  logic `lit language <file> <chunk>` prints): `[weave] lang` in `lit.toml`, else
+  the tangle root's file extension. A chunk with no known language is plain text +
+  a W104 warning, never an error. Grammars (Rust, Nix) are one dep each (§19.5).
 - A labelled float's identity is a **frozen opaque id** (four base62 chars),
   minted once and stored in the committed `lit.lock` (keyed `file → label →
   {id, kind}`), never a sequential number — so a reference ("Figure k3f9")

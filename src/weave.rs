@@ -10,6 +10,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::config::Dialect;
+use crate::highlight::{self, Lang};
 use crate::lock::{LockError, LockFile, LockMode, Minter};
 use crate::markdown;
 use crate::math::{MathError, Renderer};
@@ -77,32 +78,37 @@ fn render_code(
     spans: &[CodeSpan],
     first_line: u32,
     doc: &DocModel,
+    lang: Option<Lang>,
 ) -> String {
     let marker = if continues { "+=" } else { "=" };
-    let mut lines: Vec<String> = vec![String::new()];
+
+    // A clean source buffer for the highlighter: the raw literal runs joined by
+    // newlines, with chunk-use holes removed but their byte offset and anchor
+    // HTML recorded so they splice back into the exact same spot afterwards
+    // (§5.5). The tokenizer never sees `<<...>>`, only the target's own text.
+    let mut source = String::new();
+    let mut holes: Vec<(usize, String)> = Vec::new();
     for span in spans {
         match span {
-            CodeSpan::Nl => lines.push(String::new()),
-            CodeSpan::Text(t) => lines.last_mut().unwrap().push_str(&prose::escape(t)),
-            CodeSpan::Use { name } => {
-                let target = doc
-                    .chunks
-                    .get(name)
-                    .and_then(|c| c.defs.first())
-                    .map(String::as_str);
-                let label = format!("&lt;<i>{}</i>&gt;", prose::escape(name));
-                let html = match target {
-                    Some(id) => format!("<a href=\"#{id}\">{label}</a>"),
-                    None => label,
-                };
-                lines.last_mut().unwrap().push_str(&html);
-            }
+            CodeSpan::Nl => source.push('\n'),
+            CodeSpan::Text(t) => source.push_str(t),
+            CodeSpan::Use { name } => holes.push((source.len(), hole_anchor(name, doc))),
         }
     }
     // The chunk-terminating newline opens a line that has no source line.
-    if lines.last().is_some_and(String::is_empty) {
-        lines.pop();
+    if source.ends_with('\n') {
+        source.pop();
     }
+
+    let hole_refs: Vec<(usize, &str)> = holes.iter().map(|(o, s)| (*o, s.as_str())).collect();
+    let lines = match lang {
+        // Highlighting is best-effort: a grammar error falls back to the same
+        // escaped plain text the no-language path emits (§5.5 — plain text is
+        // the floor, never an error).
+        Some(l) => highlight::highlight(&source, &hole_refs, l)
+            .unwrap_or_else(|_| plain_lines(&source, &holes)),
+        None => plain_lines(&source, &holes),
+    };
 
     let mut out = format!(
         "<details class=\"chunk\" open><summary><span class=\"chunk-name\">\
@@ -117,6 +123,56 @@ fn render_code(
     }
     out.push_str("</pre></details>");
     out
+}
+
+/// The `<a>` anchor a chunk-use hole renders as: the italic `<<name>>` label,
+/// linked to the section that defines `name` when there is one (§5.4).
+fn hole_anchor(name: &str, doc: &DocModel) -> String {
+    let target = doc
+        .chunks
+        .get(name)
+        .and_then(|c| c.defs.first())
+        .map(String::as_str);
+    let label = format!("&lt;<i>{}</i>&gt;", prose::escape(name));
+    match target {
+        Some(id) => format!("<a href=\"#{id}\">{label}</a>"),
+        None => label,
+    }
+}
+
+/// The no-highlight path: escape the clean buffer and splice the holes back,
+/// yielding one inner-HTML string per line. Mirrors `highlight::highlight`'s
+/// splice but without tokenization, so both paths agree on the plain-text
+/// payload byte-for-byte.
+fn plain_lines(source: &str, holes: &[(usize, String)]) -> Vec<String> {
+    let mut lines: Vec<String> = vec![String::new()];
+    let mut pos = 0;
+    let mut hi = 0;
+    while pos < source.len() {
+        while hi < holes.len() && holes[hi].0 == pos {
+            lines.last_mut().unwrap().push_str(&holes[hi].1);
+            hi += 1;
+        }
+        let next_hole = holes.get(hi).map_or(source.len(), |h| h.0);
+        let next_nl = source[pos..].find('\n').map_or(source.len(), |o| pos + o);
+        let stop = next_hole.min(next_nl);
+        if stop > pos {
+            lines
+                .last_mut()
+                .unwrap()
+                .push_str(&prose::escape(&source[pos..stop]));
+            pos = stop;
+        }
+        if pos == next_nl && pos < source.len() {
+            lines.push(String::new());
+            pos += 1;
+        }
+    }
+    while hi < holes.len() && holes[hi].0 == source.len() {
+        lines.last_mut().unwrap().push_str(&holes[hi].1);
+        hi += 1;
+    }
+    lines
 }
 
 /// The §9.1 provenance attributes plus the §9.3 margin slot. Present from M1
@@ -181,7 +237,9 @@ enum Frag {
 fn render_frags(
     doc: &DocModel,
     dialect: Dialect,
+    default_lang: Option<Lang>,
     math: &mut Vec<Math>,
+    lints: &mut Vec<Lint>,
 ) -> Result<Vec<Frag>, WeaveError> {
     let mut frags: Vec<Frag> = Vec::with_capacity(doc.sections.len());
     for section in &doc.sections {
@@ -212,8 +270,25 @@ fn render_frags(
                 spans,
                 ..
             } => {
+                // Resolve the language out of band (§5.5): the config default,
+                // else the chunk's own or its root's file extension. A chunk with
+                // real code but no known language is highlighted as plain text and
+                // earns one warning — never an error.
+                let lang = highlight::resolve(doc, name, default_lang);
+                let has_code = spans.iter().any(|s| !matches!(s, CodeSpan::Nl));
+                if lang.is_none() && has_code {
+                    lints.push(Lint {
+                        code: "W104",
+                        message: format!(
+                            "chunk <<{name}>> resolved to no known language; \
+                             rendered as plain text"
+                        ),
+                        file: section.file.clone(),
+                        line: section.line,
+                    });
+                }
                 // The `<<name>>=` line is `section.line`; the body opens after it.
-                let body = render_code(name, *continues, spans, section.line + 1, doc);
+                let body = render_code(name, *continues, spans, section.line + 1, doc, lang);
                 frags.push(Frag::Code(body));
             }
         }
@@ -250,7 +325,8 @@ pub fn mint_lock(
     minter: &mut Minter,
 ) -> Result<(), WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let frags = render_frags(doc, dialect, &mut math)?;
+    let mut lints: Vec<Lint> = Vec::new();
+    let frags = render_frags(doc, dialect, None, &mut math, &mut lints)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -283,13 +359,15 @@ pub fn render(
     doc: &DocModel,
     cache_root: &Path,
     dialect: Dialect,
+    default_lang: Option<Lang>,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
     minter: &mut Minter,
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let mut frags = render_frags(doc, dialect, &mut math)?;
+    let mut hl_lints: Vec<Lint> = Vec::new();
+    let mut frags = render_frags(doc, dialect, default_lang, &mut math, &mut hl_lints)?;
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -412,10 +490,13 @@ pub fn render(
 
     let json = site::build(doc, &res, &raws, site::Meta::default());
 
+    let mut lints = res.lints;
+    lints.extend(hl_lints);
+
     Ok(Site {
         pages,
         math_count: math.len(),
-        lints: res.lints,
+        lints,
         json,
     })
 }
@@ -490,12 +571,13 @@ pub fn write_site(
     lock_path: &Path,
     meta: site::Meta,
     dialect: Dialect,
+    default_lang: Option<Lang>,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, dialect, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, dialect, default_lang, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -551,9 +633,23 @@ mod tests {
     /// ids are deterministic within a test run (their exact value is arbitrary —
     /// `lock.rs` owns the minting contract).
     fn dev_render(doc: &DocModel, dialect: Dialect, embed: &str) -> Site {
+        dev_render_lang(doc, dialect, None, embed)
+    }
+
+    fn dev_render_lang(doc: &DocModel, dialect: Dialect, lang: Option<Lang>, embed: &str) -> Site {
         let mut lock = LockFile::default();
         let mut minter = Minter::seeded(1);
-        render(doc, &cache(), dialect, embed, &mut lock, LockMode::Mint, &mut minter).unwrap()
+        render(
+            doc,
+            &cache(),
+            dialect,
+            lang,
+            embed,
+            &mut lock,
+            LockMode::Mint,
+            &mut minter,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -566,6 +662,7 @@ mod tests {
             &book(),
             &cache(),
             Dialect::Html,
+            None,
             "",
             &mut lock,
             LockMode::Locked,
@@ -589,6 +686,38 @@ mod tests {
     /// The hello fixture opens with a single `<h1>`, so it is one `index` page.
     fn hello_html() -> String {
         dev_render(&fixture(), Dialect::Html, "").all_html()
+    }
+
+    /// Drop only the `tok-*` highlight wrappers, keeping `.line`/`.chunk-name`
+    /// spans and every text node, so a structural assertion can ignore coloring.
+    /// Relies on spans being properly nested (they are, by construction).
+    fn strip_tok(html: &str) -> String {
+        let mut out = String::new();
+        let mut span_is_tok: Vec<bool> = Vec::new();
+        let mut i = 0;
+        while i < html.len() {
+            let tail = &html[i..];
+            if tail.starts_with("<span") {
+                let end = i + tail.find('>').unwrap() + 1;
+                let tag = &html[i..end];
+                let is_tok = tag.contains("class=\"tok-");
+                span_is_tok.push(is_tok);
+                if !is_tok {
+                    out.push_str(tag);
+                }
+                i = end;
+            } else if tail.starts_with("</span>") {
+                if !span_is_tok.pop().unwrap_or(false) {
+                    out.push_str("</span>");
+                }
+                i += "</span>".len();
+            } else {
+                let c = tail.chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
+            }
+        }
+        out
     }
 
     #[test]
@@ -642,7 +771,9 @@ mod tests {
 
     #[test]
     fn code_body_is_html_escaped() {
-        let html = hello_html();
+        // hello.nw's root is `src/main.rs`, so its chunks now highlight as Rust
+        // (§5.5); the escaped plain-text payload must survive under the coloring.
+        let html = strip_tok(&hello_html());
         assert!(html.contains("println!(&quot;{count}&quot;);"));
         assert!(html.contains("let mut tokens = vec![];"));
     }
@@ -658,7 +789,9 @@ mod tests {
 
     #[test]
     fn line_numbers_are_nw_coordinates_in_attributes() {
-        let html = hello_html();
+        // Coloring nests inside each `.line`; strip it so the coordinate + payload
+        // invariant reads the same whether or not the chunk highlights.
+        let html = strip_tok(&hello_html());
         // fixtures/hello.nw: `<<next char>>=` is line 22, its one body line 23.
         assert!(html
             .contains("<span class=\"line\" data-line=\"23\">input.next().unwrap()</span></pre>"));
@@ -667,6 +800,38 @@ mod tests {
         assert!(html.contains("data-line=\"33\">    println!(&quot;{count}&quot;);</span>"));
         // Numbers are never text, so they cannot be copied or quoted.
         assert!(!html.contains(">23 input"));
+    }
+
+    #[test]
+    fn rust_root_chunks_are_highlighted_and_holes_stay_opaque() {
+        // hello.nw's root is `src/main.rs`, so tier-3 resolution colors it as Rust
+        // (§5.5): `let`/`fn` are keywords, the format string is a string token.
+        let html = hello_html();
+        assert!(html.contains("class=\"tok-keyword\">let</span>"));
+        assert!(html.contains("class=\"tok-string\">&quot;{count}&quot;</span>"));
+        // The chunk-use hole is spliced back verbatim and never wrapped in a color
+        // span — its `<a>` sits directly inside the `.line`, as §5.4 requires.
+        assert!(html.contains("<a href=\"#sec-8\">&lt;<i>next char</i>&gt;</a>"));
+        assert!(!html.contains("tok-") || !html.contains("tok-\">&lt;<i>"));
+    }
+
+    #[test]
+    fn a_no_language_chunk_falls_back_to_plain_text_with_one_warning() {
+        // A root whose name carries no known extension resolves to no language, so
+        // its body is emitted as plain escaped text and earns exactly one W104.
+        let doc = model_of(
+            "@file plain.nw\n\
+             @begin docs 0\n@text <h1>Plain</h1>\n@nl\n@end docs 0\n\
+             @begin code 1\n@defn notes.txt\n@nl\n\
+             @text let x = 1;\n@nl\n@end code 1\n",
+        );
+        let site = dev_render(&doc, Dialect::Html, "");
+        let html = site.all_html();
+        assert!(html.contains("<span class=\"line\" data-line=\"3\">let x = 1;</span>"));
+        assert!(!html.contains("tok-"));
+        let w104: Vec<_> = site.lints.iter().filter(|l| l.code == "W104").collect();
+        assert_eq!(w104.len(), 1);
+        assert!(w104[0].message.contains("notes.txt"));
     }
 
     #[test]

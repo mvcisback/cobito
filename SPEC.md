@@ -241,15 +241,24 @@ Resolution has three tiers, most specific wins:
 1. **Per-chunk override.** An optional `{lang=…}` on a code chunk's definition line
    (`<<lex a token>>= {lang=rust}`) names the language for that chunk. This is the escape
    hatch for a shell snippet inside a Rust document, or an abstract chunk whose name
-   carries no extension.
-2. **Project/file default.** `lit.toml` may set `[weave] lang = "rust"` for the document,
-   or a per-root default keyed by tangle target.
+   carries no extension. **Deferred (M14 first slice):** `markup` folds everything after
+   `<<name>>=` on the def line into the chunk body, so `{lang=rust}` there tokenizes as
+   source and cannot survive as written. Tier 1 needs a different markup-surviving surface
+   (a `lit.toml` per-chunk map, or a recognized magic first-comment line) — a separate
+   surface-syntax decision, not yet built.
+2. **Project/file default.** `lit.toml` may set `[weave] lang = "rust"` for the document.
+   (A per-root default keyed by tangle target is a deferred variant.)
 3. **Root file-extension.** With nothing else said, a chunk inherits the language of the
-   tangle root it flows into: `<<src/main.rs>>` ⇒ `rust` from `.rs`. Most chunks need no
-   configuration at all.
+   tangle root it flows into: `<<src/main.rs>>` ⇒ `rust` from `.rs`. A concrete chunk uses
+   its own extension; an abstract chunk (`<<lex a token>>`) is resolved by walking the
+   chunk-use graph to a root that reaches it. Most chunks need no configuration at all.
 
-A chunk that resolves to no known language is highlighted as plain text — a warning, not
-an error; the page still renders.
+A chunk that resolves to no known language is highlighted as plain text — a warning
+(**W104**), not an error; the page still renders.
+
+**Delivered in M14's first slice:** tiers 2 and 3 above, two grammars (Rust and Nix), the
+`lit language` resolver, and the `tok-*` palette. Tier 1, per-root defaults, and further
+grammars (one dependency each, §19.5) are deferred.
 
 **3. One resolver, shared by weave and editor.** The resolution above is implemented once
 and exposed as `lit language <file> <chunk>`, which prints the resolved language id (or
@@ -258,15 +267,23 @@ same command. There is exactly one source of truth for "what language is this ch
 so the docs and the editor can never disagree.
 
 **Weave-time pipeline.** Highlighting slots into §5.4's render *after* the chunk-use
-anchors exist and *within* each `<span class="line">`:
+anchors exist. tree-sitter needs the **whole chunk** as one buffer — a string or comment
+can span line breaks — so tokenization is per chunk, not per line span; the token runs are
+then re-split at the `\n`s back into the same self-contained `<span class="line">`s §5.4
+emits:
 
 ```
 per code chunk:
   lang ← lit language <file> <chunk>        (tier resolution above)
-  per line span:
-    holes ← the <a> chunk-use anchors, with their char offsets
-    tokens ← tree-sitter-highlight over the literal runs between holes
-    emit each token as <span class="tok-KIND">…</span>, holes spliced back verbatim
+  buffer ← the literal runs joined by \n, chunk uses removed but their
+           byte offset + anchor HTML recorded (the tokenizer never sees a hole)
+  events ← tree-sitter-highlight over buffer
+  walk the buffer once, merging events:
+    at a \n     → close open tok spans, close the .line, open the next (its data-line),
+                  reopen the tok spans
+    at a hole   → close open tok spans, emit the <a> anchor verbatim, reopen them
+                  (so a hole never sits inside a colored token)
+    otherwise   → HTML-escape the bytes into the current tok span
 ```
 
 The engine is **tree-sitter** (`tree-sitter-highlight`): one grammar per language, a
@@ -290,6 +307,18 @@ selection. This is the one unavoidable round-trip, and it is a feature: it is th
 answer the woven page shows. Editor injection is a plugin concern (Neovim
 `language-injection` callbacks, VS Code semantic-tokens), out of scope for the weaver, but
 the resolver command is lit's contract to it.
+
+**Future work: tangle-then-backout highlighting.** The slice above highlights each chunk
+*in isolation*, so a chunk body that is only a fragment (`count += 1;` with no enclosing
+`fn`) leans on tree-sitter's error recovery. The more correct design highlights the
+**tangled** program — complete, with full context — and repaints its token colors back
+onto the chunk view, so every token is colored exactly as the compiler would see it. That
+is blocked today by provenance: `notangle -L` emits *line*-granular breadcrumbs (which
+`.nw` line a tangled line came from) but says nothing about which tangled *columns* came
+from a chunk's own text versus an expanded `<<hole>>`. Mapping colors back needs
+**column-level tangle→chunk provenance**, which noweb throws away — a concrete motivation
+to eventually own or fork `notangle` (§11). Chunk-local highlighting is the interim; it is
+correct for whole-chunk roots and degrades gracefully to plain text for fragments.
 
 ## 6. The prose layer
 
@@ -693,6 +722,7 @@ Correct by construction, zero implementation risk. Cost: a runtime dependency on
 - We need distribution to non-Nix users where a static binary is the difference between adoption and not.
 - A noweb version difference breaks the golden tests (R1) and upstream is unresponsive — noweb is stable and largely unmaintained, which cuts both ways.
 - We need IR information `markup` does not expose, and preprocessing around it becomes more code than replacing it.
+- We need **column-level tangle→chunk provenance** for tangle-then-backout highlighting (§5.5): `notangle -L` records only *which line* a tangled line came from, not which *columns* are a chunk's own text versus an expanded `<<hole>>`. A lit-owned tangle can keep these breadcrumbs; noweb discards them. This is a concrete instance of the previous bullet — IR `notangle` does not expose — and the payoff (always-correct, full-context highlighting) is reader-facing.
 
 Until one of those bites, the dependency is a feature: it is a correct, battle-tested implementation we did not write, and it keeps `.nw` compatibility honest by construction rather than by test. When the time comes, the fixture corpus in §15 is already the acceptance test — differential byte-equality against `notangle`.
 
@@ -709,7 +739,7 @@ error[E014]: duplicate label `fig:pipeline`
 
 - Errors carry a stable code so they can be tested and suppressed individually.
 - Source locations come from the IR's `@file`/`@line`, which is why those tags are consumed even though tangle handles pragmas itself.
-- **Lints** (missing caption label, chunk defined but never used, empty docs chunk) are warnings; `--deny-warnings` for CI.
+- **Lints** (missing caption label, chunk defined but never used, empty docs chunk, code chunk resolved to no known language — W104, §5.5) are warnings; `--deny-warnings` for CI.
 - `lit weave --explain E014` prints the long form.
 
 ## 13. Self-hosting path
@@ -781,7 +811,7 @@ Because flakes only see git-tracked files, new files must be `git add`ed before 
 | **M11** | Stable ids & the lock file (§7.1): frozen 4-char base62 id per label — every float and every `sec:`-labelled section, the latter also stamped as a clickable permalink prefix — committed `lit.lock` (`label → { id, kind }`), references render kind-qualified with the id, weave mints-on-miss + writes back, `--locked` frozen mode (E031), `lit lock`/`lit labels`/`lit id` tooling; `site.json` → `schema: 2` |
 | **M12** | Import vs include/transclude (Forester-inspired): `import` brings another note's *definitions* into scope without rendering; `include`/`transclude` inlines another note's *rendered* content — composed at the model/prose layer, never a pre-`markup` `.nw` preprocessor (§11). Cross-note references use the opaque id (§7.1) |
 | **M13** | Self-host |
-| **M14** | Syntax highlighting (§5.5): tree-sitter tokenizing within each line span, chunk uses treated as opaque holes; three-tier language resolution (per-chunk `{lang=…}` → `lit.toml` default → root extension) behind a shared `lit language` resolver; `tok-*` CSS classes, no `<script>`; editor plugins consume the same resolver |
+| **M14** | Syntax highlighting (§5.5): tree-sitter over the whole chunk (chunk uses treated as opaque holes) re-split into the §5.4 line spans; three-tier language resolution (per-chunk `{lang=…}` → `lit.toml` default → root extension) behind a shared `lit language` resolver; `tok-*` CSS classes, no `<script>`; editor plugins consume the same resolver — **done (first slice):** tiers 2+3, grammars Rust + Nix, `lit language`, `tok-*` palette, W104 for a no-language chunk. Deferred: tier-1 `{lang=…}` (needs a markup-surviving surface), per-root defaults, further grammars (one dep each, §19.5), and tangle-then-backout highlighting (blocked on column-level provenance; §11) |
 
 **Not scheduled.** Replacing noweb with a Rust `markup`/`notangle` is a contingency with explicit triggers (§11), not a planned milestone. It is listed nowhere in this table on purpose.
 
@@ -812,12 +842,12 @@ behavior of the real toolchain that the code already depends on.
 
 ### 19.1 State of the repo
 
-Done (**M0, M1, M2, M3, M4 complete; M8 first slice complete**):
+Done (**M0, M1, M2, M3, M4 complete; M8 and M14 first slices complete**):
 
 - `src/markdown.rs` — the Markdown dialect (§6.4). `render(prose, &mut Vec<Math>)` protects fenced blocks (```` ```math ```` → numbered equation island; other fences → `<pre><code>`), reuses `prose::extract_math` for inline `$…$`, then renders CommonMark via `pulldown-cmark` (`Options::empty()`, no GFM). Selected per document by `Dialect` in `src/config.rs` (`markdown` default, `html` escape hatch), threaded through `weave::write_site`/`render`. `examples/ring.nw` is authored in it; `fixtures/md.nw`+`md.markup` is the end-to-end pair. Existing `hello`/`book` fixtures stay pinned in `html` mode so their byte-assertions hold.
 
 - `src/site.rs` — the §8 `site.json` model (serde), written only under `lit weave --archive`: `schema: 2` (label entries carry the frozen `id` of §7.1, not a `number`), `meta`, `nav`, `labels`, `chunks`, and `pages[].sections[]` with per-section prose `html` and (for docs) a `margin[]`. Owns the sidenote hoist — `<aside class="sidenote">` is lifted out of the JSON prose into `margin[]` with document-global `sn-N` ids, while the woven HTML keeps it inline with the same id. `to_json` is pretty + deterministic (`BTreeMap`s, no timestamps); `page_json` narrows `pages` to one, keeping `nav`/`labels`/`chunks` whole so a page stands alone.
-- `src/config.rs` — `lit.toml` parser (§5.2). Reads `[[document]]` (id/title/authors/files → `site.json` `meta`, plus `dialect` §6.1) and `[[tangle.root]]` `line-pragma` (a format string or `false`; the correct format is per-language, so a boolean can only disable). Absence is not an error. E029.
+- `src/config.rs` — `lit.toml` parser (§5.2). Reads `[[document]]` (id/title/authors/files → `site.json` `meta`, plus `dialect` §6.1), `[[tangle.root]]` `line-pragma` (a format string or `false`; the correct format is per-language, so a boolean can only disable), and `[weave] lang` (the tier-2 highlighting default, §5.5). Absence is not an error. E029.
 - `src/lock.rs` — the §7.1 lock: `LockFile` is committed TOML keyed `file → label → { id, kind }`, with a derived `used` id-set (rebuilt on load) for O(1) collision checks. `mint` is idempotent per label and re-rolls on collision; `Minter` is a hand-rolled SplitMix64 → four base62 chars (no `rand` dep), seeded from entropy in production and `seeded()` in tests so the minting contract is deterministic there. `LockMode::{Mint, Locked}` selects mint-on-miss vs. fail-on-miss (E031). `load` treats an absent file as empty; `save` is header-commented and byte-stable. E032. `lit lock`/`labels`/`id` and `weave`'s minting loop all go through it.
 - `src/diag.rs` — long-form text for `lit --explain <CODE>` (§12), keyed on the stable error registry.
 - `src/tangle.rs` — `lit tangle` shells out to `notangle` (SPEC §11). Whole-document mode enumerates roots from the model and writes each via temp-file+rename, skipping unchanged content (`created`/`updated`/`unchanged`). `-R name` passes straight through to notangle and prints to stdout (the name is glued to the flag — a separate `-R name` arg is read as a file). `--check` tangles to memory and diffs against disk, exit 1 on drift. Per-root line pragmas (`-L<fmt>`, glued like `-R`) come from `lit.toml`, off by default (§5.2). E027, E028. Covered by `checks.tangle` (differential vs. notangle) since the hermetic build has no noweb on PATH.
@@ -827,10 +857,11 @@ Done (**M0, M1, M2, M3, M4 complete; M8 first slice complete**):
 - `src/math.rs` — KaTeX at weave time with the FNV-1a content-hash disk cache. Cache writes are atomic (unique temp file + rename) so parallel weaves never read a half-written entry. E020.
 - `src/rewrite.rs` — §6.2 steps 3–5, the two-pass `lol_html` rewriter (open question G, §4.3). Pass one (`scan`) collects headings, fig/tbl/eq labels (in document order) and their kind, and `data-ref` sites without mutating; pass two (`apply`) stamps `data-id` (the frozen opaque id from the lock, §7.1), heading ids/anchors, and resolved `href`/generated link text from the plan. E026.
 - `src/resolve.rs` — document-global planning between the two passes: page assignment (first page always `index`, every later docs section opening with `<h1>` starts a page; code inherits), dash-escaped anchors, relative hrefs (`#anchor` same-page, `page.html#anchor` cross-page), the nav tree, and the W103 uncaptioned lint. E014 (duplicate label), E015 (unresolved ref).
-- `src/weave.rs` — model → multi-page site: build frags → scan pass → `resolve::plan` → apply pass → math render/substitute → sidenote hoist → group sections into pages → template each. §9.1 provenance attributes and §9.3 margin slots included from the start. Always assembles the §8 `SiteJson`; `--archive` writes `site.json` + one `<page>.json` per page beside the HTML. `lit weave <files> [--out dir] [--archive] [--locked] [--deny-warnings]`; between the scan and resolve passes it mints a frozen id per label into `lit.lock` (or, under `--locked`, requires each already present — E031; §7.1). `--deny-warnings` still writes the site but exits nonzero if any lint fired (CI). Idempotent into a populated `--out` (KaTeX dst removed first, since Nix-store copies are read-only). E023–E025, E031/E032. A sibling `lit lock` mints without rendering, and `lit labels`/`lit id` read the committed lock back.
-- `templates/page.html`, `templates/lit.css` — external Tufte templates via minijinja, `include_str!`'d so the binary stays self-contained. `page.html` has the recursive nav-tree macro and footer pagination; `lit.css` draws every float's identity from `data-id` (the opaque id of §7.1) and code line numbers from `data-line` (§5.4).
+- `src/weave.rs` — model → multi-page site: build frags → scan pass → `resolve::plan` → apply pass → math render/substitute → sidenote hoist → group sections into pages → template each. §9.1 provenance attributes and §9.3 margin slots included from the start. Always assembles the §8 `SiteJson`; `--archive` writes `site.json` + one `<page>.json` per page beside the HTML. `lit weave <files> [--out dir] [--archive] [--locked] [--deny-warnings]`; between the scan and resolve passes it mints a frozen id per label into `lit.lock` (or, under `--locked`, requires each already present — E031; §7.1). `--deny-warnings` still writes the site but exits nonzero if any lint fired (CI). Idempotent into a populated `--out` (KaTeX dst removed first, since Nix-store copies are read-only). E023–E025, E031/E032. A sibling `lit lock` mints without rendering, and `lit labels`/`lit id` read the committed lock back. `render_code` resolves each chunk's language via `highlight::resolve` and colors it (falling back to escaped plain text, with a W104 lint, when none resolves); `default_lang` (from `[weave] lang`) threads through `render`/`write_site`.
+- `src/highlight.rs` — syntax highlighting (§5.5). `enum Lang { Rust, Nix }` with `from_id`/`from_ext`/`id`; `resolve(doc, chunk, default)` is the tier-2+3 resolver (config default, else the chunk's own extension, else a walk of the chunk-use graph to a root that reaches it) shared by weave and `lit language`. `highlight(source, holes, lang)` runs `tree-sitter-highlight` over the whole clean buffer and merges the events into per-line inner HTML, closing/reopening `tok-*` spans at every `\n` and every hole so a chunk-use anchor is never wrapped in color. `HighlightConfiguration`s are built once per `Lang` and cached in a `thread_local`. Grammars pinned in `Cargo.lock`; each further language is one dep (§19.5).
+- `templates/page.html`, `templates/lit.css` — external Tufte templates via minijinja, `include_str!`'d so the binary stays self-contained. `page.html` has the recursive nav-tree macro and footer pagination; `lit.css` draws every float's identity from `data-id` (the opaque id of §7.1) and code line numbers from `data-line` (§5.4), and carries the `tok-*` highlight palette (§5.5).
 - `fixtures/book.nw` + `fixtures/book.markup` — the M2 golden pair: three `<h1>` boundaries, nested `<h2>/<h3>` nav, labelled figure/table/equation (plus a `data-nonumber` equation), a forward `data-ref`, a `chunk:` ref, and a sidenote. Regenerate the `.markup` the usual way (§4.2).
-- `flake.nix` — KaTeX dist pinned by `fetchzip` at the crate's version, exposed as `LIT_KATEX_ASSETS`. `checks.determinism` weaves `book.nw` twice **with `--archive`**, diffs bytes (HTML *and* JSON), asserts the three page files exist, that a cross-page ref resolves to `parsing.html#fig-pipeline`, that `site.json` is `schema: 1` with per-page JSON and a hoisted `sidenote` (no `<aside>` in the JSON prose), and fails if any `<script>` appears. `checks.tangle` is the notangle differential.
+- `flake.nix` — KaTeX dist pinned by `fetchzip` at the crate's version, exposed as `LIT_KATEX_ASSETS`. `checks.determinism` weaves `book.nw` twice **with `--archive`**, diffs bytes (HTML *and* JSON), asserts the three page files exist, that a cross-page ref resolves to `parsing.html#fig-pipeline`, that `site.json` is `schema: 1` with per-page JSON and a hoisted `sidenote` (no `<aside>` in the JSON prose), and fails if any `<script>` appears. It also weaves `fixtures/hl.nw` (Rust + Nix roots, each with a hole) twice, byte-diffs, and asserts `tok-keyword`/`tok-property`/`tok-string` spans exist, the chunk-use hole is spliced back outside any color span, and still no `<script>`. `checks.lock` asserts `lit language` resolves the Rust and Nix roots (and their abstract chunks) and exits nonzero on an unknown chunk. `checks.tangle` is the notangle differential.
 
 - `flake.nix` — devShell, `packages.lit`, `checks.{build,noweb-drift}`. All green via `nix flake check`.
 - `src/noweb.rs` — complete, tested parser for the `markup` IR (`Event` enum, `parse`, `run_markup`). `run_markup` finds `markup` on `PATH` (`LIT_MARKUP` overrides), fails on nonzero exit or `@fatal`, and surfaces noweb's own `file:line:` diagnostics.
@@ -922,8 +953,10 @@ Defer to M2: page splitting, nav, numbering, `data-ref`, Tufte CSS. M1's accepta
 | E030 | malformed fenced-float directive (`\label`/`\caption`, namespace) | `markdown.rs` (implemented) |
 | E031 | label absent from `lit.lock` under `--locked` (§7.1) | `lock.rs`/`weave.rs` (implemented) |
 | E032 | `lit.lock` unreadable, malformed, or unwritable (§7.1) | `lock.rs` (implemented) |
+| E033 | `[weave] lang` names an unknown language (§5.5) | `main.rs` (implemented) |
 | W102 | chunk defined but never used (non-root) | model (19.2) |
 | W103 | figure or table without a caption | `resolve.rs` (implemented) |
+| W104 | code chunk resolved to no known language; rendered plain (§5.5) | `weave.rs` (implemented) |
 
 Follow the §12 format. New codes: claim the next free number here when you add one.
 

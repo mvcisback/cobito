@@ -261,6 +261,30 @@ details.chunk a:hover {
   text-decoration: underline;
 }
 
+/* --- Syntax highlighting (SPEC.md §5.5) ---------------------------------- *
+ * Pure classes over the existing bytes: no injected text, no <script>, so the
+ * copy-paste payload, data-line numbers, and annotation quote selectors all
+ * survive untouched. A chunk-use hole is never wrapped in one of these — its
+ * <a> stays opaque. A restrained, warm palette to sit inside Tufte's cream. */
+.tok-keyword { color: #9a3327; }
+.tok-string { color: #4d6a1f; }
+.tok-escape { color: #9a3327; }
+.tok-comment { color: var(--faint); font-style: italic; }
+.tok-function { color: #3a5a8a; }
+.tok-type,
+.tok-constructor { color: #6a3b7a; }
+.tok-module { color: #6a3b7a; }
+.tok-number,
+.tok-constant { color: #7a3b2e; }
+.tok-attribute,
+.tok-property { color: #4a4a8a; }
+.tok-operator { color: #6a6a5a; }
+.tok-punctuation { color: #8a8674; }
+.tok-label,
+.tok-tag { color: #9a3327; }
+/* .tok-variable stays --ink: the default text color, so plain identifiers read
+   as prose, not decoration. */
+
 code {
   font-family: "Iosevka", "DejaVu Sans Mono", monospace;
   font-size: 0.9em;
