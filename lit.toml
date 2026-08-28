@@ -1,0 +1,25 @@
+# Highlighting overrides for flake.nix.nw (SPEC.md §5.5, tier 1).
+#
+# flake.nix.nw is a Nix document, so every chunk resolves to `nix` by the
+# root-extension rule (tier 3). The check bodies are shell scripts, not Nix, so
+# each script chunk is marked `bash` here. This map is out-of-band config, so it
+# survives `markup`; an inline `<<name>>= {lang=bash}` would not.
+#
+# The keys are chunk names unique to flake.nix.nw, so this map has no effect on
+# the fixture weaves (book/ring/md/hl) that run in the same directory.
+[weave.chunk-lang]
+"determinism script" = "bash"
+"weave the book fixture, twice" = "bash"
+"assert the opaque-id scheme" = "bash"
+"assert the archival contract" = "bash"
+"assert the markdown dialect" = "bash"
+"assert syntax highlighting" = "bash"
+"lock check script" = "bash"
+"assert the frozen label lock" = "bash"
+"assert the language resolver" = "bash"
+"tangle check script" = "bash"
+"noweb-drift script" = "bash"
+"dogfood script" = "bash"
+"assert the flake round-trips" = "bash"
+"assert lit highlights its own nix" = "bash"
+"selfhost script" = "bash"

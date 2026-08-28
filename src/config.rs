@@ -55,6 +55,12 @@ pub struct Weave {
     /// `"nix"`. Absent means fall back to the tangle-root file extension.
     #[serde(default)]
     pub lang: Option<String>,
+    /// The `[weave.chunk-lang]` map (tier 1, §5.5): chunk name → language id, the
+    /// per-chunk override that wins over `lang` and the extension fallback. It is
+    /// out-of-band config, so it survives `markup` where an inline `{lang=…}`
+    /// would not. `BTreeMap` keeps the deserialized order deterministic.
+    #[serde(rename = "chunk-lang", default)]
+    pub chunk_lang: BTreeMap<String, String>,
 }
 
 /// One document's identity and file set (§5.2). A project may declare several;
@@ -235,6 +241,23 @@ mod tests {
         assert_eq!(c.document().unwrap().dialect, Dialect::Markdown);
         let c = parse("[[document]]\nid = \"a\"\ndialect = \"html\"\n");
         assert_eq!(c.document().unwrap().dialect, Dialect::Html);
+    }
+
+    #[test]
+    fn weave_lang_and_chunk_lang_map_are_read() {
+        let c = parse(
+            r#"
+            [weave]
+            lang = "nix"
+
+            [weave.chunk-lang]
+            "the drift check" = "bash"
+            "the lock check" = "bash"
+            "#,
+        );
+        assert_eq!(c.weave.lang.as_deref(), Some("nix"));
+        assert_eq!(c.weave.chunk_lang.get("the drift check").map(String::as_str), Some("bash"));
+        assert_eq!(c.weave.chunk_lang.get("the lock check").map(String::as_str), Some("bash"));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::config::Dialect;
-use crate::highlight::{self, Lang};
+use crate::highlight::{self, Lang, LangConfig};
 use crate::lock::{LockError, LockFile, LockMode, Minter};
 use crate::markdown;
 use crate::math::{MathError, Renderer};
@@ -237,7 +237,7 @@ enum Frag {
 fn render_frags(
     doc: &DocModel,
     dialect: Dialect,
-    default_lang: Option<Lang>,
+    lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
     lints: &mut Vec<Lint>,
 ) -> Result<Vec<Frag>, WeaveError> {
@@ -274,7 +274,7 @@ fn render_frags(
                 // else the chunk's own or its root's file extension. A chunk with
                 // real code but no known language is highlighted as plain text and
                 // earns one warning — never an error.
-                let lang = highlight::resolve(doc, name, default_lang);
+                let lang = highlight::resolve(doc, name, lang_cfg);
                 let has_code = spans.iter().any(|s| !matches!(s, CodeSpan::Nl));
                 if lang.is_none() && has_code {
                     lints.push(Lint {
@@ -326,7 +326,9 @@ pub fn mint_lock(
 ) -> Result<(), WeaveError> {
     let mut math: Vec<Math> = Vec::new();
     let mut lints: Vec<Lint> = Vec::new();
-    let frags = render_frags(doc, dialect, None, &mut math, &mut lints)?;
+    // Minting only needs labels/floats, not colors, so the language config is empty.
+    let lang_cfg = LangConfig::default();
+    let frags = render_frags(doc, dialect, &lang_cfg, &mut math, &mut lints)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -359,7 +361,7 @@ pub fn render(
     doc: &DocModel,
     cache_root: &Path,
     dialect: Dialect,
-    default_lang: Option<Lang>,
+    lang_cfg: &LangConfig,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
@@ -367,7 +369,7 @@ pub fn render(
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, dialect, default_lang, &mut math, &mut hl_lints)?;
+    let mut frags = render_frags(doc, dialect, lang_cfg, &mut math, &mut hl_lints)?;
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -571,13 +573,13 @@ pub fn write_site(
     lock_path: &Path,
     meta: site::Meta,
     dialect: Dialect,
-    default_lang: Option<Lang>,
+    lang_cfg: &LangConfig,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, dialect, default_lang, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, dialect, lang_cfg, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -639,11 +641,12 @@ mod tests {
     fn dev_render_lang(doc: &DocModel, dialect: Dialect, lang: Option<Lang>, embed: &str) -> Site {
         let mut lock = LockFile::default();
         let mut minter = Minter::seeded(1);
+        let lang_cfg = LangConfig::with_default(lang);
         render(
             doc,
             &cache(),
             dialect,
-            lang,
+            &lang_cfg,
             embed,
             &mut lock,
             LockMode::Mint,
@@ -658,11 +661,12 @@ mod tests {
         // supply their frozen ids, so weave must fail with E031 rather than mint.
         let mut lock = LockFile::default();
         let mut minter = Minter::seeded(1);
+        let lang_cfg = LangConfig::default();
         let err = match render(
             &book(),
             &cache(),
             Dialect::Html,
-            None,
+            &lang_cfg,
             "",
             &mut lock,
             LockMode::Locked,

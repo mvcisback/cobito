@@ -238,14 +238,15 @@ shift operator.
 **2. The language is resolved out of band, once, by lit — not guessed by the engine.**
 Resolution has three tiers, most specific wins:
 
-1. **Per-chunk override.** An optional `{lang=…}` on a code chunk's definition line
-   (`<<lex a token>>= {lang=rust}`) names the language for that chunk. This is the escape
-   hatch for a shell snippet inside a Rust document, or an abstract chunk whose name
-   carries no extension. **Deferred (M14 first slice):** `markup` folds everything after
-   `<<name>>=` on the def line into the chunk body, so `{lang=rust}` there tokenizes as
-   source and cannot survive as written. Tier 1 needs a different markup-surviving surface
-   (a `lit.toml` per-chunk map, or a recognized magic first-comment line) — a separate
-   surface-syntax decision, not yet built.
+1. **Per-chunk override.** `lit.toml` may map a chunk name to a language in a
+   `[weave.chunk-lang]` table (`"the drift check" = "bash"`). This is the escape hatch for
+   a shell snippet inside a Rust document, or an abstract chunk whose name carries no
+   extension. The map is out-of-band config, so it survives `markup`, which folds
+   everything after `<<name>>=` on the def line into the chunk body — an *inline* `{lang=…}`
+   there would tokenize as source and cannot survive as written. **Deferred:** that inline
+   `<<name>>= {lang=rust}` surface, which needs a markup-surviving syntax (a recognized
+   magic first-comment line, or a `markup` change); the `lit.toml` map covers the same need
+   today.
 2. **Project/file default.** `lit.toml` may set `[weave] lang = "rust"` for the document.
    (A per-root default keyed by tangle target is a deferred variant.)
 3. **Root file-extension.** With nothing else said, a chunk inherits the language of the
@@ -256,9 +257,10 @@ Resolution has three tiers, most specific wins:
 A chunk that resolves to no known language is highlighted as plain text — a warning
 (**W104**), not an error; the page still renders.
 
-**Delivered in M14's first slice:** tiers 2 and 3 above, two grammars (Rust and Nix), the
-`lit language` resolver, and the `tok-*` palette. Tier 1, per-root defaults, and further
-grammars (one dependency each, §19.5) are deferred.
+**Delivered in M14:** all three tiers — tier 1 via the `[weave.chunk-lang]` map, tier 2 via
+`[weave] lang`, tier 3 via the root/chunk-name extension — three grammars (Rust, Nix, Bash),
+the `lit language` resolver, and the `tok-*` palette. Per-root defaults, the inline
+`{lang=…}` surface, and further grammars (one dependency each, §19.5) are deferred.
 
 **3. One resolver, shared by weave and editor.** The resolution above is implemented once
 and exposed as `lit language <file> <chunk>`, which prints the resolved language id (or
@@ -813,7 +815,7 @@ Because flakes only see git-tracked files, new files must be `git add`ed before 
 | **M11** | Stable ids & the lock file (§7.1): frozen 4-char base62 id per label — every float and every `sec:`-labelled section, the latter also stamped as a clickable permalink prefix — committed `lit.lock` (`label → { id, kind }`), references render kind-qualified with the id, weave mints-on-miss + writes back, `--locked` frozen mode (E031), `lit lock`/`lit labels`/`lit id` tooling; `site.json` → `schema: 2` |
 | **M12** | Import vs include/transclude (Forester-inspired): `import` brings another note's *definitions* into scope without rendering; `include`/`transclude` inlines another note's *rendered* content — composed at the model/prose layer, never a pre-`markup` `.nw` preprocessor (§11). Cross-note references use the opaque id (§7.1) |
 | **M13** | Self-host |
-| **M14** | Syntax highlighting (§5.5): tree-sitter over the whole chunk (chunk uses treated as opaque holes) re-split into the §5.4 line spans; three-tier language resolution (per-chunk `{lang=…}` → `lit.toml` default → root extension) behind a shared `lit language` resolver; `tok-*` CSS classes, no `<script>`; editor plugins consume the same resolver — **done (first slice):** tiers 2+3, grammars Rust + Nix, `lit language`, `tok-*` palette, W104 for a no-language chunk. Deferred: tier-1 `{lang=…}` (needs a markup-surviving surface), per-root defaults, further grammars (one dep each, §19.5), and tangle-then-backout highlighting (blocked on column-level provenance; §11) |
+| **M14** | Syntax highlighting (§5.5): tree-sitter over the whole chunk (chunk uses treated as opaque holes) re-split into the §5.4 line spans; three-tier language resolution (per-chunk `{lang=…}` → `lit.toml` default → root extension) behind a shared `lit language` resolver; `tok-*` CSS classes, no `<script>`; editor plugins consume the same resolver — **done:** all three tiers (tier 1 via the `[weave.chunk-lang]` map, tier 2 `[weave] lang`, tier 3 root/chunk-name extension), grammars Rust + Nix + Bash, `lit language`, `tok-*` palette, W104 for a no-language chunk. Deferred: inline `{lang=…}` surface (needs a markup-surviving syntax), per-root defaults, further grammars (one dep each, §19.5), and tangle-then-backout highlighting (blocked on column-level provenance; §11) |
 
 **Not scheduled.** Replacing noweb with a Rust `markup`/`notangle` is a contingency with explicit triggers (§11), not a planned milestone. It is listed nowhere in this table on purpose.
 
@@ -955,7 +957,7 @@ Defer to M2: page splitting, nav, numbering, `data-ref`, Tufte CSS. M1's accepta
 | E030 | malformed fenced-float directive (`\label`/`\caption`, namespace) | `markdown.rs` (implemented) |
 | E031 | label absent from `lit.lock` under `--locked` (§7.1) | `lock.rs`/`weave.rs` (implemented) |
 | E032 | `lit.lock` unreadable, malformed, or unwritable (§7.1) | `lock.rs` (implemented) |
-| E033 | `[weave] lang` names an unknown language (§5.5) | `main.rs` (implemented) |
+| E033 | `[weave] lang` or a `[weave.chunk-lang]` value names an unknown language (§5.5) | `main.rs` (implemented) |
 | W102 | chunk defined but never used (non-root) | model (19.2) |
 | W103 | figure or table without a caption | `resolve.rs` (implemented) |
 | W104 | code chunk resolved to no known language; rendered plain (§5.5) | `weave.rs` (implemented) |

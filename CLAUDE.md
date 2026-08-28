@@ -48,9 +48,11 @@ or they silently won't exist. Do not commit unless asked.
   quote selectors survive. A chunk-use `<<hole>>` stays opaque: tree-sitter tokens
   only the literal runs between holes and the `<a>` anchor is spliced back outside
   any color span. Language is resolved out of band by `highlight::resolve` (the same
-  logic `lit language <file> <chunk>` prints): `[weave] lang` in `lit.toml`, else
-  the tangle root's file extension. A chunk with no known language is plain text +
-  a W104 warning, never an error. Grammars (Rust, Nix) are one dep each (§19.5).
+  logic `lit language <file> <chunk>` prints), most specific tier first: a
+  `[weave.chunk-lang]` per-chunk map in `lit.toml`, else `[weave] lang`, else the
+  chunk's own or its tangle root's file extension. A chunk with no known language is
+  plain text + a W104 warning, never an error; an unknown id in either `[weave]` key
+  is E033. Grammars (Rust, Nix, Bash) are one dep each (§19.5).
 - `flake.nix` is **generated** from `flake.nix.nw` — lit's own build file told as a
   literate program (the first self-host dogfood, SPEC.md §13). Edit the `.nw` and
   re-tangle (`lit tangle flake.nix.nw --out .`), never hand-edit `flake.nix`. The

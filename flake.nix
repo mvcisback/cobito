@@ -264,6 +264,28 @@
           fi
           touch $out
         '';
+
+        # Self-host (§13): each src/*.rs.nw is a lit module told as a literate
+        # program. `lit tangle --check` proves it still tangles byte-for-byte to
+        # the committed .rs, so the literate source and the bootstrap never drift.
+        selfhost = pkgs.runCommand "lit-selfhost" { } ''
+          cd ${self}
+          lit=${self.packages.${system}.lit}/bin/lit
+          # Every module .nw must tangle byte-identically to its committed .rs.
+          for nw in src/*.rs.nw; do
+            $lit tangle --check "$nw" --out .
+          done
+          # Weave one module to prove lit renders its own Rust source: keywords and
+          # strings colour, and the page needs no <script> (§5.5/§6.3).
+          $lit weave --locked src/diag.rs.nw --out $TMPDIR/sh
+          grep -q 'class="tok-keyword">' $TMPDIR/sh/index.html
+          grep -q 'class="tok-string">' $TMPDIR/sh/index.html
+          if grep -q '<script' $TMPDIR/sh/index.html; then
+            echo "self-host weave emitted <script>; coloring must be pure CSS" >&2
+            exit 1
+          fi
+          touch $out
+        '';
       });
     };
 }

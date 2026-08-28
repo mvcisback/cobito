@@ -161,17 +161,14 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     } else {
         lock::LockMode::Mint
     };
-    // The document-wide highlighting default (tier 2, §5.5). An unknown name is a
-    // config error, not a silent fallback — a typo'd `lang` should be caught.
-    let default_lang = match cfg.weave.lang.as_deref() {
-        None => None,
-        Some(name) => match highlight::Lang::from_id(name) {
-            Some(l) => Some(l),
-            None => {
-                eprintln!("error[E033]: lit.toml: [weave] lang = \"{name}\" is not a known language");
-                return ExitCode::FAILURE;
-            }
-        },
+    // The highlighting config (tiers 1+2, §5.5). An unknown name is a config error,
+    // not a silent fallback — a typo'd language should be caught.
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
     };
     match weave::write_site(
         &doc,
@@ -180,7 +177,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         Path::new("lit.lock"),
         meta,
         dialect,
-        default_lang,
+        &lang_cfg,
         archive,
         mode,
     ) {
@@ -304,6 +301,28 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
     }
 }
 
+/// Build the resolved highlighting config from `[weave]` (§5.5), validating every
+/// language id. An unknown name — in `lang` or any `[weave.chunk-lang]` value — is
+/// a config error (E033), not a silent fallback, so a typo is caught, not ignored.
+fn lang_config(weave: &config::Weave) -> Result<highlight::LangConfig, String> {
+    let parse = |name: &str, where_: &str| match highlight::Lang::from_id(name) {
+        Some(l) => Ok(l),
+        None => Err(format!(
+            "error[E033]: lit.toml: {where_} = \"{name}\" is not a known language"
+        )),
+    };
+    let default = match weave.lang.as_deref() {
+        None => None,
+        Some(name) => Some(parse(name, "[weave] lang")?),
+    };
+    let mut chunk_lang = std::collections::HashMap::new();
+    for (chunk, name) in &weave.chunk_lang {
+        let where_ = format!("[weave.chunk-lang] \"{chunk}\"");
+        chunk_lang.insert(chunk.clone(), parse(name, &where_)?);
+    }
+    Ok(highlight::LangConfig { default, chunk_lang })
+}
+
 /// `lit language <file> <chunk>`: print the highlighting language lit resolves for
 /// a chunk (§5.5) — the shared resolver the weaver and any editor plugin agree on.
 /// Exits nonzero when the chunk resolves to no known language, so a build can gate
@@ -331,17 +350,14 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let default_lang = match cfg.weave.lang.as_deref() {
-        None => None,
-        Some(name) => match highlight::Lang::from_id(name) {
-            Some(l) => Some(l),
-            None => {
-                eprintln!("error[E033]: lit.toml: [weave] lang = \"{name}\" is not a known language");
-                return ExitCode::FAILURE;
-            }
-        },
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
     };
-    match highlight::resolve(&doc, chunk, default_lang) {
+    match highlight::resolve(&doc, chunk, &lang_cfg) {
         Some(lang) => {
             println!("{}", lang.id());
             ExitCode::SUCCESS

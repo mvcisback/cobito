@@ -22,6 +22,7 @@ use crate::prose;
 pub enum Lang {
     Rust,
     Nix,
+    Bash,
 }
 
 impl Lang {
@@ -30,14 +31,17 @@ impl Lang {
         match self {
             Lang::Rust => "rust",
             Lang::Nix => "nix",
+            Lang::Bash => "bash",
         }
     }
 
-    /// Parse the `[weave] lang` value (§5.5 tier 2). Unknown ⇒ `None`.
+    /// Parse a language id from config (`[weave] lang`, `[weave.chunk-lang]`).
+    /// Unknown ⇒ `None`.
     pub fn from_id(id: &str) -> Option<Lang> {
         match id {
             "rust" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
+            "bash" => Some(Lang::Bash),
             _ => None,
         }
     }
@@ -47,6 +51,7 @@ impl Lang {
         match ext {
             "rs" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
+            "sh" | "bash" => Some(Lang::Bash),
             _ => None,
         }
     }
@@ -57,13 +62,38 @@ impl Lang {
     }
 }
 
-/// §5.5 tier 2 + tier 3 resolution. Tier 1 (`{lang=…}` per chunk) is deferred.
+/// The resolved highlighting configuration for a document (§5.5). `default` is the
+/// document-wide `[weave] lang` (tier 2); `chunk_lang` is the `[weave.chunk-lang]`
+/// map (tier 1), keyed by chunk name. Both are already parsed to `Lang`, so an
+/// unknown id is rejected once, at config-load time, not here.
+#[derive(Debug, Default, Clone)]
+pub struct LangConfig {
+    pub default: Option<Lang>,
+    pub chunk_lang: HashMap<String, Lang>,
+}
+
+impl LangConfig {
+    /// A document-wide default with no per-chunk overrides (what tests build).
+    #[cfg(test)]
+    pub fn with_default(default: Option<Lang>) -> LangConfig {
+        LangConfig {
+            default,
+            chunk_lang: HashMap::new(),
+        }
+    }
+}
+
+/// §5.5 language resolution, most specific tier first.
 ///
-/// `default` is the document-wide `[weave] lang`; when set it wins for every chunk.
-/// Otherwise a chunk resolves from its own extension, or — for an abstract chunk —
-/// from the extension of a tangle root that transitively uses it.
-pub fn resolve(doc: &DocModel, chunk: &str, default: Option<Lang>) -> Option<Lang> {
-    if let Some(lang) = default {
+/// 1. Tier 1 — an explicit `[weave.chunk-lang]` entry for this exact chunk.
+/// 2. Tier 2 — the document-wide `[weave] lang` default.
+/// 3. Tier 3 — the chunk's own name extension, or the extension of a tangle root
+///    that transitively uses it.
+pub fn resolve(doc: &DocModel, chunk: &str, cfg: &LangConfig) -> Option<Lang> {
+    if let Some(&lang) = cfg.chunk_lang.get(chunk) {
+        return Some(lang);
+    }
+    if let Some(lang) = cfg.default {
         return Some(lang);
     }
     if let Some(lang) = Lang::from_name(chunk) {
@@ -189,6 +219,7 @@ fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
     let (language, query) = match lang {
         Lang::Rust => (tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY),
         Lang::Nix => (tree_sitter_nix::LANGUAGE, tree_sitter_nix::HIGHLIGHTS_QUERY),
+        Lang::Bash => (tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY),
     };
     let mut cfg = HighlightConfiguration::new(language.into(), lang.id(), query, "", "")
         .map_err(|e| HlError(e.to_string()))?;
@@ -365,15 +396,26 @@ mod tests {
     }
 
     #[test]
+    fn resolve_prefers_a_chunk_lang_override() {
+        // Tier 1 wins over the chunk's own `.rs` extension (tier 3) and the default.
+        let doc = model_from("@file t.nw\n@begin code 0\n@defn build.rs\n@nl\n@text x\n@nl\n@end code 0\n");
+        let mut cfg = LangConfig::with_default(Some(Lang::Rust));
+        cfg.chunk_lang.insert("build.rs".to_string(), Lang::Bash);
+        assert_eq!(resolve(&doc, "build.rs", &cfg), Some(Lang::Bash));
+    }
+
+    #[test]
     fn resolve_prefers_the_document_default() {
         let doc = model_from("@file t.nw\n@begin code 0\n@defn a.rs\n@nl\n@text x\n@nl\n@end code 0\n");
-        assert_eq!(resolve(&doc, "a.rs", Some(Lang::Nix)), Some(Lang::Nix));
+        let cfg = LangConfig::with_default(Some(Lang::Nix));
+        assert_eq!(resolve(&doc, "a.rs", &cfg), Some(Lang::Nix));
     }
 
     #[test]
     fn resolve_uses_the_chunk_name_extension() {
         let doc = model_from("@file t.nw\n@begin code 0\n@defn flake.nix\n@nl\n@text x\n@nl\n@end code 0\n");
-        assert_eq!(resolve(&doc, "flake.nix", None), Some(Lang::Nix));
+        let cfg = LangConfig::default();
+        assert_eq!(resolve(&doc, "flake.nix", &cfg), Some(Lang::Nix));
     }
 
     #[test]
@@ -383,13 +425,22 @@ mod tests {
                   @begin code 0\n@defn src/main.rs\n@nl\n@text f(\n@use helper\n@text )\n@nl\n@end code 0\n\
                   @begin code 1\n@defn helper\n@nl\n@text 1\n@nl\n@end code 1\n";
         let doc = model_from(ir);
-        assert_eq!(resolve(&doc, "helper", None), Some(Lang::Rust));
+        let cfg = LangConfig::default();
+        assert_eq!(resolve(&doc, "helper", &cfg), Some(Lang::Rust));
     }
 
     #[test]
     fn resolve_gives_up_on_an_unknown_language() {
         let ir = "@file t.nw\n@begin code 0\n@defn notes.txt\n@nl\n@text x\n@nl\n@end code 0\n";
         let doc = model_from(ir);
-        assert_eq!(resolve(&doc, "notes.txt", None), None);
+        let cfg = LangConfig::default();
+        assert_eq!(resolve(&doc, "notes.txt", &cfg), None);
+    }
+
+    #[test]
+    fn bash_highlights() {
+        let lines = highlight("if true; then\n  echo hi\nfi", &[], Lang::Bash).unwrap();
+        let all = lines.join("\n");
+        assert!(all.contains("tok-"), "bash produced no token spans: {all}");
     }
 }
