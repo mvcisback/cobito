@@ -18,23 +18,41 @@
         url = "https://github.com/KaTeX/KaTeX/releases/download/v${katexVersion}/katex.tar.gz";
         sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
       };
+
+      # One buildRustPackage, applied to two source trees (the bootstrap seed and
+      # the tangled .nw). noweb's pipeline stages (markup, nt, ...) live in
+      # lib/noweb, not bin — see SPEC.md §4.2 — so the wrapper adds both to PATH.
+      mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
+        pname = "lit";
+        version = "0.1.0";
+        inherit src;
+        cargoLock.lockFile = ./Cargo.lock;
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        postFixup = ''
+          wrapProgram $out/bin/lit \
+            --prefix PATH : ${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb \
+            --set LIT_KATEX_ASSETS ${katexAssets pkgs}
+        '';
+      };
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        lit = pkgs.rustPlatform.buildRustPackage {
-          pname = "lit";
-          version = "0.1.0";
-          src = self;
-          cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          # noweb's pipeline stages (markup, nt, ...) live in lib/noweb,
-          # not bin — see SPEC.md §4.2.
-          postFixup = ''
-            wrapProgram $out/bin/lit \
-              --prefix PATH : ${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb \
-              --set LIT_KATEX_ASSETS ${katexAssets pkgs}
-          '';
-        };
+        # Stage 0: build the tangler from the committed seed (the permanent
+        # bootstrap, §13). Stage 1 below rebuilds it from the tangled .nw.
+        litBootstrap = mkLit pkgs self;
+        # Stage 0 tangles every .nw over the seed, so stage 1 compiles from the
+        # literate sources, not the hand-committed .rs/.css (§13). templates/lit.css
+        # is include_str!'d into the weaver, so it must be tangled here too.
+        litSource = pkgs.runCommand "lit-src" { } ''
+          cp -r ${self} $out
+          chmod -R +w $out
+          cd $out
+          for nw in src/*.rs.nw templates/lit.css.nw; do
+            ${litBootstrap}/bin/lit tangle "$nw" --out .
+          done
+        '';
+        # Stage 1: the real package, compiled from the .nw-derived sources.
+        lit = mkLit pkgs litSource;
         # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
         # very output was built from — the dogfood loop as a buildable artifact
         # (SPEC.md §13). checks.dogfood diffs the committed file against this.

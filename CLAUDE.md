@@ -61,6 +61,15 @@ or they silently won't exist. Do not commit unless asked.
   tangle can run); `checks.dogfood` runs `lit tangle --check flake.nix.nw` so the two
   never drift, and weaves the page to prove lit highlights its own Nix. Nix is the
   reason the second grammar exists.
+- **The whole crate + stylesheet are literate and the flip is in (§13).** Every
+  `src/*.rs.nw` and `templates/lit.css.nw` tangles byte-for-byte to its committed
+  artifact (`checks.selfhost`). Edit the `.nw`, re-tangle (`lit tangle X.nw --out .`),
+  never hand-edit the generated `.rs`/`.css`. The flake builds in **two stages**:
+  `packages.litBootstrap` (stage 0) compiles from the committed seed, tangles every
+  `.nw` into `packages.litSource`, and `packages.lit` (stage 1, the `default`) compiles
+  from that tangled tree — so the shipped binary is built from the `.nw`. The committed
+  `.rs`/`.css` are the bootstrap seed only; `checks.selfhost` proving seed == tangle is
+  what makes the two-stage build safe.
 - A labelled float's identity is a **frozen opaque id** (four base62 chars),
   minted once and stored in the committed `lit.lock` (keyed `file → label →
   {id, kind}`), never a sequential number — so a reference ("Figure k3f9")

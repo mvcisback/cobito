@@ -30,6 +30,8 @@ gives the `packages`, `devShells`, and `checks`.
       <<system iteration>>
 
       <<pinned katex assets>>
+
+      <<the lit builder>>
     in
     {
       packages = eachSystem (system: pkgs: rec {
@@ -77,28 +79,67 @@ katexAssets = pkgs: pkgs.fetchzip {
   sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
 };
 @
-## The package
+## The builder
 
-The package is a `buildRustPackage` with one special step. The pipeline stages
-of noweb (`markup`, `nt`, and more) are in `lib/noweb`, not in `bin`. The `lit`
-binary needs these stages and the KaTeX assets at run time. `postFixup` wraps
-the binary. The wrap puts noweb on `PATH` and sets `LIT_KATEX_ASSETS` to the
-assets. The build of the package also runs the hermetic cargo tests.
-<<the lit package>>=
-lit = pkgs.rustPlatform.buildRustPackage {
+One function builds a `lit` from a source tree. It is a `buildRustPackage` with
+one special step. The pipeline stages of noweb (`markup`, `nt`, and more) are in
+`lib/noweb`, not in `bin`. The `lit` binary needs these stages and the KaTeX
+assets at run time. `postFixup` wraps the binary. The wrap puts noweb on `PATH`
+and sets `LIT_KATEX_ASSETS` to the assets. The build of the package also runs the
+hermetic cargo tests. The function takes the source tree, so the flake can build
+the same crate from the committed seed and from the tangled `.nw` sources.
+<<the lit builder>>=
+# One buildRustPackage, applied to two source trees (the bootstrap seed and
+# the tangled .nw). noweb's pipeline stages (markup, nt, ...) live in
+# lib/noweb, not bin — see SPEC.md §4.2 — so the wrapper adds both to PATH.
+mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
   pname = "lit";
   version = "0.1.0";
-  src = self;
+  inherit src;
   cargoLock.lockFile = ./Cargo.lock;
   nativeBuildInputs = [ pkgs.makeWrapper ];
-  # noweb's pipeline stages (markup, nt, ...) live in lib/noweb,
-  # not bin — see SPEC.md §4.2.
   postFixup = ''
     wrapProgram $out/bin/lit \
       --prefix PATH : ${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb \
       --set LIT_KATEX_ASSETS ${katexAssets pkgs}
   '';
 };
+@
+## The package: two stages
+
+lit builds in two stages, so the literate `.nw` sources are the true source of
+lit (SPEC.md §13). Stage 0 is `litBootstrap`. It builds from the committed
+`.rs` and `.css` files. This seed is the permanent bootstrap, because a tangler
+must exist before anything can be tangled. Stage 0 then tangles every `.nw`
+source over the seed. This makes `litSource`, a fresh tree in which the `.rs`
+and `.css` come from the `.nw`. Stage 1 is `lit`. It builds from `litSource` and
+is the default package. The `selfhost` check proves the seed and the tangle
+agree, byte for byte, so the two stages are the same today. The flip makes the
+`.nw` the authority, and the committed files the bootstrap seed alone.
+<<the lit package>>=
+# Stage 0: build the tangler from the committed seed (the permanent
+# bootstrap, §13). Stage 1 below rebuilds it from the tangled .nw.
+litBootstrap = mkLit pkgs self;
+<<the tangled source tree>>
+# Stage 1: the real package, compiled from the .nw-derived sources.
+lit = mkLit pkgs litSource;
+@
+Stage 0 tangles each literate source over the seed. Each root chunk names its
+target file (`src/main.rs`, `templates/lit.css`), so `--out .` writes each
+tangled file back into its committed place. The result is a source tree whose
+Rust and CSS come from the `.nw`, ready for stage 1 to compile.
+<<the tangled source tree>>=
+# Stage 0 tangles every .nw over the seed, so stage 1 compiles from the
+# literate sources, not the hand-committed .rs/.css (§13). templates/lit.css
+# is include_str!'d into the weaver, so it must be tangled here too.
+litSource = pkgs.runCommand "lit-src" { } ''
+  cp -r ${self} $out
+  chmod -R +w $out
+  cd $out
+  for nw in src/*.rs.nw templates/lit.css.nw; do
+    ${litBootstrap}/bin/lit tangle "$nw" --out .
+  done
+'';
 @
 ## The tangled flake, as an output
 
@@ -491,10 +532,12 @@ fi
 This check extends the dogfood loop from the flake to the Rust crate (SPEC.md
 §13). Each `src/*.rs.nw` is one module of lit, told as a literate program, and
 `templates/lit.css.nw` is lit's stylesheet told the same way. The committed `.rs`
-and `.css` files stay the permanent bootstrap, because lit must build before it
-can tangle anything. This check tangles each source again and confirms that the
-result matches the committed artifact, byte for byte. The Nix wrapper hands the
-work to one Bash chunk.
+and `.css` files are the bootstrap seed, because lit must build before it can
+tangle anything. This check tangles each source again and confirms that the
+result matches the committed seed, byte for byte. That equality is what makes
+the two-stage build safe: stage 1 compiles from the tangled `.nw`, and this
+check proves the tangle is identical to the seed stage 0 built. The Nix wrapper
+hands the work to one Bash chunk.
 <<the selfhost check>>=
 # Self-host (§13): each src/*.rs.nw is a lit module told as a literate
 # program. `lit tangle --check` proves it still tangles byte-for-byte to
