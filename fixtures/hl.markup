@@ -8,7 +8,7 @@
 @nl
 @text hole, so the weaver colors both grammars *and* splices a chunk-use back
 @nl
-@text inside the coloring (SPEC.md §5.5). The language is resolved out of band from
+@text inside the coloring (§5.5). The language is resolved out of band from
 @nl
 @text each root's file extension — no per-chunk annotation.
 @nl

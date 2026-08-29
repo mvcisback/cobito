@@ -1,10 +1,54 @@
-# Math rendering
+# Math rendering (§6.3)
 
-This is step 6 of the prose pipeline: KaTeX rendered at weave time (SPEC.md §6.3).
-Rendering on the server means the archival site ships no JavaScript. The `katex`
-crate drives a bundled JS engine that is slow, so every result is cached on disk
-under a content hash — without the cache, re-rendering every equation on every
-weave would dominate build time.
+This module is the specification and the implementation of math rendering. The
+prose is the specification. The chunks after it are the implementation. It is
+step 6 of the prose pipeline (§6.2).
+
+## The rule
+
+lit renders KaTeX server-side, at weave time, so the archival site needs no
+JavaScript. A render failure is a hard error with the source and the location,
+never a silent fall back to raw text.
+
+## The engine and the cache
+
+The `katex` Rust crate bundles a JS engine to run `katex.js`. This adds real
+build weight and Nix-closure cost. The alternatives are worse: a `katex` CLI is
+another runtime dependency, and a native Rust math renderer is immature. lit
+takes the crate and caches each rendered result under
+`hash(math_source + display_mode + macros)` in `.lit-cache`. Without the cache,
+re-rendering every equation on every weave would dominate build time.
+
+## Why the assets are not optional
+
+"No client-side JavaScript" and "no client-side assets" are different claims.
+lit gets the first for free and must work for the second (verified 2026-08-23):
+
+- The crate runs `katex.js` inside the lit binary at weave time. The output is
+  inert markup: a hidden `katex-mathml` span that carries MathML, plus a
+  `katex-html` visual span. No script reaches the site. `checks.determinism`
+  asserts this.
+- The default output needs `katex.min.css` and the woff2 fonts for correctness,
+  not for looks. The stylesheet is what hides the MathML layer. Without it both
+  layers render and every equation appears twice.
+- So lit copies the assets into `_site/katex`, and never links a CDN. Otherwise
+  the archival artifact would depend on the network in secret. lit ships woff2
+  only (about 330 KB); woff and ttf would multiply that for no reader.
+- Version coupling. KaTeX's HTML, CSS, and font metrics move together. The crate
+  embeds KaTeX 0.16.4, while nixpkgs' `katex` is a different release, so the
+  assets are pinned in `flake.nix` by `fetchzip` at the crate's version and
+  exposed as `LIT_KATEX_ASSETS`. Bump the crate and the pin together.
+
+## Considered and rejected
+
+Pure-MathML output needs no CSS, no fonts, and no JS — a genuine single-file
+artifact. lit rejects it for v1, because browser-native math typography is much
+weaker than KaTeX's CSS layout, and typographic quality is the point of a
+Tufte-styled site. Revisit this if a zero-asset artifact ever outranks
+typography. Every output mode keeps the original TeX in an annotation element,
+which is what makes math copy-pasteable (relevant to `ANNOTATIONS.md` AN-2).
+
+## How the code implements this
 
 The module is five pieces: the error type, the cache-key hash, the renderer, the
 atomic cache write, and the tests.
@@ -26,7 +70,7 @@ atomic cache write, and the tests.
 The banner states the pipeline position and the two forces that shape the module:
 no client JavaScript, and a slow engine that must be cached.
 <<the module banner>>=
-//! Step 6 of the prose pipeline: KaTeX at weave time (SPEC.md §6.3).
+//! Step 6 of the prose pipeline: KaTeX at weave time (§6.3).
 //!
 //! Rendering is server-side so the archival site needs no JavaScript. The
 //! `katex` crate drives a bundled JS engine, which is slow enough that every

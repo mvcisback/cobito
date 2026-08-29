@@ -1,16 +1,37 @@
-# Long-form diagnostics
+# Diagnostics (§12)
 
-This module is the text behind `lit --explain <CODE>` (SPEC.md §12). Every error
-lit reports carries a stable code and a one-line message at the error site. When
-that one line is not enough, the reader asks for the code, and lit prints the
-paragraph from this file.
+This module is the text behind `lit --explain <CODE>`. The prose is the
+specification. The chunks after it are the implementation.
+
+## One format for every error
+
+lit reports one diagnostic format from every stage. The format leads with a stable
+code and a one-line message, then points at the source, then adds any notes:
+
+```
+error[E014]: duplicate label `fig:pipeline`
+  --> parser.nw:118:6
+   |
+   = note: first defined at intro.nw:42:6
+```
+
+Four rules hold this together. Every error carries a stable code, so a test or a
+suppression can name one error and no other. Every source location comes from the
+IR's `@file` and `@line` tags — which is *why* lit consumes those tags even though
+tangle handles the pragmas itself. A lint (a missing caption label, a chunk
+defined but never used, an empty docs chunk, a code chunk that resolves to no
+known language — W104, §5.5) is a warning, and `--deny-warnings` promotes every
+warning to an error for CI. And `lit --explain <CODE>` prints the long form, which
+is the text this module holds.
+
+## How the code implements this
 
 The module is one function and its tests. `explain` is a single `match` over the
 code. The arms must stay in the order of the §12 registry, so this page groups
 them by theme without moving any arm out of registry order. Each group has prose
 that says what the codes in it share.
 <<src/diag.rs>>=
-//! Long-form error explanations for `lit --explain <CODE>` (SPEC.md §12). The
+//! Long-form error explanations for `lit --explain <CODE>` (§12). The
 //! one-line form is emitted at the error site; this is the paragraph a reader
 //! asks for when that line is not enough. Codes are stable (§12 registry).
 

@@ -1,12 +1,71 @@
-# The markup IR parser
+# The markup IR parser (§4.1, §4.2)
 
-This parses the output of noweb's `markup` pipeline — the IR lit consumes instead
-of driving `noweave`. It is verified against noweb 2.13 (SPEC.md §4.2): `markup`
-lives in `lib/noweb`, an empty text line arrives with a trailing space, and a fatal
-error shows up both as a nonzero exit and an `@fatal` event.
+This module is the specification and the implementation of the IR parser. The
+prose is the specification. The chunks after it are the implementation.
 
-The module is the event type, a line parser, and the `markup` runner that ties them
-together.
+## What the parser reads
+
+lit does not drive `noweave`. It reads the IR that noweb's `markup` stage emits,
+and it shells out to `notangle` for tangle. `markup` writes one tagged line per
+token. A short example:
+
+```
+@file lexer.nw
+@begin docs 3
+@text <p>The lexer emits one token per call.</p>
+@nl
+@end docs 3
+@begin code 4
+@defn lex a token
+@nl
+@text let c =
+@use next char
+@nl
+@end code 4
+```
+
+lit consumes these tags: `@file`, `@line`, `@begin`/`@end docs|code`, `@text`,
+`@nl`, `@defn`, `@use`, `@quote`/`@endquote` (from an inline prose quote),
+`@literal`, `@index defn`, and `@fatal`.
+
+Chunk structure is reliable with no extra filter. `markup` must emit `@defn` and
+`@use` for each definition and reference, because `notangle` is itself
+`markup | nt`, and `nt` reads exactly those tags. lit v1 skips `finduses` and
+`noidx`, which serve the identifier index, not chunk structure. So lit ships no
+identifier index in v1; it can come back later.
+
+## Verified against noweb 2.13
+
+R1 is retired. lit probed the real toolchain with `fixtures/hello.nw` and the
+parser encodes these facts (§4.2):
+
+- The pipeline tools are not on `bin`. `markup`, `nt`, `tohtml`, and the rest
+  live in `lib/noweb`. Only the `notangle`/`noweave`/`noroots` drivers are on
+  `bin`. The Nix wrapper must add `lib/noweb` to the PATH.
+- `markup` emits no `@line` markers by default. lit counts each `@nl` since the
+  last `@file` to get a line number, the same way `nt` does for `-L`. The parser
+  tracks this count for diagnostics (§12).
+- `@ %def c` becomes `@index defn c` and makes no docs chunk.
+- A continued chunk arrives as separate `@begin code` blocks that share one
+  `@defn` name, in source order.
+- An inline prose quote matches greedily to its last closing bracket pair, so a
+  nested quote keeps its inner brackets.
+- A blank line between chunks becomes an empty docs chunk, and the stream also
+  opens with a leading empty docs chunk. The section builder merges or drops
+  these.
+- Inside a code chunk, the indentation before a chunk use arrives as its own
+  `@text` token. This is how noweb propagates indentation.
+- On error, `markup` prints `file:line: message` to stderr, emits `@fatal` in
+  the stream, and exits nonzero. The wrapper checks both.
+- An unescaped chunk-use bracket in a docs chunk is a fatal error. The at-escape
+  (an `@` before each bracket) arrives as literal text.
+- A backslash-dollar in prose passes through untouched. That escape is lit's own
+  convention (§6.2), not a noweb feature.
+
+## How the code implements this
+
+The module is the event type, a line parser, and the `markup` runner that ties
+them together.
 <<src/noweb.rs>>=
 <<the module banner>>
 
@@ -31,7 +90,7 @@ respect.
 <<the module banner>>=
 //! Parser for noweb's `markup` pipeline format.
 //!
-//! Verified against noweb 2.13 (nixpkgs); see SPEC.md §4.2 for the empirical
+//! Verified against noweb 2.13 (nixpkgs); see §4.2 for the empirical
 //! findings this encodes, notably: `markup` lives in `lib/noweb/` (not `bin/`),
 //! empty text lines arrive as `@text ` with a trailing space, and fatal errors
 //! appear both as a nonzero exit status and an `@fatal` event.

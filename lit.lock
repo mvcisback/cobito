@@ -1,4 +1,4 @@
-# lit.lock — generated (SPEC.md §7.1). label → frozen opaque id.
+# lit.lock — generated (§7.1). label → frozen opaque id.
 # Edit only to retire a label; ids never change once minted.
 ["examples/ring.nw"."eq:wrap"]
 id = "5lYN"

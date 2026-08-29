@@ -1,15 +1,75 @@
-# The site.json contract
+# The site.json contract (§5.3, §8)
 
-`site.json` is the archival document model (SPEC.md §8). Phase 1 (this weaver)
-writes it; Phase 2 (annotation and review tooling) reads it unchanged. It is
-emitted only under `lit weave --archive`.
+This module is the archival document model. The prose is the specification. The
+chunks after it are the implementation. Phase 1, this weaver, writes `site.json`.
+Phase 2, the annotation and review tooling, reads it unchanged. lit emits it only
+under `lit weave --archive`.
 
-Determinism is a hard requirement. There are no timestamps, and every map is a
-`BTreeMap` so key order is stable, because the artifact is diffed and Nix-cached.
+## Page boundaries
 
-This module also owns the sidenote hoist. §8 keeps a section's prose and its
-margin material disjoint, so each `sidenote` aside is lifted out of the rendered
-body into a structured `margin[]` entry with a stable `sn-N` id.
+noweb has no starred-section concept. cweb's section levels do not exist here. So
+lit splits on the prose instead. A `[weave] split-at` key names the heading level
+to split on — a Markdown `#` and an HTML `h1` both count. A `nav-depth` key sets
+how deep the nav tree goes.
+
+```toml
+[weave]
+split-at = "h1"
+nav-depth = 3
+```
+
+Everything before the first boundary is the index page. A code chunk always
+belongs to the page of the nearest preceding boundary. A chunk never starts a
+page.
+
+## The JSON is the single source of truth
+
+`site.json` is the one contract between the two phases. Phase 1 writes it. Phase 2
+reads it and writes nothing back — annotations live entirely outside it
+(`ANNOTATIONS.md`). The shape holds the metadata, the nav tree, the label tables,
+the chunk graph, and the pages:
+
+```jsonc
+{
+  "schema": 2,
+  "meta": { "id": "lit", "title": "…", "authors": ["…"] },
+  "nav": [ { "id": "parsing", "title": "Parsing", "level": 1, "children": [] } ],
+  "labels": {
+    "fig:pipeline": { "id": "k3f9", "page": "parsing", "anchor": "fig-pipeline",
+                      "kind": "figure" }
+  },
+  "chunks": {
+    "lex a token": { "slug": "lex-a-token", "root": false,
+      "defs": [ { "page": "parsing", "anchor": "sec-4", "continues": false } ],
+      "uses": [ { "page": "parsing", "anchor": "sec-7" } ] }
+  },
+  "pages": [ { "id": "parsing", "title": "Parsing", "prev": "intro",
+               "next": "codegen", "sections": [] } ]
+}
+```
+
+## Why the shape looks like this
+
+The `schema` field is versioned. Any consumer — the review agent, an external tool
+— checks it before use. A mismatch is a hard failure, not a runtime surprise.
+Schema 2 replaces each label's position-dependent number with the frozen `id` from
+`lit.lock` (§7.1). A reference's display text, such as "Figure k3f9", comes from
+`kind` plus `id`, so no numeric field is left in the contract.
+
+There is no `generated` timestamp. A wall-clock field would make the output
+non-reproducible. That would defeat Nix caching and turn every re-weave into a
+noisy diff of the archival artifact. Weave must be a deterministic function of its
+inputs. So every map is a `BTreeMap` for a stable key order, and nothing reads the
+clock.
+
+Per-page JSON is this same object with `pages` narrowed to one entry. The `nav`,
+`labels`, and `chunks` stay in full, so one page can render standalone.
+
+## How the code implements this
+
+This module also owns the sidenote hoist. The contract keeps a section's prose and
+its margin material disjoint, so each `sidenote` aside is lifted out of the
+rendered body into a structured `margin[]` entry with a stable `sn-N` id.
 
 The module is the JSON shape (a tree of serialize structs), the sidenote hoist,
 the document builder that fills the shape from the model, and the two serializers
@@ -56,7 +116,7 @@ that write the whole document and one page.
 The banner states the contract, the determinism rule, and the sidenote hoist —
 the three things a maintainer must not break.
 <<the module banner>>=
-//! The `site.json` contract (SPEC.md §8): a `schema: 2` document model that
+//! The `site.json` contract (§8): a `schema: 2` document model that
 //! Phase 1 produces and Phase 2 (annotation/review tooling) consumes unchanged.
 //!
 //! It is written only under `lit weave --archive`. Determinism is a hard

@@ -1,4 +1,4 @@
-//! The Markdown prose dialect (SPEC.md §6.1/§6.4).
+//! The Markdown prose dialect (§6.1/§6.4).
 //!
 //! Markdown is a *post-`markup`* transform: it runs on the reassembled prose of
 //! a docs chunk, between step 1 (`prose::reassemble`) and the HTML rewrite, and
@@ -88,7 +88,7 @@ fn to_html(md: &str, options: Options) -> String {
 /// so the resolve pass (§7) treats fence-authored and hand-authored references
 /// identically. Runs on raw prose, skipping `<code>`/`<pre>` regions and Markdown
 /// backtick spans; a `\ref` inside a backtick span is a documented no-op
-/// (SPEC.md §6.4) — it is passed through verbatim, never lowered then escaped.
+/// (§6.4) — it is passed through verbatim, never lowered then escaped.
 fn substitute_refs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;

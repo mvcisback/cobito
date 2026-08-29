@@ -1,14 +1,67 @@
-# The project manifest
+# The project manifest (§5.2, §6.1)
 
-`lit.toml` is the project manifest (SPEC.md §5.2). Every section is optional, so
-an absent or empty file is valid — the CLI falls back to its argument-derived
-defaults. This module is a set of serde structs, one per manifest table, plus one
-`impl` block that loads the file and answers the two questions the rest of lit
-asks of it: which document, and which tangle roots carry a line-pragma format.
+This module is `lit.toml`, the project manifest. The prose is the specification.
+The chunks after it are the implementation. Every table is optional, so an absent
+or empty file is valid — the CLI then falls back to its argument-derived defaults.
 
-The file is laid out the way a reader meets it: the module banner, the imports,
-the error type, then each table struct in source order, then the loader and its
-queries, then the tests.
+## What the manifest declares
+
+A `[[document]]` table names the document: its id, title, authors, the `.nw` files
+in order, and the prose dialect. A `[tangle]` table sets the default output
+directory, and a `[[tangle.root]]` table per root sets that root's line-pragma
+format. A `[weave]` table holds the highlight language keys (§5.5).
+
+```toml
+[[document]]
+id = "lit"
+title = "lit: a literate programming system"
+files = ["intro.nw", "parser.nw", "weave.nw"]
+dialect = "markdown"   # or "html"; default "markdown" (§6.1)
+
+[tangle]
+outdir = "."
+
+[[tangle.root]]
+chunk = "server/app.py"
+line-pragma = '# %L "%F"%N'
+```
+
+## Root chunks and the line pragma
+
+A chunk whose name is path-shaped — it contains a `/`, or it matches a file
+extension — is a root. `notangle -L` takes a printf-ish format for its line
+pragma, and the correct format is language-specific: its own default is C's
+`#line`. So a single boolean would be wrong — it would emit `#line` into Python
+and Rust. lit takes a per-root format string instead, and it defaults to *off*.
+
+There is a verified caveat. The `-L` flag disables indentation propagation, so an
+inner chunk's lines land at column 0, and it splits the code around a chunk use
+onto separate lines with column-preserving padding. So pragma'd output is a
+different shape, not just annotated text. This is acceptable for generated code,
+and it is why the default is off.
+
+## Two prose dialects
+
+A docs chunk is authored in one of two dialects, set per document by `dialect`.
+The `markdown` dialect (the default) is CommonMark: paragraphs, emphasis, lists,
+links, headings, and backtick code all become HTML, and the fenced float
+directives are numbered floats (§6.4). The `html` dialect is raw HTML — the escape
+hatch, and what any construct the Markdown directives do not cover (for example a
+`<aside class="sidenote">`) falls back to as a raw-HTML island.
+
+Both dialects share one pipeline (§6.2). Markdown is a post-`markup` transform on
+the already-reassembled prose. Everything downstream — the numbering, the refs,
+the math render, the sidenote hoist, `site.json` — is dialect-agnostic and
+byte-identical.
+
+## How the code implements this
+
+This module is a set of serde structs, one per manifest table, plus one `impl`
+block that loads the file and answers the questions the rest of lit asks of it:
+which document, and which tangle roots carry a line-pragma format. The file is
+laid out the way a reader meets it: the module banner, the imports, the error
+type, then each table struct in source order, then the loader and its queries,
+then the tests.
 <<src/config.rs>>=
 <<the module banner>>
 
@@ -38,7 +91,7 @@ The banner records how much of the manifest is live today. M4 reads a small slic
 the `[weave.annotate]` keys of §5.3 and §10 parse leniently now and gain meaning
 with their milestones.
 <<the module banner>>=
-//! `lit.toml`, the project manifest (SPEC.md §5.2). M4 reads a deliberately
+//! `lit.toml`, the project manifest (§5.2). M4 reads a deliberately
 //! small slice: `[[document]]` metadata (which feeds `site.json`'s `meta`) and
 //! `[[tangle.root]]` line-pragma formats. The `[weave]` / `[weave.annotate]`
 //! keys of §5.3/§10 are parsed leniently (unknown keys ignored) but not yet

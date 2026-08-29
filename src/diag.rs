@@ -1,4 +1,4 @@
-//! Long-form error explanations for `lit --explain <CODE>` (SPEC.md §12). The
+//! Long-form error explanations for `lit --explain <CODE>` (§12). The
 //! one-line form is emitted at the error site; this is the paragraph a reader
 //! asks for when that line is not enough. Codes are stable (§12 registry).
 

@@ -1,22 +1,73 @@
-# The Markdown prose dialect
+# The Markdown dialect (§6.4)
 
-This is the Markdown prose dialect (SPEC.md §6.1/§6.4).
+This module is the specification and the implementation of the Markdown prose
+dialect. The prose is the specification. The chunks after it are the
+implementation.
 
-Markdown is a post-`markup` transform: it runs on the reassembled prose of a docs
-chunk, between step 1 and the HTML rewrite, and only in Markdown mode. The rest of
-the pipeline — numbering, refs, math render, sidenote hoist — is untouched. Raw
-HTML the author drops inline (figures, tables, asides with ids, ref anchors) passes
-straight through CommonMark, which is how labelled islands keep working.
+## Why Markdown
 
-Ordering is the whole subtlety. Fenced blocks come out first so neither the math
-scanner nor CommonMark touches their bodies; then inline dollar-math is extracted
-to placeholders (reusing the prose extractor); then CommonMark renders the prose. A
-math fence is display-mode math sugar for an equation div — inside it you write bare
-LaTeX, so a dollar is redundant and never scanned.
+The ergonomic prose dialect is CommonMark, not LaTeX. In `html` mode the author
+wraps every paragraph in a `<p>` and every display equation in an equation div,
+and that is the main keystroke cost of the dialect (§18 R5). Markdown removes
+that cost and keeps the pipeline shape the same. Markdown also replaces the
+LaTeX text expander the first plan called for: it is more ergonomic than raw
+HTML and lets lit drop the hardest part of that plan. Only the math-only macro
+table stays, as roadmap (§6.5).
 
-The module is the error type, the top-level render, the shared prose path, the raw
-helpers that skip code and balance braces, the fence machinery, the per-directive
-renderers, and the restore pass.
+## The transform
+
+lit renders CommonMark with `pulldown-cmark`, as a post-`markup` transform
+(§6.2). It runs on the reassembled prose of a docs chunk, between step 2 and the
+HTML rewrite, and only in `markdown` mode. GFM tables are on only inside a
+`table` fence, never in bare prose, so a stray `|` stays literal. The order is:
+
+1. Protect fenced blocks. The fence info line is a kind and an optional
+   `\label{ns:name}`. lit knows three directives: `math`, `figure`, and `table`.
+   Any other info is an ordinary code fence, stashed so step 3 never scans it for
+   a `$`. lit renders each float now. It emits a `math` float in place; it stashes
+   a `figure` or `table` float behind a placeholder, because their bodies are
+   multi-line HTML the outer CommonMark must not reflow.
+   - A `math` fence is display-math sugar. Its body is bare LaTeX. The fence is
+     the delimiter, so a `$` is redundant and never scanned. lit emits an
+     equation div.
+   - A `figure` fence takes an optional leading brace-balanced `\caption{…}`,
+     rendered as inline Markdown and math, then a block-Markdown body, and emits
+     a `<figure>` with an optional `<figcaption>`.
+   - A `table` fence takes an optional `\caption{…}`, then a GFM pipe table. lit
+     splices the id and a `<caption>` into the `<table>` that pulldown-cmark
+     emits.
+2. Lower `\ref{ns:name}` to the same `<a data-ref>` the `html` dialect and the
+   resolver (§7) already handle, so a fenced reference and a hand-written one are
+   identical. This runs on raw prose and skips a `<code>` or `<pre>`. A `\ref`
+   inside a backtick span is a documented no-op; write it in `html` mode.
+3. Extract math (§6.2 step 2) on the remaining prose. Float-derived math indices
+   come first, inline math after; both resolve at render.
+4. Render CommonMark to HTML. A backtick span and a reassembled inline quote both
+   become a `<code>`. Math placeholders, stashed floats, and raw-HTML islands
+   pass through. lit then swaps the stashed floats back in.
+
+## Labels and namespaces
+
+A `\label{ns:name}` namespace must match the fence kind: `eq:` for `math`,
+`fig:` for `figure`, `tbl:` for `table`. The rewrite pass keys a label off its
+id prefix (§7), so a mismatched namespace would be dropped in silence. lit
+catches it as E030 at render time. A float with no `\label` gets no id and is not
+referenceable, because an unreferenceable float has no stable identity (§7.1). A
+fenced float emits exactly the same tagged element an island would, so all
+downstream identity and resolution is the same as `html` mode.
+
+## Raw-HTML islands
+
+CommonMark passes block-level raw HTML through untouched. So anything a directive
+does not cover, most often a sidenote aside, is written as raw HTML dropped
+inside the Markdown. `examples/ring.nw` is the worked example. `fixtures/md.nw`
+is the end-to-end fixture that exercises all three directives and `\ref`.
+
+## How the code implements this
+
+The module is the error type, the top-level render, the shared prose path, the
+raw helpers that skip code and balance braces, the fence machinery, the
+per-directive renderers, and the restore pass.
 <<src/markdown.rs>>=
 <<the module banner>>
 
@@ -69,7 +120,7 @@ renderers, and the restore pass.
 The banner states where Markdown sits in the pipeline and why fence ordering
 matters.
 <<the module banner>>=
-//! The Markdown prose dialect (SPEC.md §6.1/§6.4).
+//! The Markdown prose dialect (§6.1/§6.4).
 //!
 //! Markdown is a *post-`markup`* transform: it runs on the reassembled prose of
 //! a docs chunk, between step 1 (`prose::reassemble`) and the HTML rewrite, and
@@ -179,7 +230,7 @@ span is a documented no-op — passed through verbatim, never lowered then escap
 /// so the resolve pass (§7) treats fence-authored and hand-authored references
 /// identically. Runs on raw prose, skipping `<code>`/`<pre>` regions and Markdown
 /// backtick spans; a `\ref` inside a backtick span is a documented no-op
-/// (SPEC.md §6.4) — it is passed through verbatim, never lowered then escaped.
+/// (§6.4) — it is passed through verbatim, never lowered then escaped.
 fn substitute_refs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;

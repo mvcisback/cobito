@@ -1,4 +1,4 @@
-//! The lock file (SPEC.md §7.1): a committed, greppable map from a note-local
+//! The lock file (§7.1): a committed, greppable map from a note-local
 //! human label to a frozen opaque id. The id is what a cross-reference renders
 //! ("Figure k3f9") and what an eventual import/transclude (§16, M12) names, so it
 //! must survive every move and rename — which is exactly why it is *random* and
@@ -140,7 +140,7 @@ impl LockFile {
     pub fn save(&self, path: &Path) -> Result<(), LockError> {
         let body = toml::to_string(&self.files).map_err(|e| LockError::Parse(e.to_string()))?;
         let text = format!(
-            "# lit.lock — generated (SPEC.md §7.1). label → frozen opaque id.\n\
+            "# lit.lock — generated (§7.1). label → frozen opaque id.\n\
              # Edit only to retire a label; ids never change once minted.\n{body}"
         );
         std::fs::write(path, text).map_err(LockError::Io)

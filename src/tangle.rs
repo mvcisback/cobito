@@ -1,4 +1,4 @@
-//! `lit tangle`: extract compilable source from `.nw` files (SPEC.md §11).
+//! `lit tangle`: extract compilable source from `.nw` files (§11).
 //!
 //! Tangling is the inverse of weaving — it pulls a root chunk (and everything
 //! it references) out as a plain source file. v1 shells out to noweb's
@@ -6,7 +6,7 @@
 //!
 //! Line pragmas (`notangle -L`) are per-root and off by default: the marker
 //! syntax is per-language, so `lit.toml` sets a `line-pragma` format string per
-//! root (SPEC.md §5.2). A root with no configured format tangles without
+//! root (§5.2). A root with no configured format tangles without
 //! pragmas, which is the spec's default.
 
 use std::collections::BTreeMap;

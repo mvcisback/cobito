@@ -1,0 +1,288 @@
+@
+# lit — a web-first literate programming system
+
+This document is lit's own specification, told as a literate program. lit is a
+literate programming system: an author writes a human-readable document first,
+then shows how each part of the code comes together. This document holds itself to
+that standard.
+
+The specification does not live in one file any more. Each rule lives in the
+module that implements it. A module opens with the prose that specifies its job,
+then shows the code that meets it. This top-level document holds the parts that
+cross every module — the goals, the vocabulary, the architecture — and points to
+the module that owns each detail.
+
+## Goals
+
+lit has six goals.
+
+1. Web-first. The primary woven artifact is a multi-page website, not a PDF. Print
+   is not a v1 concern.
+2. noweb-compatible. Source files are genuine `.nw` files. `notangle` consumes
+   them unchanged. lit is language-agnostic because noweb is.
+3. Static generator only. lit is the weaver and the tangler. It ships no server.
+   Margin commenting is a separate tool with its own spec, `ANNOTATIONS.md`; lit's
+   sole obligation to it is annotation-ready HTML (`rewrite.rs`).
+4. JSON is the contract. Every HTML page is a pure function of a JSON document. No
+   exceptions (`site.rs`).
+5. Review loop. An AI agent reads annotations and proposes revisions to the `.nw`
+   source (see "The review loop" below).
+6. Self-hosting. lit is written in itself: each `.nw` file tangles to its part of
+   the Rust crate (see "Self-hosting" below).
+
+## Non-goals
+
+- PDF or print output. A `--tex` backend may come later.
+- Pretty-printing or code reformatting. lit never reflows, re-indents, or rewrites
+  the bytes a reader sees. Code chunks render exactly as written — noweb's
+  position, and lit keeps it. Syntax highlighting only colors those unchanged
+  bytes (`highlight.rs`), so this line still stands.
+- cweb's `@d` macros. noweb has no equivalent, because `#define` is C-specific.
+  Named chunks cover the need.
+- A WYSIWYG authoring UI.
+- A comment or annotation server. That is a separate tool (`ANNOTATIONS.md`).
+- Multi-user real-time collaboration. Comments are asynchronous.
+
+## Vocabulary
+
+| Term | Meaning |
+|---|---|
+| project | A directory with a `lit.toml`. It holds one or more documents. |
+| document | An ordered list of `.nw` files woven into one site with unified numbering. It has an id, used in URLs. |
+| chunk | noweb's unit: a docs chunk (prose) or a code chunk (named, tangleable). |
+| section | lit's unit of anchoring and rendering. One chunk makes one section. |
+| page | An output HTML file. It holds a contiguous run of sections. |
+| root | A code chunk that tangles to a file on disk. |
+
+A document may span several `.nw` files, because `markup` accepts several and
+emits a file marker between them. The numbering, the labels, and the chunk
+resolution are all document-wide.
+
+## Architecture
+
+lit shells out to noweb's front end, not its back end. `markup` converts a `.nw`
+file into noweb's line-oriented pipeline format. lit consumes that as its IR and
+owns everything downstream. lit never uses `noweave`: it owns prose-to-HTML
+regardless, and the pipeline format hands it the chunk structure as data rather
+than as generated markup it would have to scrape back.
+
+```
+  PHASE 1 — static generator (no Python, no server)
+
+  *.nw ──> markup ──> pipeline IR ──┐
+                                    │
+   ┌────────────────────────────────┴───────────────────────────┐
+   │ Rust                                                        │
+   │  1. parse IR       → chunk list                             │
+   │  2. resolve        → chunk graph, defs/uses, continuations  │
+   │  3. prose pipeline → math out, HTML parse, refs, ids        │
+   │  4. number         → figures, tables, equations, chunks     │
+   │  5. split          → pages, nav tree, prev/next             │
+   │  6. serialize      → site.json                              │
+   │  7. render         → minijinja + templates/                 │
+   └────────────────────────────────┬───────────────────────────┘
+                                    │
+                              _site/{*.html,*.json,static/}
+
+  *.nw ──> notangle -R'src/main.rs' ──> src/main.rs
+
+
+  ANNOTATION LAYER — separate tool, separate spec (ANNOTATIONS.md)
+
+  _site/*.html ──(overlay / embed)──> margin comments on woven pages
+        │  HTML carries provenance attributes (rewrite.rs)
+        ▼
+  annotations (W3C JSON) ──> lit review ──> unified diff against *.nw
+```
+
+## Where each part lives
+
+Each module carries the specification for its own job. This is the reading order.
+
+| Concern | Module |
+|---|---|
+| The noweb boundary: the IR, verified noweb behavior, `markup` | `src/noweb.rs.nw` |
+| The document model: chunk continuation, roots, line counting | `src/model.rs.nw` |
+| The project manifest, prose dialects, config keys | `src/config.rs.nw` |
+| The prose pipeline: reassembly, math extraction, ordering | `src/prose.rs.nw` |
+| The Markdown dialect and fenced-float directives | `src/markdown.rs.nw` |
+| Math rendering: KaTeX at weave time, the cache | `src/math.rs.nw` |
+| Labels, numbering, cross-references, the resolver | `src/resolve.rs.nw` |
+| Stable ids and the lock file | `src/lock.rs.nw` |
+| Prose rewriting, the HTML parser, the annotation contract | `src/rewrite.rs.nw` |
+| The `site.json` contract and page boundaries | `src/site.rs.nw` |
+| The weaver: rendering a code chunk | `src/weave.rs.nw` |
+| Syntax highlighting | `src/highlight.rs.nw` |
+| Tangling | `src/tangle.rs.nw` |
+| Long-form diagnostics | `src/diag.rs.nw` |
+| The CLI | `src/main.rs.nw` |
+| The build, told as a literate program | `flake.nix.nw` |
+
+## The review loop
+
+`lit review` closes the loop from a reader's margin comment back to the source. It
+runs in six steps.
+
+1. It fetches the open annotations as W3C Web Annotation JSON from the configured
+   backend. A backend is an adapter; the agent codes against the W3C shape only.
+2. It maps each annotation to source. The annotation's exact-quote selector locates
+   the text on the woven page. The enclosing section's provenance attributes locate
+   the `.nw` region.
+3. It asks for a unified diff against the `.nw` source — never against the woven
+   HTML.
+4. It validates the patch: the patch applies cleanly, `lit weave` still succeeds,
+   and `lit tangle` output is unchanged unless a thread explicitly asked for a code
+   change.
+5. It presents a reviewable diff. Nothing auto-commits.
+6. On acceptance, the addressed threads resolve with a pointer to the resulting
+   revision.
+
+Step 4 holds the important safety property: prose feedback must not silently alter
+the program.
+
+## Self-hosting
+
+lit is written in itself. The path had three stages. First, lit was written
+normally in Rust. Second, once weave and tangle were stable, each module was ported
+into a `.nw` file that tangles into the existing tree; CI runs `lit tangle --check`
+to assert the committed source matches what the literate source makes. Third, the
+flip: the `.nw` files became the source of truth.
+
+The flip is done. The whole Rust crate and the stylesheet are literate: each
+`src/*.rs.nw` and `templates/lit.css.nw` tangles byte-for-byte into its committed
+artifact, guarded by `checks.selfhost`. The flake build is two stages. Stage 0
+compiles `lit` from the committed seed — the permanent bootstrap, because a tangler
+must exist before anything can be tangled. Stage 0 then tangles every `.nw` over the
+seed, and stage 1 compiles the shipped binary from that tangled tree. So the shipped
+`lit` is built from the `.nw`, not from the hand-checked-in `.rs`. The committed
+files are the bootstrap seed, and `checks.selfhost` proves the seed and the tangle
+are byte-identical.
+
+The bootstrap must always be buildable without a working `lit`, so the tangled
+output stays committed permanently. This is the mitigation for the one risk
+self-hosting adds: a weaver bug becomes a bootstrap risk.
+
+The first dogfood is the flake itself. `flake.nix.nw` is lit's own build file told
+as a literate program. It tangles byte-for-byte into the committed `flake.nix`,
+which is the permanent bootstrap. `checks.dogfood` runs `lit tangle --check` so the
+literate source and the bootstrap never drift, and it weaves the page to prove the
+Nix grammar colored it — self-hosting the highlighter, which is why Nix is the
+second grammar.
+
+## Nix
+
+The build is flake-based. `pkgs.noweb` is a genuine runtime dependency in phase 1,
+not merely a test oracle, so the CLI is wrapped to put both `\${noweb}/bin` and
+`\${noweb}/lib/noweb` on PATH — the pipeline stages are not on `bin/`. The shape is
+deliberately minimal: a plain `rustPlatform.buildRustPackage`, no extra flake
+inputs, with crane or a rust overlay held back until a concrete need appears.
+
+The flake carries the checks that guard lit's invariants: a build with the hermetic
+cargo tests, a noweb-drift check that diffs `markup` output against the pinned
+fixtures, a determinism check that weaves twice and byte-diffs, a tangle
+differential against `notangle`, and the self-host and dogfood checks above. Because
+a flake sees only git-tracked files, a new file must be added to git before any
+`nix` command will see it. The full build lives in `flake.nix.nw`.
+
+## Testing
+
+Each layer has its own strategy.
+
+| Layer | Strategy |
+|---|---|
+| IR parser | Golden tests over pinned `markup` output; guards against noweb version drift. |
+| Prose pipeline | Snapshot tests per stage, especially math-extraction edge cases. |
+| Numbering and refs | Property test: every reference resolves; numbers are dense and monotonic. |
+| Split | Property test: concatenating all pages' sections reproduces the section list. |
+| Tangle | Differential against `notangle` on a fixture corpus. |
+| Determinism | Weave twice, diff. |
+| Annotation contract | Assert every section carries its id and provenance and a margin slot. |
+
+## Milestones
+
+Phase 1, the static generator, is complete: the flake and IR parser (M0), the prose
+pipeline and math (M1), numbering and page splitting and templates (M2), tangle via
+notangle (M3), and `site.json` with the manifest and diagnostics (M4).
+
+Phase 2 is annotation integration, where the annotation layer itself is the
+separate tool of `ANNOTATIONS.md`: the annotation-ready HTML contract (M5), `lit
+review` (M6), and a reserved slot for the annotation-layer fallback (M7).
+
+Phase 3 is done in its shipped slices: the Markdown dialect (M8), stable ids and
+the lock file (M11), self-hosting and the flip (M13), and syntax highlighting
+(M14). Math macros (M9), citations (M10), and import versus transclude (M12) are the
+remaining phase-3 work.
+
+Replacing noweb with a Rust `markup` and `notangle` is not a scheduled milestone. It
+is a contingency with explicit triggers, recorded in `tangle.rs.nw`.
+
+## Open questions
+
+- One review patch per run, or per thread? Per-thread accepts granularly but
+  conflicts when two threads touch the same prose. The lean is one patch per run
+  with per-thread attribution in the diff.
+- Should lit watch and rebuild for a local authoring loop? The feedback loop is poor
+  without it.
+
+Resolved questions are recorded where they were settled: the two prose dialects live
+in `config.rs.nw`, the two-pass rewriter in `rewrite.rs.nw`, and the choice to skip
+`noweave` in this document's architecture section.
+
+## Risks
+
+- KaTeX via a JS engine adds build weight and weave latency. The cache mitigates it.
+- Self-hosting makes every weaver bug a bootstrap risk. The permanently-committed
+  tangle output is the mitigation.
+- Re-anchoring quality is the annotation layer's concern, tracked in
+  `ANNOTATIONS.md`, because the anchoring is done by its selector machinery rather
+  than by heuristics lit invents.
+
+## Error codes
+
+lit reports one diagnostic format from every stage (`diag.rs.nw`). Each code is
+stable, so a test or a suppression can name one error and no other. When a module
+introduces a code, it claims the next free number in this registry.
+
+| Code | Meaning | Module |
+|---|---|---|
+| E001 | malformed IR line from `markup` | `noweb.rs` |
+| E002 | `markup` failed, `@fatal`, or not found | `noweb.rs` |
+| E010 | use of an undefined chunk | `model.rs` |
+| E014 | duplicate label | `resolve.rs` |
+| E015 | unresolved reference | `resolve.rs` |
+| E020 | math render failure | `math.rs` |
+| E022 | unterminated math delimiter | `prose.rs` |
+| E023 | KaTeX assets missing | `weave.rs` |
+| E024 | writing the site failed | `weave.rs` |
+| E025 | template render failure | `weave.rs` |
+| E026 | rewriting prose HTML failed | `rewrite.rs` |
+| E027 | `notangle` failed or not found | `tangle.rs` |
+| E028 | writing tangled output failed | `tangle.rs` |
+| E029 | `lit.toml` unreadable or malformed | `config.rs` |
+| E030 | malformed fenced-float directive | `markdown.rs` |
+| E031 | label absent from `lit.lock` under `--locked` | `lock.rs`, `weave.rs` |
+| E032 | `lit.lock` unreadable, malformed, or unwritable | `lock.rs` |
+| E033 | a highlight key names an unknown language | `main.rs` |
+| W102 | chunk defined but never used | `model.rs` |
+| W103 | figure or table without a caption | `resolve.rs` |
+| W104 | code chunk resolved to no known language | `weave.rs` |
+
+## Conventions
+
+- Dependencies are added reluctantly, one at a time, only when a task needs them.
+  Never add one speculatively.
+- No panics outside tests. Everything user-facing goes through the diagnostic format
+  with a code.
+- Every noweb-boundary discovery gets a fixture. A minimal `.nw` plus regenerated
+  `.markup` pair and a test is how the verified-noweb prose stays true.
+- noweb stays. Do not reimplement `markup` or `notangle`; the removal triggers are
+  in `tangle.rs.nw` and none have fired.
+- Determinism is a feature. No timestamps, and no HashMap iteration order in output —
+  a `BTreeMap` or an explicit sort.
+- When a decision conflicts with observed reality, verification wins: probe the real
+  binary, record the finding, update the prose.
+
+All `.nw` prose follows ASD-STE100 Simplified Technical English: short active
+present-tense sentences, one idea each, approved plain verbs, and the reason before
+the mechanism.
+@

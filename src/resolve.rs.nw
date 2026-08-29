@@ -1,12 +1,63 @@
-# Document-global planning
+# Labels, numbering, and cross-references (§7)
 
-This turns the raw scan (SPEC.md §6.2 step 4 inputs) into everything the second
-rewrite pass and the templates need: page assignment, the nav tree, the label
-table, and one resolved target per `data-ref` site.
+This module is the specification and the implementation of document-global
+planning. The prose is the specification. The chunks after it are the
+implementation. Planning turns the raw scan (§6.2 step 4 inputs) into what the
+second rewrite pass and the templates need: page assignment, the nav tree, the
+label table, and one resolved target for each `data-ref` site.
 
-This is where "numbering is document-global" (§7) actually lives. Pages are a
-presentation split applied after numbers and anchors are fixed, so a reference
-reads the same regardless of which page its target landed on.
+## Identity is document-global
+
+Identity is document-global, so a reference works across pages. lit assigns every
+number and anchor first, then splits the document into pages. A page is a
+presentation choice, so it must not change what a reference reads. This is why
+planning lives in its own pass, before the split.
+
+§7.1 supersedes the display half of this section (the lock module). A reference
+shows a stable opaque id, not a position-dependent "Figure 3". The anchoring and
+caption mechanics here are unchanged; what changed is what the id is, and the
+attribute that carries it (`data-id`, not `data-number`).
+
+## Labels and references
+
+Prose carries a label on the target and a reference at the use site. In `html`
+mode these are attributes; in `markdown` mode `\label` and `\ref` lower to the
+same attributes (§6.4). At weave time lit turns each `data-ref` into an anchor
+whose text comes from the target's kind and its opaque id, such as
+`<a href="parsing.html#fig-pipeline">Figure k3f9</a>`. lit keeps author-supplied
+link text if there is any. An href is relative: a same-page target is a bare
+`#anchor`; a cross-page target is `page.html#anchor`. A colon in a label id
+becomes a dash in the emitted anchor, because a colon needs escaping in every CSS
+selector that touches it.
+
+- Namespaces are by prefix: `eq:`, `fig:`, `tbl:`, `sec:`, and `chunk:`. An id
+  with no known prefix is not a target.
+- The numbering scheme is `flat` or `by-page`; the default is `flat`, so a page
+  boundary does not leak into a stable reference. M2 implements `flat`.
+- lit numbers an equation by default. A `data-nonumber` equation div opts out.
+- A figure and a table need a caption. A missing caption is the W103 lint, not an
+  error.
+- A duplicate label is the E014 error. A `data-ref` to an unknown label is E015.
+
+A `chunk:` target is synthesized from a chunk name, so prose can link to code.
+Its anchor is the chunk's first defining section, and the default link text is
+the chunk name.
+
+## Identity never enters a text node
+
+Like a code line number (§5.4), a float's id lands in an attribute and the
+stylesheet draws it. Because CSS `attr()` reads only the element's own
+attributes, the id is stamped on the caption element, not on the container, and
+an equation carries it on the equation div itself. This keeps the annotation
+layer's quote selectors (§9.2) stable when a figure moves, and the opaque id does
+not change at all when it moves.
+
+lit rejects CSS counters. A counter resets per document, and each lit page is a
+separate HTML file, so a counter could not give a document-global id on the
+second page. The attribute holds the globally-assigned id instead — which under
+§7.1 is minted once and frozen, so it is stable across documents too.
+
+## How the code implements this
 
 The module is the label-id map, the error type, the resolution's data types, a
 slug-uniquifier, the `plan` entry point (walked in phases), and the nav builder.
@@ -35,7 +86,7 @@ slug-uniquifier, the `plan` entry point (walked in phases), and the nav builder.
 @
 The banner states what planning produces and why pages do not affect references.
 <<the module banner>>=
-//! Document-global planning: turn the raw scan (SPEC.md §6.2 step 4 inputs)
+//! Document-global planning: turn the raw scan (§6.2 step 4 inputs)
 //! into everything the second rewrite pass and the templates need — page
 //! assignment, the nav tree, the label table, and one resolved target per
 //! `data-ref` site.
@@ -176,7 +227,7 @@ the label table from floats, headings, and chunk targets, resolves every ref to 
 href and display text, and finally collects lints and assembles the result.
 <<plan the document>>=
 /// `first_tags[i]` is the tag a docs section opens with, or `None` for code
-/// sections; it is the sole page-boundary signal (SPEC.md §5.3).
+/// sections; it is the sole page-boundary signal (§5.3).
 pub fn plan(
     doc: &DocModel,
     scan: &Scan,

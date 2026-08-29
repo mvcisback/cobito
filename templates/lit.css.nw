@@ -1,6 +1,6 @@
 # The stylesheet
 
-This is lit's stylesheet, told as a literate program (SPEC.md §13, §16). It
+This is lit's stylesheet, told as a literate program (§13, §16). It
 tangles byte-identically to `templates/lit.css`, which the weaver embeds into
 every page. Weaving this file back shows lit highlighting its own CSS — the fourth
 grammar, and the reason the CSS grammar exists.
@@ -40,7 +40,7 @@ The root variables name the reading measure, the note column, and the palette. T
 page background is a warm cream; a sticky heading paints over it as prose slides
 underneath.
 <<the layout banner and root variables>>=
-/* Tufte-flavoured layout (SPEC.md §16). The page is a single centred column
+/* Tufte-flavoured layout (§16). The page is a single centred column
    with a wide right margin; sidenotes, and later the annotation overlay's
    margin slots (§9.3), live in that margin. A float's identity is drawn here
    from its data-id attribute (the frozen opaque id of §7.1), never written into
@@ -279,7 +279,7 @@ A code chunk is a foldable block with a monospace header and body. Each line is 
 own block, and its number is generated content drawn from data-line, so it stays
 out of copies and quote selectors.
 <<the code-chunk layout>>=
-/* --- Code chunks (SPEC.md §5.4) ----------------------------------------- */
+/* --- Code chunks (§5.4) ----------------------------------------- */
 
 details.chunk {
   background: #f4f4ec;
@@ -306,7 +306,7 @@ pre.chunk-body {
 }
 
 /* Line numbers are generated content so they stay out of selections, copies,
-   and the text-quote selectors the annotation layer anchors on (SPEC.md §9.2). */
+   and the text-quote selectors the annotation layer anchors on (§9.2). */
 pre.chunk-body .line {
   display: block;
 }
@@ -336,7 +336,7 @@ survive. A chunk-use hole is never wrapped in one of these. The palette is
 restrained and warm, to sit inside the cream page; a plain identifier keeps the
 default ink so it reads as prose, not decoration.
 <<the syntax-highlight palette>>=
-/* --- Syntax highlighting (SPEC.md §5.5) ---------------------------------- *
+/* --- Syntax highlighting (§5.5) ---------------------------------- *
  * Pure classes over the existing bytes: no injected text, no <script>, so the
  * copy-paste payload, data-line numbers, and annotation quote selectors all
  * survive untouched. A chunk-use hole is never wrapped in one of these — its

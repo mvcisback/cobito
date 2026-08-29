@@ -1,4 +1,4 @@
-//! The `site.json` contract (SPEC.md §8): a `schema: 2` document model that
+//! The `site.json` contract (§8): a `schema: 2` document model that
 //! Phase 1 produces and Phase 2 (annotation/review tooling) consumes unchanged.
 //!
 //! It is written only under `lit weave --archive`. Determinism is a hard

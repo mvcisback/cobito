@@ -1,22 +1,85 @@
-# Prose rewriting
+# Prose rewriting (§4.3, §9)
 
-This is steps 3 through 5 of the prose pipeline (SPEC.md §6.2): parse the now
-math-free prose, rewrite it, and serialize.
+This module is steps 3 through 5 of the prose pipeline (§6.2). It parses the
+now math-free prose, rewrites it, and serializes it. The prose after this is the
+specification. The chunks after the prose are the implementation.
 
-Two passes run over identical bytes. `scan` collects what numbering and
-cross-referencing need to know about the whole document; `apply` rewrites each
-section once the answers exist. Both walk the same input in the same order, so the
-counters and per-site indices stay in lockstep — that agreement is what lets
-`apply` avoid re-deriving anything.
+## Why lit needs an HTML parser
 
-Identity lands in a `data-id` attribute (the frozen opaque id of §7.1), never in a
-text node; the stylesheet draws the kind-and-id label from it. Only cross-reference
-link text is generated as real text, because a link with no text is no link at all.
-§9.2 explains why the distinction matters to the annotation layer.
+An early draft claimed the pipeline format lets lit avoid a parser. That claim
+was wrong. This phase must find the `h1` boundaries for page splitting, add `id`
+attributes, number the figures and tables, rewrite the `data-ref` placeholders,
+and hoist the aside margin content. Each of these operations is tree surgery on
+the prose. Prose is HTML by this point, so lit must read HTML as a tree.
 
-The module is the error and kind types, the anchor/slug helpers, the scan's input
-and state types, the rewriter runner, the two passes, and the plan cursor between
-them.
+lit uses `lol_html`, a streaming rewriter with CSS-selector handlers. The numbers
+are document-global, but each single rewrite is node-local. So two passes are
+enough: one pass collects the answers, the second pass stamps them in. lit never
+builds a full DOM. This keeps the pass light.
+
+One wrinkle drives the shape of the code. `lol_html` fires a handler on the
+*start* tag. So lit computes a figure's number when the figure opens, then hands
+that number to the caption handler through a one-slot cell. The number must land
+on the caption element, because CSS `attr()` cannot read an ancestor's attribute
+(§7).
+
+## The two-pass discipline
+
+Two passes run over identical bytes. The first pass, `scan`, collects what the
+numbering and the cross-referencing must know about the whole document: the
+headings, the figure and table and equation labels in document order, their kind,
+and each `data-ref` site. It changes nothing. The resolver (§7) turns that into
+the global tables. The second pass, `apply`, walks each section a second time and
+stamps the results.
+
+Both passes walk the same input in the same order. So the counters and the
+per-site indices stay in lockstep. That agreement is what lets `apply` avoid a
+re-derivation of anything.
+
+## Identity is an attribute, never text
+
+Identity lands in a `data-id` attribute — the frozen opaque id of §7.1 — never in
+a text node. The stylesheet draws the kind-and-id label from that attribute. Only
+the cross-reference link text is real text, because a link with no text is no link
+at all.
+
+This rule is a contract with the annotation layer (§9.2). Nothing decorative is a
+text node. So a quote selector over the prose sees the final words, not a number
+that shifts each time an earlier figure is added. A renumber changes the generated
+reference *text* but never an element id, so a quote selector on the nearby prose
+still holds.
+
+## The annotation contract (§9)
+
+Commenting is not lit's job. It belongs to a separate tool, specced in
+`ANNOTATIONS.md`. What lit owes that tool is HTML it can anchor to, plus room in
+the layout to render. lit meets three obligations.
+
+First, provenance. Every rendered section element carries its identity and its
+source coordinates, so an annotation on the woven page maps back to the `.nw`
+source that a review agent must patch:
+
+```html
+<section class="code" id="sec-4" data-nw-file="parser.nw" data-nw-line="47"
+         data-chunk="lex a token">…</section>
+```
+
+Second, stable anchors. A section id and a chunk slug come from `markup`'s chunk
+numbering and chunk names, never from the layout or the page assignment. So they
+survive a re-weave. KaTeX renders server-side (§6.3), so the text a selector sees
+is final at page load.
+
+Third, margin room. Every section renders an empty margin slot that an annotation
+overlay may mount into. `lit.toml` can also inject an embed snippet into every
+page, so a hosted annotator needs no code change. The archival site stays fully
+readable with the overlay absent — annotation is progressive enhancement by
+construction.
+
+## How the code implements this
+
+The module is the error and kind types, the anchor and slug helpers, the scan's
+input and state types, the rewriter runner, the two passes, and the plan cursor
+between them.
 <<src/rewrite.rs>>=
 <<the module banner>>
 
@@ -48,7 +111,7 @@ them.
 @
 The banner states the two-pass discipline and the attribute-not-text rule.
 <<the module banner>>=
-//! Steps 3–5 of the prose pipeline (SPEC.md §6.2): parse the (now math-free)
+//! Steps 3–5 of the prose pipeline (§6.2): parse the (now math-free)
 //! prose, rewrite it, serialize.
 //!
 //! Two passes over identical bytes. `scan` collects what numbering and

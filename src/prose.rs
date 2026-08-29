@@ -1,4 +1,4 @@
-//! Steps 1–2 of the prose pipeline (SPEC.md §6.2): reassemble docs spans, then
+//! Steps 1–2 of the prose pipeline (§6.2): reassemble docs spans, then
 //! lift math out into placeholders.
 //!
 //! The ordering is the whole point. Escaping `[[…]]` happens before anything

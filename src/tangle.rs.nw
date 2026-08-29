@@ -1,9 +1,55 @@
-# Tangling
+# Tangling (§11)
 
-`lit tangle` extracts compilable source from `.nw` files (SPEC.md §11). Tangling
-is the inverse of weaving: it pulls a root chunk, and everything it references,
-out as a plain source file. v1 shells out to noweb's `notangle`, which is correct
-by construction — lit never reimplements it.
+This module is `lit tangle`. The prose is the specification. The chunks after it
+are the implementation. Tangle extracts compilable source from `.nw` files. It is
+the inverse of weave: it pulls a root chunk, and everything the root references,
+out as a plain source file.
+
+## Three sub-commands
+
+`lit tangle <file.nw>…` writes every root chunk to the output directory (the
+current directory by default). `lit tangle -R 'name'` writes a single chunk to
+stdout. `lit tangle --check` tangles to memory, diffs the result against the disk,
+and exits nonzero on any drift. The `--check` form exists for CI and for the
+self-hosting flip (§13) — it is what proves a committed artifact still matches its
+`.nw`.
+
+The roots are the path-shaped chunk names the model already detects. The files
+come from the CLI, the same as weave. A per-root line-pragma format is read from
+`lit.toml` and defaults off. Writes go through a temp file and a rename, and lit
+skips a write when the content is unchanged, so a build system that watches mtimes
+does not rebuild for no reason. noweb ships `cpif` for exactly this reason.
+
+## Why lit shells out to notangle
+
+v1 shells out to noweb's `notangle`. This is correct by construction and carries
+zero implementation risk. The cost is a runtime dependency on noweb, and no single
+static binary.
+
+noweb stays in the pipeline indefinitely. A Rust reimplementation of `markup` and
+`notangle` is a contingency, not a scheduled milestone. lit does the work only
+when the dependency actually costs something. Any one of these triggers justifies
+it:
+
+- Process-spawn latency dominates weave time on a real document. Measure first —
+  caching may fix it.
+- lit needs distribution to non-Nix users, where a static binary is the difference
+  between adoption and not.
+- A noweb version difference breaks the golden tests and upstream is unresponsive.
+  noweb is stable and largely unmaintained, which cuts both ways.
+- lit needs IR information `markup` does not expose, and the preprocessing around
+  it becomes more code than a replacement would be.
+- lit needs column-level tangle-to-chunk provenance for tangle-then-backout
+  highlighting (§5.5). `notangle -L` records only which *line* a tangled line came
+  from, not which *columns* are a chunk's own text against an expanded chunk-use
+  hole. A lit-owned tangle can keep these breadcrumbs; noweb discards them. The
+  payoff — always-correct, full-context highlighting — is reader-facing.
+
+Until one of those bites, the dependency is a feature: it is a correct,
+battle-tested implementation lit did not write, and it keeps `.nw` compatibility
+honest by construction rather than by test.
+
+## How the code implements this
 
 The module is the error type, the single-root shell-out, two batch drivers (write
 to a directory, and check against it without writing), and the disk helpers those
@@ -35,7 +81,7 @@ The banner records the inverse-of-weave relationship and the line-pragma policy:
 pragmas are per-root and off by default, because the marker syntax is per-language
 and only `lit.toml` knows the right format.
 <<the module banner>>=
-//! `lit tangle`: extract compilable source from `.nw` files (SPEC.md §11).
+//! `lit tangle`: extract compilable source from `.nw` files (§11).
 //!
 //! Tangling is the inverse of weaving — it pulls a root chunk (and everything
 //! it references) out as a plain source file. v1 shells out to noweb's
@@ -43,7 +89,7 @@ and only `lit.toml` knows the right format.
 //!
 //! Line pragmas (`notangle -L`) are per-root and off by default: the marker
 //! syntax is per-language, so `lit.toml` sets a `line-pragma` format string per
-//! root (SPEC.md §5.2). A root with no configured format tangles without
+//! root (§5.2). A root with no configured format tangles without
 //! pragmas, which is the spec's default.
 @
 Process control and paths — this module's work is spawning `notangle` and moving

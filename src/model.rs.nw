@@ -1,11 +1,36 @@
-# The document model
+# The document model (§5.1, §5.2)
 
-This folds `markup`'s IR into lit's document model (SPEC.md §19.2).
+This module is the specification and the implementation of the document model.
+The prose is the specification. The chunks after it are the implementation. The
+model folds `markup`'s IR (§4.1) into the types the weaver and the tangler read.
 
-The line counter is the subtle part. It advances on both `Nl` and `IndexNl`,
-because an `@ %def` line is a source line whose newline reaches us as `IndexNl`
-(§4.2). Getting this wrong silently shifts every provenance attribute after the
-first `%def` in a file.
+## Chunk continuation
+
+noweb lets a chunk name be defined more than once. A later definition appends to
+the earlier one. This matters in three places, and it is easy to get wrong:
+
+- Tangle joins the definitions in source order. `notangle` does this.
+- The JSON model keeps `chunks[name].defs` as an ordered list. Each section
+  after the first carries `continues: true`.
+- The render shows a continuation with a `+=` marker, the noweb convention, and
+  links it back to the first definition.
+
+## Root chunks
+
+A chunk whose name is path-shaped is a root. A name is path-shaped when it holds
+a `/`, or when it ends in a file extension, such as `src/lexer.rs`. A root is the
+entry point that tangle writes to a file. `lit.toml` can override the set of
+roots and set the line-pragma format for each one. The tangler owns that format
+(§5.2, §11), so the model only decides which names are roots.
+
+## The line counter
+
+The line counter is the subtle part of the build. It advances on both `Nl` and
+`IndexNl`, because an `@ %def` line is a source line whose newline reaches lit as
+`IndexNl` (§4.2). A wrong count silently shifts every provenance attribute after
+the first `%def` in a file.
+
+## How the code implements this
 
 The module is the model's data types, two classification helpers, the error and
 lint types, a stateful `Builder` that walks the event stream, the `build` entry
@@ -42,11 +67,11 @@ point, and the queries a built model answers.
 The banner records the one subtle invariant: the line counter advances on
 `IndexNl` too.
 <<the module banner>>=
-//! Fold `markup`'s IR into lit's document model (SPEC.md §19.2).
+//! Fold `markup`'s IR into lit's document model (§19.2).
 //!
 //! The line counter is the subtle part: it advances on both `Nl` *and*
 //! `IndexNl`, because an `@ %def` line is a source line whose newline reaches
-//! us as `IndexNl` (SPEC.md §4.2). Getting this wrong silently shifts every
+//! us as `IndexNl` (§4.2). Getting this wrong silently shifts every
 //! provenance attribute after the first `%def` in a file.
 @
 Only maps, formatting, and the event type this module consumes.

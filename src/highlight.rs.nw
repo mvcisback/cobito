@@ -1,19 +1,111 @@
-# Syntax highlighting
+# Syntax highlighting (§5.5)
 
-Syntax highlighting (SPEC.md §5.5). A code chunk is not a valid program — it is
-target-language text with chunk-use holes spliced in, and a hole is lit's syntax,
-not the target's. So the tokenizer never sees a hole: tree-sitter gets only the
-literal runs between holes, and each hole's anchor is spliced back afterward — the
-same discipline the math pass uses (§6.2). Color is a CSS `tok-*` class, never
-injected text, so copy-paste (§5.4) and the annotation layer's quote selectors
-(§9.2) see the same bytes as before, and there is no script (§6.3).
+This module is the specification and the implementation of syntax highlighting.
+The prose is the specification. The chunks after it are the implementation.
+
+## What highlighting must do
+
+Highlighting gives color to the bytes that a reader already sees. It never
+changes those bytes (§2). Color is the only thing it adds. This keeps three
+promises from §5.4 and §6.3: the copy of a code chunk is the same text as
+before, the line numbers stay out of that copy, and the page needs no script.
+
+## The hard part
+
+A code chunk is not a valid program. It is target-language text with chunk uses
+spliced in. A chunk use is lit's own syntax, not the target's. A plain tokenizer
+reads the two brackets of a chunk use as a shift operator and chokes. Three
+moves make highlighting safe.
+
+## Move 1 — a chunk use is an opaque hole
+
+Section 5.4 already draws each chunk use as an anchor inside its line span. The
+reader sees the hole's opaque id (§7.1), never target source. So the tokenizer
+gets only the literal runs between the anchors, with the byte offset of each
+hole. It never reads across a hole. This is the discipline the math pass uses
+(§6.2): take the foreign spans out, tokenize the rest, put the spans back. The
+line `let c = HOLE;` tokenizes as `let`, `c`, `=`, and `;`, and the hole in the
+middle stays untouched, so the two brackets never lex as a shift operator.
+
+## Move 2 — lit resolves the language, once, out of band
+
+The engine never guesses the language. lit resolves it in three tiers. The most
+specific tier wins.
+
+1. Per-chunk override. A `[weave.chunk-lang]` table in `lit.toml` maps a chunk
+   name to a language. This is the escape hatch for a shell snippet inside a
+   Rust document, or for an abstract chunk whose name has no extension. The map
+   is out-of-band config, so it survives `markup`. An inline tag on the def line
+   would not, because `markup` folds everything after the chunk name into the
+   body.
+2. Document default. A `[weave] lang` key in `lit.toml` sets one language for
+   the whole document.
+3. Root file extension. With nothing else said, a chunk takes the language of
+   the tangle root it flows into. A concrete chunk uses its own extension. An
+   abstract chunk has no extension, so lit walks the chunk-use graph to a root
+   that reaches it. Most chunks need no configuration.
+
+A chunk that resolves to no known language is plain text and a W104 warning,
+never an error; the page still renders. An unknown chunk name in either
+`[weave]` key is the E033 error.
+
+lit ships four grammars: Rust, Nix, Bash, and CSS. CSS is here so lit can
+present its own stylesheet as a literate document (§13). Each further grammar is
+one more dependency (§19.5).
+
+## Move 3 — one resolver, shared by weave and editor
+
+The three tiers are one function. lit exposes it as `lit language <file>
+<chunk>`, which prints the language id or exits nonzero. Weave calls it inside.
+An editor plugin runs the same command. So the woven page and the editor can
+never disagree on the language of a chunk.
+
+## The weave-time pipeline
+
+Highlighting runs inside §5.4's render, after the chunk-use anchors exist.
+tree-sitter needs the whole chunk as one buffer, because a string or a comment
+can cross a line break. So lit tokenizes per chunk, not per line, and then
+re-splits the colored runs at each newline into the same self-contained line
+spans that §5.4 emits. For each code chunk lit does four steps:
+
+- it resolves the language by the tiers above;
+- it builds a clean buffer: the literal runs joined by newlines, with each hole
+  removed but its byte offset and anchor HTML kept;
+- it runs tree-sitter-highlight over the buffer;
+- it walks the buffer one time and merges the events. At a newline it closes the
+  open token spans, closes the line span, opens the next line span with its
+  data-line, and reopens the token spans. At a hole it closes the token spans,
+  emits the anchor as-is, and reopens them, so a hole is never inside a color
+  span. Elsewhere it escapes the bytes into the current token span.
+
+The engine is tree-sitter, through `tree-sitter-highlight`. Each grammar maps a
+stable set of highlight names (`keyword`, `string`, `comment`, and so on) to
+`tok-*` CSS classes in `lit.css`. The color is a pure class over the bytes that
+are already there. There is no inline style and no script, so the archival rule
+(§6.3) and determinism (§8) hold, and a token span adds no text of its own, so
+§5.4's copy and quote guarantees stay true.
+
+## Future work — tangle-then-backout highlighting
+
+This slice colors each chunk on its own. A chunk body that is only a fragment,
+such as `count += 1;` with no enclosing function, leans on tree-sitter's error
+recovery. The more correct design colors the tangled program, which is complete
+and has full context, and paints the token colors back onto the chunk view. That
+is blocked today by provenance. `notangle -L` gives line-granular breadcrumbs,
+but it says nothing about which tangled columns came from a chunk's own text and
+which came from an expanded hole. The back-paint needs column-level
+tangle-to-chunk provenance, which noweb throws away. This is a concrete reason to
+eventually own or fork `notangle` (§11). Chunk-local highlighting is the interim.
+It is correct for a whole-chunk root, and it falls back to plain text for a
+fragment.
+
+## How the code implements this
 
 The module is the language enum and its resolver, the highlight-name tables, a
 per-language grammar cache, and the line-splitting merge that does the real work.
-
-The banner doc-comment below shows a hole example. In a code chunk a bare hole is
-a chunk use, so each bracket pair carries the noweb at-escape; the example survives
-tangle as literal text and never expands.
+The banner doc-comment below carries a hole example. In a code chunk a bare hole
+is a chunk use, so each bracket pair carries the noweb at-escape; the example
+survives tangle as literal text and never expands.
 <<src/highlight.rs>>=
 <<the module banner>>
 
@@ -50,7 +142,7 @@ tangle as literal text and never expands.
 The banner states the two invariants: holes stay opaque to the tokenizer, and color
 is pure CSS so the archival and annotation contracts hold.
 <<the module banner>>=
-//! Syntax highlighting (SPEC.md §5.5). A code chunk is not a valid program: it is
+//! Syntax highlighting (§5.5). A code chunk is not a valid program: it is
 //! target-language text with *chunk-use holes* (`@<<next char@>>`) spliced in, and
 //! those are lit's syntax, not the target's. So the tokenizer never sees a hole —
 //! we hand tree-sitter only the literal runs between holes and splice the holes'

@@ -1,4 +1,4 @@
-//! M1 weave: document model → a single HTML page (SPEC.md §19.3).
+//! M1 weave: document model → a single HTML page (§19.3).
 //!
 //! Steps 3–5 of §6.2 (parse, rewrite, serialize) are deliberately a
 //! pass-through here: M1 has no numbering, `data-ref`, or sidenote hoisting to

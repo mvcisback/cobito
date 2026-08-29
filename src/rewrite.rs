@@ -1,4 +1,4 @@
-//! Steps 3–5 of the prose pipeline (SPEC.md §6.2): parse the (now math-free)
+//! Steps 3–5 of the prose pipeline (§6.2): parse the (now math-free)
 //! prose, rewrite it, serialize.
 //!
 //! Two passes over identical bytes. `scan` collects what numbering and

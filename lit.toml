@@ -1,4 +1,4 @@
-# Highlighting overrides for flake.nix.nw (SPEC.md §5.5, tier 1).
+# Highlighting overrides for flake.nix.nw (highlight.rs.nw §5.5, tier 1).
 #
 # flake.nix.nw is a Nix document, so every chunk resolves to `nix` by the
 # root-extension rule (tier 3). The check bodies are shell scripts, not Nix, so

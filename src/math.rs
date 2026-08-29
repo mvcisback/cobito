@@ -1,4 +1,4 @@
-//! Step 6 of the prose pipeline: KaTeX at weave time (SPEC.md §6.3).
+//! Step 6 of the prose pipeline: KaTeX at weave time (§6.3).
 //!
 //! Rendering is server-side so the archival site needs no JavaScript. The
 //! `katex` crate drives a bundled JS engine, which is slow enough that every

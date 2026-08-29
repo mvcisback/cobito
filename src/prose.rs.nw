@@ -1,13 +1,67 @@
-# Prose reassembly and math extraction
+# The prose layer (§6.1, §6.2)
 
-Steps 1 and 2 of the prose pipeline (SPEC.md §6.2): reassemble the docs spans into
-HTML, then lift math runs out into placeholders. The ordering is the whole point —
-quoted code is escaped first, then math is extracted before any HTML parsing, so a
-less-than sign inside a formula is never read as a malformed tag.
+This module is the specification and the implementation of the first two steps
+of the prose pipeline. The prose is the specification. The chunks after it are
+the implementation.
 
-The module is the extracted-math type, the prose error, the escaper, step 1
-(reassembly), the helpers that mark skip regions and find delimiters, step 2
-(extraction), the step-6 substitution, and the tests.
+noweb does not solve the prose problem. Its `tohtml` passes prose through
+verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
+LaTeX subset, does not expand author macros, and shows math as italics. lit does
+its own prose layer instead.
+
+## Two prose dialects
+
+An author writes a docs chunk in one of two dialects. The `dialect` key in
+`lit.toml` sets it per document (§5.2):
+
+- `markdown` is the default. Prose is CommonMark. Paragraphs, emphasis, lists,
+  links, headings, and backtick code become HTML. The fenced directives for
+  math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
+  cross-reference. This is the ergonomic dialect (§6.4).
+- `html` is the escape hatch. Prose is raw HTML, which is what noweb's HTML path
+  expects. Any construct the Markdown directives do not cover, such as a sidenote
+  aside, falls back to a raw-HTML island (§6.4).
+
+Both dialects share one pipeline. Markdown is a post-`markup` transform on the
+reassembled prose. It slots in after math extraction and before the HTML
+rewrite. Everything after that step — numbering, references, math render,
+sidenote hoist, and `site.json` — is the same for both dialects, byte for byte.
+
+## The pipeline (the order is load-bearing)
+
+lit processes each docs chunk in this order:
+
+1. Reassemble. Join the `@text` and `@nl` spans. Turn each `@quote`…`@endquote`
+   into a `<code>` element with its contents HTML-escaped. This escape comes
+   first, so an inline quote of a tag such as `<div>` is safe.
+2. Extract math. Scan for `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, and replace each
+   run with an opaque placeholder. This must run before HTML parsing, so that
+   `$a < b$` is not read as a broken tag. lit does not scan inside a `<code>`
+   from step 1, or inside any `<pre>` or `<code>` the author wrote. A literal `$`
+   elsewhere is escaped as backslash-dollar, which is lit's convention, not
+   noweb's; `markup` passes it through and the extractor removes the backslash.
+3. Parse HTML. The input is now well-formed and free of math.
+4. Rewrite. Inject section ids, number the figures, tables, and equations,
+   resolve each `data-ref`, and hoist each sidenote aside into the section's
+   margin array.
+5. Serialize.
+6. Render math. Replace each placeholder with KaTeX output.
+
+Steps 4 to 6 need document-global numbering, so lit runs the whole document
+through step 3 before any section reaches step 4. Weave cannot stream. In
+`markdown` mode the CommonMark render runs between steps 2 and 3; the detail is
+in §6.4.
+
+lit does not sanitize prose. The author is the trusted party. A margin comment
+is the annotation layer's problem (`ANNOTATIONS.md`), never merged into lit's
+output.
+
+## How the code implements this
+
+This module is steps 1 and 2. It holds the extracted-math type, the prose error,
+the escaper, step 1 (reassembly), the helpers that mark skip regions and find
+delimiters, step 2 (extraction), the step-6 substitution, and the tests. Steps 3
+to 5 are the rewrite module; step 6's KaTeX call is the math module.
 <<src/prose.rs>>=
 <<the module banner>>
 
@@ -39,7 +93,7 @@ The module is the extracted-math type, the prose error, the escaper, step 1
 @
 The banner states the ordering and why it is load-bearing.
 <<the module banner>>=
-//! Steps 1–2 of the prose pipeline (SPEC.md §6.2): reassemble docs spans, then
+//! Steps 1–2 of the prose pipeline (§6.2): reassemble docs spans, then
 //! lift math out into placeholders.
 //!
 //! The ordering is the whole point. Escaping `[[…]]` happens before anything

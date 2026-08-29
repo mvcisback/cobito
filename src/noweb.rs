@@ -1,6 +1,6 @@
 //! Parser for noweb's `markup` pipeline format.
 //!
-//! Verified against noweb 2.13 (nixpkgs); see SPEC.md §4.2 for the empirical
+//! Verified against noweb 2.13 (nixpkgs); see §4.2 for the empirical
 //! findings this encodes, notably: `markup` lives in `lib/noweb/` (not `bin/`),
 //! empty text lines arrive as `@text ` with a trailing space, and fatal errors
 //! appear both as a nonzero exit status and an `@fatal` event.

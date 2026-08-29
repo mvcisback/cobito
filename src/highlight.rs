@@ -1,4 +1,4 @@
-//! Syntax highlighting (SPEC.md §5.5). A code chunk is not a valid program: it is
+//! Syntax highlighting (§5.5). A code chunk is not a valid program: it is
 //! target-language text with *chunk-use holes* (`<<next char>>`) spliced in, and
 //! those are lit's syntax, not the target's. So the tokenizer never sees a hole —
 //! we hand tree-sitter only the literal runs between holes and splice the holes'

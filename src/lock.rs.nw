@@ -1,11 +1,85 @@
-# The lock file
+# Stable opaque ids and the lock file (§7.1)
 
-The lock file (SPEC.md §7.1) is a committed, greppable map from a note-local human
-label to a frozen opaque id. The id is what a cross-reference renders ("Figure
-k3f9") and what a future transclude names, so it must survive every move and
-rename — which is exactly why it is *random* and *persisted*, never derived from
-the label, path, or content. The map is keyed by source file so two notes may
-reuse a label without colliding.
+This module is the specification and the implementation of stable identity. The
+prose is the specification. The chunks after it are the implementation.
+
+## Why an opaque id
+
+lit is meant to be a living document, and one day a forest: separate projects
+import and transclude each other's notes (§16, M12). A position-dependent
+"Figure 3" cannot survive that. It changes the moment content moves inside a
+document, or is pulled into another one. So the identity of a figure, table,
+equation, or labelled section is not its position but a frozen opaque id, and a
+reference renders kind-qualified with that id ("Figure k3f9", "Section k3f9"),
+not "Figure 3". This supersedes the numbering half of §7; the anchoring and
+caption mechanics there are unchanged.
+
+## What earns an id
+
+A float earns an id by carrying a label. A section earns one the same way. A
+heading the author pins with a `sec:` id — `{#sec:lexing}` in Markdown, an
+`id="sec:lexing"` in HTML — is a first-class label: lit mints it into `lit.lock`
+with `kind = "section"`, a `\ref{sec:lexing}` renders "Section k3f9", and the
+section leads with a small clickable permalink whose id the stylesheet draws. The
+id lives in `data-id`, never a text node, so it stays out of selections and the
+quote selectors (§9.2); the anchor itself is the click target. An h1 is addressed
+by its page id and is never minted. An unlabelled section gets no id and no
+prefix, the same rule that gives an unreferenceable float no id. So the
+affordance is opt-in: an author labels the sections worth linking.
+
+## The id itself
+
+The id is a random 4-character base62 string (`[0-9A-Za-z]`, case-sensitive,
+about 14.8 million values). lit mints it once and never recomputes it. It is
+deliberately not derived from the label, the path, or the content, because a
+derived id would change under exactly the renames and moves it exists to survive.
+4 characters is enough for a hobby-scale forest.
+
+## Labels stay human, ids stay global
+
+An author keeps writing a human-readable `\label{fig:pipeline}` and
+`\ref{fig:pipeline}` (§6.4). A label is note-local: two notes may both use
+`fig:pipeline` without colliding, because lit resolves a label only against its
+own file. The opaque id is global. Within a file a `\ref` resolves by the human
+label. Across files (import and transclude, M12) a reference names the target by
+its opaque id, which is rename- and move-proof.
+
+## The lock file
+
+`lit.lock` is a committed, human-readable, greppable map from `label` to
+`{ id, kind }`, keyed by source file so note-local labels stay distinct:
+
+```toml
+# lit.lock — generated; edit only to delete a retired label.
+["parser.nw"]
+"fig:pipeline" = { id = "k3f9", kind = "figure" }
+"tbl:api"      = { id = "7g2A", kind = "table" }
+"eq:wrap"      = { id = "Qx0m", kind = "equation" }
+```
+
+`kind` is carried from the fence or tag, not parsed off the id. The label prefix
+survives only as the E030 sanity check (§6.4); it no longer decides numbering or
+identity.
+
+## Mint on miss, freeze under --locked
+
+A normal `weave` mints an id for any label missing from the lock and rewrites
+`lit.lock`, a dev-time side effect like updating a dependency lockfile. On a
+collision it re-rolls. But weave must stay a byte-deterministic function of its
+inputs (§8), and CI and the Nix sandbox run against a read-only source tree. So
+`weave --locked` never mints: a label absent from the lock is the E031 error,
+which mirrors `cargo --locked` against `Cargo.lock`. `nix flake check` weaves
+`--locked`, and the committed lock is what lets a random mint reconcile with
+determinism.
+
+## Discovery
+
+The id is random and persisted, so it cannot be computed; you discover it with
+tooling. `lit lock` is a fast pass that mints and populates `lit.lock` with no
+full weave, and the committed lock is greppable. `lit labels <file>` lists a
+file's label-to-id map; `lit id <file> <label>` prints one id for scripting.
+
+## How the code implements this
 
 The module holds the id alphabet, the on-disk types, the error, a minter, the
 base62 speller, and the lock operations.
@@ -35,7 +109,7 @@ base62 speller, and the lock operations.
 The banner explains why the id is random and persisted rather than derived, and
 why the map nests by file.
 <<the module banner>>=
-//! The lock file (SPEC.md §7.1): a committed, greppable map from a note-local
+//! The lock file (§7.1): a committed, greppable map from a note-local
 //! human label to a frozen opaque id. The id is what a cross-reference renders
 //! ("Figure k3f9") and what an eventual import/transclude (§16, M12) names, so it
 //! must survive every move and rename — which is exactly why it is *random* and
@@ -227,7 +301,7 @@ behind a fixed two-line header. Byte-stable output is what lets CI diff the lock
 pub fn save(&self, path: &Path) -> Result<(), LockError> {
     let body = toml::to_string(&self.files).map_err(|e| LockError::Parse(e.to_string()))?;
     let text = format!(
-        "# lit.lock — generated (SPEC.md §7.1). label → frozen opaque id.\n\
+        "# lit.lock — generated (§7.1). label → frozen opaque id.\n\
          # Edit only to retire a label; ids never change once minted.\n{body}"
     );
     std::fs::write(path, text).map_err(LockError::Io)

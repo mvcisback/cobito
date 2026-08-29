@@ -11,8 +11,8 @@
 
       # KaTeX renders to HTML that is version-coupled to its own CSS and font
       # metrics, so these assets must match the version the `katex` crate
-      # embeds (0.16.4) — nixpkgs' katex is a different release. See SPEC.md
-      # §6.3. Bump both together or math silently mislays.
+      # embeds (0.16.4) — nixpkgs' katex is a different release. See §6.3.
+      # Bump both together or math silently mislays.
       katexVersion = "0.16.4";
       katexAssets = pkgs: pkgs.fetchzip {
         url = "https://github.com/KaTeX/KaTeX/releases/download/v${katexVersion}/katex.tar.gz";
@@ -21,7 +21,7 @@
 
       # One buildRustPackage, applied to two source trees (the bootstrap seed and
       # the tangled .nw). noweb's pipeline stages (markup, nt, ...) live in
-      # lib/noweb, not bin — see SPEC.md §4.2 — so the wrapper adds both to PATH.
+      # lib/noweb, not bin — see §4.2 — so the wrapper adds both to PATH.
       mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
         pname = "lit";
         version = "0.1.0";
@@ -55,7 +55,7 @@
         lit = mkLit pkgs litSource;
         # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
         # very output was built from — the dogfood loop as a buildable artifact
-        # (SPEC.md §13). checks.dogfood diffs the committed file against this.
+        # (§13). checks.dogfood diffs the committed file against this.
         flake = pkgs.runCommand "flake.nix" { } ''
           cd ${self}
           ${lit}/bin/lit tangle flake.nix.nw --out $TMPDIR

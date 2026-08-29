@@ -1,4 +1,4 @@
-//! `lit.toml`, the project manifest (SPEC.md §5.2). M4 reads a deliberately
+//! `lit.toml`, the project manifest (§5.2). M4 reads a deliberately
 //! small slice: `[[document]]` metadata (which feeds `site.json`'s `meta`) and
 //! `[[tangle.root]]` line-pragma formats. The `[weave]` / `[weave.annotate]`
 //! keys of §5.3/§10 are parsed leniently (unknown keys ignored) but not yet

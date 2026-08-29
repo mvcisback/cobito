@@ -1,19 +1,67 @@
-# The weaver
+# The weaver (§5.4)
 
-This is the whole document to HTML page pipeline (SPEC.md §19.3, §6.2). It takes
-the folded document model, renders every section, resolves numbering and
+This module is the whole-document to HTML-page pipeline (§19.3, §6.2). The prose
+is the specification. The chunks after it are the implementation. It takes the
+folded document model, renders every section, resolves the numbering and the
 cross-references across the whole document, splits the result into pages at each
 top-level heading, and writes the site to disk.
 
-The order of work is fixed by one constraint: numbering and cross-references
-cannot be settled until every section has been seen. So prose bodies make two
-passes through the rewriter — a scan pass that collects every labelled float,
-then an apply pass that fills in the resolved ids — with the document-global plan
-computed in between.
+The order of work is fixed by one constraint. The numbering and the
+cross-references cannot be settled until every section has been seen. So prose
+bodies make two passes through the rewriter — a scan pass that collects every
+labelled float, then an apply pass that fills in the resolved ids — with the
+document-global plan computed in between.
 
 Determinism is a hard requirement (§8). Every map is ordered, there are no
-timestamps, and the KaTeX fonts are sorted before they are copied, so two weaves
-of the same input produce byte-identical output.
+timestamps, and the KaTeX fonts are sorted before they are copied. So two weaves
+of the same input make byte-identical output.
+
+## How a code chunk renders
+
+A code chunk renders as a `section` that wraps a collapsible `details`. The
+`summary` holds the chunk name; the body holds one `span` per line:
+
+```html
+<section class="code" id="sec-2" data-nw-file="…" data-nw-line="6" data-chunk="lex a token">
+  <div class="margin-slot" data-for="sec-2"></div>
+  <details class="chunk" open>
+    <summary><span class="chunk-name">&lt;&lt;<dfn>lex a token</dfn>&gt;&gt;=</span></summary>
+    <pre class="chunk-body">
+      <span class="line" data-line="7">let c = <a href="#sec-8">&lt;<i>next char</i>&gt;</a>;</span>
+      <span class="line" data-line="8">tokens.push(c);</span>
+    </pre>
+  </details>
+</section>
+```
+
+Three decisions shape this markup, and all three need zero client JavaScript.
+
+First, the chunk is collapsible and open by default. A reader can fold a chunk
+away. Nothing is hidden from a reader who never touches it, and the collapsed
+state is not persisted, because that needs no JavaScript and no storage. The
+header lives in the `summary`, which matters for a cross-reference: a link targets
+the `section`, not the `details`, so a link into a *collapsed* chunk still scrolls
+to a visible element that names the chunk.
+
+Second, the line numbers are `.nw` source lines, not per-chunk 1..n. The number a
+reader sees is the number they type into an editor. It matches the `data-nw-line`
+provenance and any `notangle -L` pragma. A continuation chunk restarts at its own
+source line, which is the honest answer: the two halves of a chunk are not
+contiguous in the source.
+
+The numbers render as CSS generated content — `data-line` on the span,
+`content: attr(data-line)` in the stylesheet — never as text nodes. This is not
+cosmetic. A text-node number would be copied with a code selection, and it would
+sit inside the exact-quote selector the annotation layer anchors with (§9.2). So a
+re-weave after an edit above would orphan every annotation on the code below.
+Generated content is invisible to both the clipboard and the selector.
+
+Third, the bytes get syntax highlighting. The chunk-use hole stays opaque, the
+language is resolved out of band, and the color is pure CSS. This preserves the
+copy-paste and the annotation invariants above. The `highlight` module owns that
+concern and states the full rule (§5.5).
+
+## How the code implements this
 
 The module is the error type, the per-chunk and per-section renderers, the
 fragment passes, the mint-only lock path, the whole-document render, the asset
@@ -61,7 +109,7 @@ The banner states the pass-through decision: three of the six §6.2 steps are a
 deliberate no-op at this milestone, and the placeholder split is already in place
 so a later milestone can insert a real HTML parse without reordering anything.
 <<the module banner>>=
-//! M1 weave: document model → a single HTML page (SPEC.md §19.3).
+//! M1 weave: document model → a single HTML page (§19.3).
 //!
 //! Steps 3–5 of §6.2 (parse, rewrite, serialize) are deliberately a
 //! pass-through here: M1 has no numbering, `data-ref`, or sidenote hoisting to

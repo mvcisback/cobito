@@ -1,21 +1,22 @@
 # Annotations — the margin commenting layer for lit sites
 
-**Status:** draft spec, v0.1. Split out of `SPEC.md` (which retains only lit's
-side of the contract, its §9). Research findings below are from 2026-08-23.
+**Status:** draft spec, v0.1. Split out from lit's own literate document, which
+keeps only lit's side of the contract — the annotation-ready-HTML rule in
+`src/rewrite.rs.nw` (§9). Research findings below are from 2026-08-23.
 
 **Not a v1 blocker — do not re-litigate before M5.** The ecosystem is surveyed
 (§3) and the fallback routing is decided (§4); what remains are judgments that
 require annotating a real woven page, which does not exist yet. lit's only
-obligation until then is the §9 contract in `SPEC.md`: provenance attributes,
+obligation until then is the §9 contract in `src/rewrite.rs.nw`: provenance attributes,
 anchorable markup, margin slots, embed hook. Build that, ship v1, then choose.
 
 ## 1. Purpose
 
 Reviewers read a woven lit site, select prose or code, and leave margin
-comments; threads are collapsible; an AI agent (`lit review`, specced in
-`SPEC.md` §10) reads all open annotations and proposes revisions to the `.nw`
-source. This tool is **separate from lit**: lit emits annotation-ready HTML
-(`SPEC.md` §9) and otherwise knows nothing about comments.
+comments; threads are collapsible; an AI agent (`lit review`, specced in lit's
+top-level document `lit.nw`) reads all open annotations and proposes revisions to
+the `.nw` source. This tool is **separate from lit**: lit emits annotation-ready
+HTML (`src/rewrite.rs.nw` §9) and otherwise knows nothing about comments.
 
 Requirements:
 
@@ -48,7 +49,7 @@ them only:
    (battle-tested, used by Hypothesis) and Apache Annotator (incubating, the
    W3C-blessed successor).
 3. **Target:** the woven HTML. Mapping back to `.nw` source uses lit's
-   provenance attributes (`data-nw-file`/`data-nw-line`, `SPEC.md` §9.1) —
+   provenance attributes (`data-nw-file`/`data-nw-line`, `src/rewrite.rs.nw` §9.1) —
    the annotation layer itself never reads `.nw` files.
 
 ## 3. Options researched
@@ -125,7 +126,7 @@ trigger in §4.
 
 ## 4. Decision: adopt first; the fallback depends on which trigger fires
 
-Same policy as lit's noweb dependency (`SPEC.md` §11): **start with hosted
+Same policy as lit's noweb dependency (`src/tangle.rs.nw` §11): **start with hosted
 hypothes.is** (private group + embed + API adapter). The contingency is *not*
 always the thin tool — each trigger routes to whichever of §3.2/§3.3 actually
 addresses it:

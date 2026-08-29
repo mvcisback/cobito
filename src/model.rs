@@ -1,8 +1,8 @@
-//! Fold `markup`'s IR into lit's document model (SPEC.md §19.2).
+//! Fold `markup`'s IR into lit's document model (§19.2).
 //!
 //! The line counter is the subtle part: it advances on both `Nl` *and*
 //! `IndexNl`, because an `@ %def` line is a source line whose newline reaches
-//! us as `IndexNl` (SPEC.md §4.2). Getting this wrong silently shifts every
+//! us as `IndexNl` (§4.2). Getting this wrong silently shifts every
 //! provenance attribute after the first `%def` in a file.
 
 use std::collections::BTreeMap;

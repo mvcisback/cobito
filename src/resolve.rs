@@ -1,4 +1,4 @@
-//! Document-global planning: turn the raw scan (SPEC.md §6.2 step 4 inputs)
+//! Document-global planning: turn the raw scan (§6.2 step 4 inputs)
 //! into everything the second rewrite pass and the templates need — page
 //! assignment, the nav tree, the label table, and one resolved target per
 //! `data-ref` site.
@@ -111,7 +111,7 @@ fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
 }
 
 /// `first_tags[i]` is the tag a docs section opens with, or `None` for code
-/// sections; it is the sole page-boundary signal (SPEC.md §5.3).
+/// sections; it is the sole page-boundary signal (§5.3).
 pub fn plan(
     doc: &DocModel,
     scan: &Scan,
