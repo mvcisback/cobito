@@ -203,6 +203,9 @@ pub struct RenderedPage {
 
 pub struct Site {
     pub pages: Vec<RenderedPage>,
+    /// A standalone page listing the whole navigation tree (`sitemap.html`),
+    /// always emitted so a reader has one flat overview of every section.
+    pub sitemap: String,
     pub math_count: usize,
     pub lints: Vec<Lint>,
     /// The §8 document model, always assembled but only written under
@@ -459,6 +462,8 @@ pub fn render(
     let mut env = minijinja::Environment::new();
     env.add_template("page", include_str!("../templates/page.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
+    env.add_template("sitemap", include_str!("../templates/sitemap.html"))
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
     let tmpl = env
         .get_template("page")
         .map_err(|e| WeaveError::Template(e.to_string()))?;
@@ -490,6 +495,15 @@ pub fn render(
         });
     }
 
+    // One standalone sitemap page: the whole nav tree, styled by lit.css. The
+    // title is the first page's, so the sitemap names the document it maps.
+    let site_title = res.pages.first().map_or("lit", |m| m.title.as_str());
+    let sitemap = env
+        .get_template("sitemap")
+        .map_err(|e| WeaveError::Template(e.to_string()))?
+        .render(minijinja::context! { title => site_title, nav })
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
+
     let json = site::build(doc, &res, &raws, site::Meta::default());
 
     let mut lints = res.lints;
@@ -497,6 +511,7 @@ pub fn render(
 
     Ok(Site {
         pages,
+        sitemap,
         math_count: math.len(),
         lints,
         json,
@@ -590,6 +605,7 @@ pub fn write_site(
     for page in &site.pages {
         std::fs::write(out.join(&page.meta.filename), &page.html).map_err(WeaveError::Io)?;
     }
+    std::fs::write(out.join("sitemap.html"), &site.sitemap).map_err(WeaveError::Io)?;
     std::fs::write(out.join("lit.css"), include_str!("../templates/lit.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
@@ -955,6 +971,18 @@ mod tests {
             // label's, not the text slug — the nav link follows.
             assert!(page.html.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
         }
+    }
+
+    #[test]
+    fn sitemap_lists_every_page() {
+        let site = dev_render(&book(), Dialect::Html, "");
+        assert!(site.sitemap.contains("<h1>Sitemap</h1>"));
+        // Every top-level page and a labelled child section both appear, through the
+        // same hrefs the nav tree builds.
+        assert!(site.sitemap.contains("href=\"parsing.html\">Parsing</a>"));
+        assert!(site.sitemap.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
+        // The footer of an ordinary page points at the sitemap.
+        assert!(site.pages[0].html.contains("href=\"sitemap.html\""));
     }
 
     #[test]

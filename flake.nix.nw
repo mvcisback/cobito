@@ -277,7 +277,8 @@ fi
 This group checks the archival contract. The site must need no JavaScript, so no
 page may contain a `<script>` tag (§6.3). The `site.json` must use the frozen
 schema, give one file per page, and hoist sidenotes out of the prose into the
-margin (§8).
+margin (§8). The weaver must also emit one standalone `sitemap.html` that lists the
+whole nav tree, and every page footer must link to it.
 <<assert the archival contract>>=
 # The archival artifact must need no JavaScript (§6.3).
 for p in $TMPDIR/a/*.html; do
@@ -297,6 +298,12 @@ if grep -q '<aside' $TMPDIR/a/site.json; then
   echo "site.json prose still contains <aside>; sidenotes not hoisted" >&2
   exit 1
 fi
+# The weaver emits one standalone sitemap page that lists the whole nav
+# tree through the same hrefs, and every page footer links to it. The
+# <script> loop above already proved the sitemap needs no JavaScript.
+test -f $TMPDIR/a/sitemap.html
+grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
+grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
 @
 This group checks the Markdown dialect (§6.4). It weaves two Markdown documents
 two times each and diffs them. It confirms that prose became HTML and that the

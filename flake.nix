@@ -132,6 +132,12 @@
             echo "site.json prose still contains <aside>; sidenotes not hoisted" >&2
             exit 1
           fi
+          # The weaver emits one standalone sitemap page that lists the whole nav
+          # tree through the same hrefs, and every page footer links to it. The
+          # <script> loop above already proved the sitemap needs no JavaScript.
+          test -f $TMPDIR/a/sitemap.html
+          grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
+          grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
           # §6.4 Markdown dialect: ring.nw is authored in CommonMark (the default
           # dialect, so no lit.toml needed). Weave twice, byte-diff, and confirm
           # prose actually became HTML rather than passing through literally.

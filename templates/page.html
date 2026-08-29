@@ -19,8 +19,9 @@
 {% for section in sections %}{{ section }}
 {% endfor %}</main>
 <footer class="pagination">
-{% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% endif %}
-{% if next %}<a rel="next" href="{{ next.href }}">{{ next.title }} &rarr;</a>{% endif %}
+{% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% else %}<span></span>{% endif %}
+<a class="sitemap-link" href="sitemap.html">Sitemap</a>
+{% if next %}<a rel="next" href="{{ next.href }}">{{ next.title }} &rarr;</a>{% else %}<span></span>{% endif %}
 </footer>
 </body>
 </html>

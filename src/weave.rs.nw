@@ -350,11 +350,12 @@ fn wrap_section(
     )
 }
 @
-A rendered page pairs its metadata with its HTML. The site is every page, the math
-count, the collected lints, and the archival JSON — the JSON is always assembled
-but only written under the archive flag, and its metadata is a placeholder that
-`write_site` fills in. The test-only helper concatenates every page's HTML for
-whole-document assertions where the page split is not what is under test.
+A rendered page pairs its metadata with its HTML. The site is every page, one
+standalone sitemap page, the math count, the collected lints, and the archival JSON
+— the JSON is always assembled but only written under the archive flag, and its
+metadata is a placeholder that `write_site` fills in. The test-only helper
+concatenates every page's HTML for whole-document assertions where the page split is
+not what is under test.
 <<the rendered page and the site>>=
 pub struct RenderedPage {
     pub meta: PageMeta,
@@ -363,6 +364,9 @@ pub struct RenderedPage {
 
 pub struct Site {
     pub pages: Vec<RenderedPage>,
+    /// A standalone page listing the whole navigation tree (`sitemap.html`),
+    /// always emitted so a reader has one flat overview of every section.
+    pub sitemap: String,
     pub math_count: usize,
     pub lints: Vec<Lint>,
     /// The §8 document model, always assembled but only written under
@@ -657,6 +661,8 @@ pub fn render(
     let mut env = minijinja::Environment::new();
     env.add_template("page", include_str!("../templates/page.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
+    env.add_template("sitemap", include_str!("../templates/sitemap.html"))
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
     let tmpl = env
         .get_template("page")
         .map_err(|e| WeaveError::Template(e.to_string()))?;
@@ -688,6 +694,15 @@ pub fn render(
         });
     }
 
+    // One standalone sitemap page: the whole nav tree, styled by lit.css. The
+    // title is the first page's, so the sitemap names the document it maps.
+    let site_title = res.pages.first().map_or("lit", |m| m.title.as_str());
+    let sitemap = env
+        .get_template("sitemap")
+        .map_err(|e| WeaveError::Template(e.to_string()))?
+        .render(minijinja::context! { title => site_title, nav })
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
+
     let json = site::build(doc, &res, &raws, site::Meta::default());
 
     let mut lints = res.lints;
@@ -695,6 +710,7 @@ pub fn render(
 
     Ok(Site {
         pages,
+        sitemap,
         math_count: math.len(),
         lints,
         json,
@@ -778,7 +794,7 @@ fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
 The top-level entry loads the lock, renders the whole document, then writes it to
 disk. A dev-time weave writes any newly minted ids back so they freeze; the locked
 mode never mints, so it never touches the committed lock. It writes every page, the
-stylesheet, and the KaTeX assets. The archival JSON is opt-in: plain weave stays an
+sitemap page, the stylesheet, and the KaTeX assets. The archival JSON is opt-in: plain weave stays an
 HTML-only artifact, and the archive flag adds the whole-document JSON plus one
 per-page file beside its HTML for the annotation layer.
 <<write the site to disk>>=
@@ -807,6 +823,7 @@ pub fn write_site(
     for page in &site.pages {
         std::fs::write(out.join(&page.meta.filename), &page.html).map_err(WeaveError::Io)?;
     }
+    std::fs::write(out.join("sitemap.html"), &site.sitemap).map_err(WeaveError::Io)?;
     std::fs::write(out.join("lit.css"), include_str!("../templates/lit.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
@@ -881,6 +898,8 @@ mod tests {
     <<a chunk ref links into code>>
 
     <<the nav tree is on every page>>
+
+    <<the sitemap lists every page>>
 
     <<site json is current schema and hoists sidenotes>>
 
@@ -1309,6 +1328,22 @@ fn nav_tree_is_emitted_on_every_page() {
         // label's, not the text slug — the nav link follows.
         assert!(page.html.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
     }
+}
+@
+The sitemap page lists every navigation target once. It is a single standalone page,
+so a nested link that lives on a child page still resolves through the same href the
+nav tree uses.
+<<the sitemap lists every page>>=
+#[test]
+fn sitemap_lists_every_page() {
+    let site = dev_render(&book(), Dialect::Html, "");
+    assert!(site.sitemap.contains("<h1>Sitemap</h1>"));
+    // Every top-level page and a labelled child section both appear, through the
+    // same hrefs the nav tree builds.
+    assert!(site.sitemap.contains("href=\"parsing.html\">Parsing</a>"));
+    assert!(site.sitemap.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
+    // The footer of an ordinary page points at the sitemap.
+    assert!(site.pages[0].html.contains("href=\"sitemap.html\""));
 }
 @
 The archival JSON is the current schema, round-trips through the per-page narrowing,

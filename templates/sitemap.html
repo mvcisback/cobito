@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — sitemap</title>
+<link rel="stylesheet" href="lit.css">
+</head>
+<body>
+<main>
+<section class="docs">
+<h1>Sitemap</h1>
+{% macro tree(nodes) %}<ul>
+{% for n in nodes %}<li><a href="{{ n.href }}">{{ n.title }}</a>{% if n.children %}{{ tree(n.children) }}{% endif %}</li>
+{% endfor %}</ul>{% endmacro %}
+{{ tree(nav) }}
+</section>
+</main>
+</body>
+</html>

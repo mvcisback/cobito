@@ -5,20 +5,24 @@ tangles byte-identically to `templates/lit.css`, which the weaver embeds into
 every page. Weaving this file back shows lit highlighting its own CSS — the fourth
 grammar, and the reason the CSS grammar exists.
 
-The design is Tufte-flavoured: a single centred reading column with a wide right
-margin that holds sidenotes and, later, the annotation overlay's margin slots. Two
-rules run through the whole sheet. A float's identity — its opaque id, a section's
-permalink, a code line's number — is drawn from a data attribute as generated
-content, never written into the text, so it stays out of selections, copies, and
-the annotation layer's quote selectors. And color is a class over the existing
-bytes, so syntax highlighting adds no text and needs no script.
+The design is Tufte-flavoured: a centred reading column with a wide right margin
+that holds sidenotes and, later, the annotation overlay's margin slots. The page
+frame is a CSS grid, and the reader gets a light or a dark theme from the operating
+system. Two rules run through the whole sheet. A float's identity — its opaque id, a
+section's permalink, a code line's number — is drawn from a data attribute as
+generated content, never written into the text, so it stays out of selections,
+copies, and the annotation layer's quote selectors. And colour is a class over the
+existing bytes, so syntax highlighting adds no text and needs no script.
 
-The sheet is the page frame, the margin column, generated numbering, internal
-cross-references, navigation, the code-chunk layout, and the highlight palette.
+Cascade layers order the sheet from general to specific — base, layout, components,
+then syntax. A later layer wins, so a component rule never fights a base rule by
+specificity. The chunks below fill those layers in turn: the page frame and tokens,
+the grid layout and margin column, the components (numbering, cross-references,
+navigation, code chunks, inline code), and the highlight palette.
 <<templates/lit.css>>=
-<<the layout banner and root variables>>
+<<the layer order and design tokens>>
 
-<<sticky headings and the reading column>>
+<<the grid page frame>>
 
 <<the section box>>
 
@@ -36,108 +40,189 @@ cross-references, navigation, the code-chunk layout, and the highlight palette.
 
 <<inline code>>
 @
-The root variables name the reading measure, the note column, and the palette. The
-page background is a warm cream; a sticky heading paints over it as prose slides
-underneath.
-<<the layout banner and root variables>>=
-/* Tufte-flavoured layout (§16). The page is a single centred column
-   with a wide right margin; sidenotes, and later the annotation overlay's
-   margin slots (§9.3), live in that margin. A float's identity is drawn here
-   from its data-id attribute (the frozen opaque id of §7.1), never written into
-   the text (§7, §9.2). */
+The base layer holds the design tokens and the body. The `@layer` line at the top
+names the four layers in order, once, so every block below joins a named layer and
+the cascade reads top to bottom. The tokens are grouped: the layout measures and the
+three type faces are theme-independent; the colours come in two sets. The default set
+is a warm cream page. The `prefers-color-scheme` rule holds the whole dark theme — it
+gives each colour token a dark value, and no rule below hard-codes a colour, so the
+two themes stay in one place. `color-scheme` tells the browser to match its own parts
+— the scrollbar and the form controls — to the page.
+<<the layer order and design tokens>>=
+@layer base, layout, components, syntax;
 
-:root {
-  --measure: 40rem;      /* the reading column */
-  --margin: 18rem;       /* the note column to its right */
-  --gap: 2.5rem;
-  --rule: #ccc9b8;
-  --ink: #111;
-  --faint: #a09c88;
-  --link: #4a4a8a;       /* ordinary prose links */
-  --ref: #7a3b2e;        /* internal cross-references (§7) — a warmer accent */
-  --bg: #fffff8;         /* the page (a sticky heading paints over it) */
-}
+@layer base {
+  /* Tufte-flavoured tokens (§16). A float's identity is drawn from its data-id
+     attribute (the frozen opaque id of §7.1) as generated content, never written
+     into the text (§7, §9.2). */
+  :root {
+    color-scheme: light dark;
 
-body {
-  font-family: Palatino, "Palatino Linotype", Georgia, serif;
-  font-size: 1.05rem;
-  line-height: 1.6;
-  margin: 0;
-  color: var(--ink);
-  background: var(--bg);
+    /* Layout and faces — theme-independent. */
+    --measure: 40rem;      /* the reading column */
+    --margin: 18rem;       /* the note column to its right */
+    --gap: 2.5rem;
+    --serif: Palatino, "Palatino Linotype", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Iosevka", "DejaVu Sans Mono", monospace;
+
+    /* Light theme (default): a warm cream page. */
+    --bg: #fffff8;         /* the page (a sticky heading paints over it) */
+    --band: #f6f4e9;       /* the sticky-heading band, a hair off the page */
+    --band-shadow: rgba(60, 55, 30, 0.16);
+    --ink: #111;
+    --faint: #a09c88;
+    --rule: #ccc9b8;
+    --link: #4a4a8a;       /* ordinary prose links */
+    --ref: #7a3b2e;        /* internal cross-references (§7) — a warmer accent */
+    --code-bg: #f4f4ec;    /* inline code */
+    --chunk-bg: #f4f4ec;   /* code-chunk body */
+
+    /* Syntax palette (§5.5) — warm hues on cream. */
+    --tok-keyword: #9a3327;
+    --tok-string: #4d6a1f;
+    --tok-function: #3a5a8a;
+    --tok-type: #6a3b7a;
+    --tok-number: #7a3b2e;
+    --tok-attribute: #4a4a8a;
+    --tok-operator: #6a6a5a;
+    --tok-punctuation: #8a8674;
+  }
+
+  /* Dark theme: the same warm hues, lifted off a near-black page. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f;
+      --band: #1e1c14;
+      --band-shadow: rgba(0, 0, 0, 0.5);
+      --ink: #e9e6d8;
+      --faint: #6f6a54;
+      --rule: #3a382c;
+      --link: #a6a6e0;
+      --ref: #d79a70;
+      --code-bg: #201e16;
+      --chunk-bg: #201e16;
+
+      --tok-keyword: #e0806f;
+      --tok-string: #a6c37a;
+      --tok-function: #86a8d8;
+      --tok-type: #c093d0;
+      --tok-number: #d79a70;
+      --tok-attribute: #9a9ae0;
+      --tok-operator: #b0ab90;
+      --tok-punctuation: #8f8a72;
+    }
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1rem);
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--bg);
+    text-wrap: pretty;
+  }
 }
 @
-Each heading sticks to the top of the viewport within its own section, so headings
-never stack: one scrolls away with its section exactly as the next arrives. The
-reading column is centred by default, and shifts left of centre on a wide screen so
-the right margin has room for notes.
-<<sticky headings and the reading column>>=
-/* The current section's heading sticks to the top of the viewport while that
-   section is on screen. Each heading is sticky *within its own <section>*, so
-   headings never stack: one scrolls away with its section exactly as the next
-   arrives. The background paints over prose sliding underneath. */
-main :is(h1, h2, h3, h4) {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  margin-top: 0;
-  padding: 0.4rem 0 0.3rem;
-  background: var(--bg);
-}
+The page is a grid. Named line boundaries mark a `content` track — the reading
+column — and, to its right, a `margin` track for sidenotes. The two outer `1fr`
+tracks centre the whole content-plus-margin group, so the reading column sits a
+little left of centre and the margin has room. Every top-level block — the table of
+contents, the prose, the footer — sits in the `content` track. A narrow viewport has
+no room for a margin track, so the grid collapses to one centred column and the
+sidenotes fall inline. Each heading sticks to the top of the viewport within its own
+section, so headings never stack; the band paints over prose sliding underneath — a
+hair off the page shade, with a thin bottom rule and a soft lower shadow, a light
+marker, not a heavy bar.
+<<the grid page frame>>=
+@layer layout {
+  body {
+    display: grid;
+    align-content: start;
+    grid-template-columns:
+      [full-start] 1fr
+      [content-start] min(var(--measure), 100% - 2rem)
+      [content-end] var(--gap)
+      [margin-start] var(--margin)
+      [margin-end] 1fr [full-end];
+  }
 
-main {
-  max-width: var(--measure);
-  margin: 2rem auto;
-  padding: 0 1rem;
-}
+  body > * {
+    grid-column: content;
+  }
 
-/* Give the margin column somewhere to be: on wide screens the reading column
-   sits left-of-centre so the right margin can hold notes. */
-@media (min-width: 100rem) {
   main {
-    margin-left: calc((100vw - var(--measure) - var(--margin) - var(--gap)) / 2);
-    margin-right: 0;
+    margin-block: 2rem;
+    padding-inline: 1rem;
+  }
+
+  /* No room for a margin track: one centred column; sidenotes go inline. */
+  @media (max-width: 100rem) {
+    body {
+      justify-content: center;
+      grid-template-columns:
+        [full-start content-start] min(var(--measure), 100% - 2rem) [content-end full-end];
+    }
+  }
+
+  /* The current section's heading sticks to the top of the viewport while that
+     section is on screen. It is sticky *within its own <section>*, so headings
+     never stack: one scrolls away with its section exactly as the next arrives. */
+  main :is(h1, h2, h3, h4) {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin-top: 0;
+    padding: 0.4rem 0.6rem 0.3rem;
+    background: var(--band);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 3px 6px -4px var(--band-shadow);
   }
 }
 @
 Every section is a positioning context for its margin slot and sidenotes.
 <<the section box>>=
-section {
-  position: relative;
-  margin-bottom: 1.5rem;
+@layer layout {
+  section {
+    position: relative;
+    margin-bottom: 1.5rem;
+  }
 }
 @
-The margin column holds the annotation slot and sidenotes. On a wide screen a
-sidenote floats into the right margin; when there is no room it falls back to an
-indented aside within the column.
+The margin column holds the annotation slot and sidenotes. A float — not a grid cell
+— keeps the note beside the point it marks: the note must line up with its anchor in
+the prose, not with a grid row. On a narrow screen there is no margin, so the note
+falls back to an indented aside within the column.
 <<the margin column>>=
-/* --- Margin column: annotation slot + sidenotes ------------------------- */
+@layer layout {
+  /* --- Margin column: annotation slot + sidenotes ----------------------- */
 
-.margin-slot {
-  float: right;
-  clear: right;
-  width: 0;
-  margin-right: -0%;
-}
+  .margin-slot {
+    float: right;
+    clear: right;
+    width: 0;
+  }
 
-.sidenote {
-  float: right;
-  clear: right;
-  width: var(--margin);
-  margin-right: calc(-1 * (var(--margin) + var(--gap)));
-  font-size: 0.8rem;
-  line-height: 1.4;
-  color: #333;
-}
-
-@media (max-width: 100rem) {
-  /* No room for a margin: inline the note as an indented aside. */
   .sidenote {
-    float: none;
-    width: auto;
-    margin: 0.6rem 0 0.6rem 1.5rem;
-    padding-left: 0.8rem;
-    border-left: 2px solid var(--rule);
+    float: right;
+    clear: right;
+    width: var(--margin);
+    margin-right: calc(-1 * (var(--margin) + var(--gap)));
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  @media (max-width: 100rem) {
+    /* No room for a margin: inline the note as an indented aside. */
+    .sidenote {
+      float: none;
+      width: auto;
+      margin: 0.6rem 0 0.6rem 1.5rem;
+      padding-left: 0.8rem;
+      border-left: 2px solid var(--rule);
+    }
   }
 }
 @
@@ -145,41 +230,43 @@ A float's number is generated content drawn from its data-id, so it is never
 selectable. A figure and a table caption lead with their kind and id; an equation's
 id sits in the right margin of its centred block.
 <<generated numbering>>=
-/* --- Numbering (generated, never selectable) ---------------------------- */
+@layer components {
+  /* --- Numbering (generated, never selectable) -------------------------- */
 
-figure {
-  margin: 1.5rem 0;
-}
+  figure {
+    margin: 1.5rem 0;
+  }
 
-figcaption[data-id]::before {
-  content: "Figure " attr(data-id) ". ";
-  font-weight: bold;
-}
+  figcaption,
+  caption {
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
 
-caption[data-id]::before {
-  content: "Table " attr(data-id) ". ";
-  font-weight: bold;
-}
+  figcaption[data-id]::before {
+    content: "Figure " attr(data-id) ". ";
+    font-weight: bold;
+  }
 
-figcaption,
-caption {
-  font-size: 0.9rem;
-  color: #333;
-}
+  caption[data-id]::before {
+    content: "Table " attr(data-id) ". ";
+    font-weight: bold;
+  }
 
-.equation {
-  position: relative;
-  margin: 1rem 0;
-  text-align: center;
-}
+  .equation {
+    position: relative;
+    margin: 1rem 0;
+    text-align: center;
 
-.equation[data-id]::after {
-  content: "(" attr(data-id) ")";
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--faint);
+    &[data-id]::after {
+      content: "(" attr(data-id) ")";
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--faint);
+    }
+  }
 }
 @
 A resolved cross-reference is navigation, not prose, so it reads in a warm sans
@@ -187,185 +274,196 @@ accent distinct from both the serif body and ordinary links. A labelled section
 leads with a clickable permalink whose opaque id is generated content, never a text
 node, so it stays out of selections and quote selectors.
 <<internal cross-references>>=
-/* --- Internal cross-references (§7) -------------------------------------- */
+@layer components {
+  /* --- Internal cross-references (§7) ------------------------------------ */
 
-/* A resolved <a data-ref> — "Figure k3f9", a chunk link, a section link — is
-   navigation, not prose, and its opaque id is a machine token. Set it in a sans
-   face at medium weight with a warm accent so it reads distinctly from both the
-   serif body and ordinary links, without the underline that would fight the id. */
-a[data-ref] {
-  font-family: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
-  font-weight: 600;
-  font-size: 0.9em;
-  letter-spacing: 0.01em;
-  color: var(--ref);
-  text-decoration: none;
-}
+  /* A resolved <a data-ref> — "Figure k3f9", a chunk link, a section link — is
+     navigation, not prose, and its opaque id is a machine token. Set it in a sans
+     face at medium weight with a warm accent so it reads distinctly from both the
+     serif body and ordinary links, without the underline that would fight the id. */
+  a[data-ref] {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.9em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
 
-a[data-ref]:hover {
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-}
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
 
-/* A `sec:`-labelled section leads with a clickable permalink carrying its opaque
-   id (§7.1). Like a float's number the id is generated content drawn from
-   data-id, never a text node, so it stays out of selections and the annotation
-   layer's quote selectors (§9.2); the <a> itself is the click target. It sits a
-   hair smaller than the heading and in the same warm sans accent as an inline
-   cross-reference, so a section id reads as the machine token it is. */
-.sec-uid {
-  font-family: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
-  font-weight: 600;
-  font-size: 0.7em;
-  letter-spacing: 0.01em;
-  color: var(--ref);
-  text-decoration: none;
-  margin-right: 0.5em;
-  vertical-align: 0.15em;
-}
+  /* A `sec:`-labelled section leads with a clickable permalink carrying its opaque
+     id (§7.1). Like a float's number the id is generated content drawn from
+     data-id, never a text node, so it stays out of selections and the annotation
+     layer's quote selectors (§9.2); the <a> itself is the click target. It sits a
+     hair smaller than the heading and in the same warm sans accent as an inline
+     cross-reference, so a section id reads as the machine token it is. */
+  .sec-uid {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.7em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
 
-.sec-uid::before {
-  content: "§" attr(data-id);
-}
+    &::before {
+      content: "§" attr(data-id);
+    }
 
-.sec-uid:hover {
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
 }
 @
-The table of contents and the footer pagination share the reading measure and a
-quiet link color.
+The table of contents and the footer pagination sit in the content track and share a
+quiet link colour. The table of contents is a nested list; the footer is a two-end
+row.
 <<navigation and pagination>>=
-/* --- Navigation and pagination ------------------------------------------ */
+@layer components {
+  /* --- Navigation and pagination ---------------------------------------- */
 
-nav.toc {
-  max-width: var(--measure);
-  margin: 1rem auto 0;
-  padding: 0 1rem;
-  font-size: 0.85rem;
-}
+  nav.toc {
+    margin-top: 1rem;
+    padding: 0 1rem;
+    font-size: 0.85rem;
 
-nav.toc ul {
-  list-style: none;
-  padding-left: 1rem;
-  margin: 0.2rem 0;
-}
+    ul {
+      list-style: none;
+      padding-left: 1rem;
+      margin: 0.2rem 0;
+    }
 
-nav.toc a {
-  color: var(--link);
-  text-decoration: none;
-}
+    a {
+      color: var(--link);
+      text-decoration: none;
 
-nav.toc a:hover {
-  text-decoration: underline;
-}
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
 
-footer.pagination {
-  max-width: var(--measure);
-  margin: 2rem auto;
-  padding: 1rem 1rem 0;
-  border-top: 1px solid var(--rule);
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-}
+  footer.pagination {
+    display: flex;
+    justify-content: space-between;
+    margin-block: 2rem;
+    padding: 1rem 1rem 0;
+    border-top: 1px solid var(--rule);
+    font-size: 0.9rem;
 
-footer.pagination a {
-  color: var(--link);
-  text-decoration: none;
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+  }
 }
 @
 A code chunk is a foldable block with a monospace header and body. Each line is its
-own block, and its number is generated content drawn from data-line, so it stays
-out of copies and quote selectors.
+own block, and its number is generated content drawn from data-line, so it stays out
+of copies and quote selectors.
 <<the code-chunk layout>>=
-/* --- Code chunks (§5.4) ----------------------------------------- */
+@layer components {
+  /* --- Code chunks (§5.4) ----------------------------------------------- */
 
-details.chunk {
-  background: #f4f4ec;
-  border-left: 3px solid var(--rule);
-  margin: 1rem 0;
-}
+  details.chunk {
+    background: var(--chunk-bg);
+    border-left: 3px solid var(--rule);
+    margin: 1rem 0;
 
-details.chunk > summary {
-  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
-  font-size: 0.9rem;
-  font-weight: bold;
-  padding: 0.4rem 0.8rem;
-  cursor: pointer;
-}
+    & > summary {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      font-weight: bold;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+    }
 
-pre.chunk-body {
-  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  margin: 0;
-  padding: 0 0.8rem 0.6rem;
-  overflow-x: auto;
-  white-space: pre;
-}
+    a {
+      color: var(--link);
+      text-decoration: none;
 
-/* Line numbers are generated content so they stay out of selections, copies,
-   and the text-quote selectors the annotation layer anchors on (§9.2). */
-pre.chunk-body .line {
-  display: block;
-}
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
 
-pre.chunk-body .line::before {
-  content: attr(data-line);
-  display: inline-block;
-  width: 3ch;
-  margin-right: 1ch;
-  text-align: right;
-  color: var(--faint);
-  user-select: none;
-}
+  pre.chunk-body {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin: 0;
+    padding: 0 0.8rem 0.6rem;
+    overflow-x: auto;
+    white-space: pre;
 
-details.chunk a {
-  color: var(--link);
-  text-decoration: none;
-}
+    /* Line numbers are generated content so they stay out of selections, copies,
+       and the text-quote selectors the annotation layer anchors on (§9.2). */
+    .line {
+      display: block;
 
-details.chunk a:hover {
-  text-decoration: underline;
+      &::before {
+        content: attr(data-line);
+        display: inline-block;
+        width: 3ch;
+        margin-right: 1ch;
+        text-align: right;
+        color: var(--faint);
+        user-select: none;
+      }
+    }
+  }
 }
 @
 The highlight palette is pure classes over the existing bytes: no injected text, no
 script, so the copy-paste payload, the line numbers, and the quote selectors all
-survive. A chunk-use hole is never wrapped in one of these. The palette is
-restrained and warm, to sit inside the cream page; a plain identifier keeps the
-default ink so it reads as prose, not decoration.
+survive. A chunk-use hole is never wrapped in one of these. Each class draws its
+colour from a `--tok-*` variable, so the light and the dark theme both set the palette
+in the one base block above; a plain identifier keeps the default ink so it reads as
+prose, not decoration.
 <<the syntax-highlight palette>>=
-/* --- Syntax highlighting (§5.5) ---------------------------------- *
- * Pure classes over the existing bytes: no injected text, no <script>, so the
- * copy-paste payload, data-line numbers, and annotation quote selectors all
- * survive untouched. A chunk-use hole is never wrapped in one of these — its
- * <a> stays opaque. A restrained, warm palette to sit inside Tufte's cream. */
-.tok-keyword { color: #9a3327; }
-.tok-string { color: #4d6a1f; }
-.tok-escape { color: #9a3327; }
-.tok-comment { color: var(--faint); font-style: italic; }
-.tok-function { color: #3a5a8a; }
-.tok-type,
-.tok-constructor { color: #6a3b7a; }
-.tok-module { color: #6a3b7a; }
-.tok-number,
-.tok-constant { color: #7a3b2e; }
-.tok-attribute,
-.tok-property { color: #4a4a8a; }
-.tok-operator { color: #6a6a5a; }
-.tok-punctuation { color: #8a8674; }
-.tok-label,
-.tok-tag { color: #9a3327; }
-/* .tok-variable stays --ink: the default text color, so plain identifiers read
-   as prose, not decoration. */
+@layer syntax {
+  /* --- Syntax highlighting (§5.5) --------------------------------------- *
+   * Pure classes over the existing bytes: no injected text, no <script>, so the
+   * copy-paste payload, data-line numbers, and annotation quote selectors all
+   * survive untouched. A chunk-use hole is never wrapped in one of these — its
+   * <a> stays opaque. Each class reads a --tok-* variable, so both themes set the
+   * palette in one place (the base block). */
+  .tok-keyword { color: var(--tok-keyword); }
+  .tok-string { color: var(--tok-string); }
+  .tok-escape { color: var(--tok-keyword); }
+  .tok-comment { color: var(--faint); font-style: italic; }
+  .tok-function { color: var(--tok-function); }
+  .tok-type,
+  .tok-constructor { color: var(--tok-type); }
+  .tok-module { color: var(--tok-type); }
+  .tok-number,
+  .tok-constant { color: var(--tok-number); }
+  .tok-attribute,
+  .tok-property { color: var(--tok-attribute); }
+  .tok-operator { color: var(--tok-operator); }
+  .tok-punctuation { color: var(--tok-punctuation); }
+  .tok-label,
+  .tok-tag { color: var(--tok-keyword); }
+  /* .tok-variable stays --ink: the default text color, so plain identifiers read
+     as prose, not decoration. */
+}
 @
 Inline code in prose keeps the same monospace face on a faint background.
 <<inline code>>=
-code {
-  font-family: "Iosevka", "DejaVu Sans Mono", monospace;
-  font-size: 0.9em;
-  background: #f4f4ec;
-  padding: 0.05em 0.25em;
+@layer components {
+  code {
+    font-family: var(--mono);
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.05em 0.25em;
+  }
 }
 @
