@@ -52,7 +52,8 @@ or they silently won't exist. Do not commit unless asked.
   `[weave.chunk-lang]` per-chunk map in `lit.toml`, else `[weave] lang`, else the
   chunk's own or its tangle root's file extension. A chunk with no known language is
   plain text + a W104 warning, never an error; an unknown id in either `[weave]` key
-  is E033. Grammars (Rust, Nix, Bash) are one dep each (§19.5).
+  is E033. Grammars (Rust, Nix, Bash, CSS) are one dep each (§19.5); CSS self-hosts
+  lit's own `templates/lit.css` as a literate document (§13).
 - `flake.nix` is **generated** from `flake.nix.nw` — lit's own build file told as a
   literate program (the first self-host dogfood, SPEC.md §13). Edit the `.nw` and
   re-tangle (`lit tangle flake.nix.nw --out .`), never hand-edit `flake.nix`. The

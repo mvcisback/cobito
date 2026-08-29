@@ -489,10 +489,11 @@ fi
 ### self-host
 
 This check extends the dogfood loop from the flake to the Rust crate (SPEC.md
-§13). Each `src/*.rs.nw` is one module of lit, told as a literate program. The
-committed `.rs` file stays the permanent bootstrap, because lit must build before
-it can tangle anything. This check tangles each module again and confirms that
-the result matches the committed `.rs`, byte for byte. The Nix wrapper hands the
+§13). Each `src/*.rs.nw` is one module of lit, told as a literate program, and
+`templates/lit.css.nw` is lit's stylesheet told the same way. The committed `.rs`
+and `.css` files stay the permanent bootstrap, because lit must build before it
+can tangle anything. This check tangles each source again and confirms that the
+result matches the committed artifact, byte for byte. The Nix wrapper hands the
 work to one Bash chunk.
 <<the selfhost check>>=
 # Self-host (§13): each src/*.rs.nw is a lit module told as a literate
@@ -502,23 +503,31 @@ selfhost = pkgs.runCommand "lit-selfhost" { } ''
   <<selfhost script>>
 '';
 @
-The script checks every module and then weaves one, to prove that lit both
-tangles and colors its own source.
+The script checks every module and then weaves two, to prove that lit both
+tangles and colors its own source — one Rust module for the crate, and the
+stylesheet itself, which exercises the CSS grammar (the fourth grammar, and the
+reason it exists).
 <<selfhost script>>=
 cd ${self}
 lit=${self.packages.${system}.lit}/bin/lit
-# Every module .nw must tangle byte-identically to its committed .rs.
-for nw in src/*.rs.nw; do
+# Every module .nw must tangle byte-identically to its committed artifact.
+for nw in src/*.rs.nw templates/lit.css.nw; do
   $lit tangle --check "$nw" --out .
 done
-# Weave one module to prove lit renders its own Rust source: keywords and
+# Weave one Rust module to prove lit renders its own source: keywords and
 # strings colour, and the page needs no <script> (§5.5/§6.3).
 $lit weave --locked src/diag.rs.nw --out $TMPDIR/sh
 grep -q 'class="tok-keyword">' $TMPDIR/sh/index.html
 grep -q 'class="tok-string">' $TMPDIR/sh/index.html
-if grep -q '<script' $TMPDIR/sh/index.html; then
-  echo "self-host weave emitted <script>; coloring must be pure CSS" >&2
-  exit 1
-fi
+# Weave the stylesheet to prove lit colours its own CSS: a property name is a
+# tok token, and the page still needs no <script>.
+$lit weave --locked templates/lit.css.nw --out $TMPDIR/shcss
+grep -q 'class="tok-property">' $TMPDIR/shcss/index.html
+for page in $TMPDIR/sh $TMPDIR/shcss; do
+  if grep -q '<script' "$page"/index.html; then
+    echo "self-host weave emitted <script>; coloring must be pure CSS" >&2
+    exit 1
+  fi
+done
 touch $out
 @

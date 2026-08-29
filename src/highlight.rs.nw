@@ -73,13 +73,14 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 use crate::model::{CodeSpan, DocModel, SectionKind};
 use crate::prose;
 @
-The three grammars lit ships, one dependency each.
+The four grammars lit ships, one dependency each.
 <<the language enum>>=
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Lang {
     Rust,
     Nix,
     Bash,
+    Css,
 }
 @
 Four small conversions: the id `lit language` prints, parsing an id from config,
@@ -93,6 +94,7 @@ impl Lang {
             Lang::Rust => "rust",
             Lang::Nix => "nix",
             Lang::Bash => "bash",
+            Lang::Css => "css",
         }
     }
 
@@ -103,6 +105,7 @@ impl Lang {
             "rust" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
             "bash" => Some(Lang::Bash),
+            "css" => Some(Lang::Css),
             _ => None,
         }
     }
@@ -113,6 +116,7 @@ impl Lang {
             "rs" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
             "sh" | "bash" => Some(Lang::Bash),
+            "css" => Some(Lang::Css),
             _ => None,
         }
     }
@@ -314,6 +318,7 @@ fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
         Lang::Rust => (tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY),
         Lang::Nix => (tree_sitter_nix::LANGUAGE, tree_sitter_nix::HIGHLIGHTS_QUERY),
         Lang::Bash => (tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY),
+        Lang::Css => (tree_sitter_css::LANGUAGE, tree_sitter_css::HIGHLIGHTS_QUERY),
     };
     let mut cfg = HighlightConfiguration::new(language.into(), lang.id(), query, "", "")
         .map_err(|e| HlError(e.to_string()))?;
@@ -460,6 +465,8 @@ mod tests {
     <<resolve gives up on an unknown language>>
 
     <<bash highlights>>
+
+    <<css highlights>>
 }
 @
 Strip every tag, leaving the plain-text payload — used to prove color adds no text.
@@ -598,5 +605,15 @@ fn bash_highlights() {
     let lines = highlight("if true; then\n  echo hi\nfi", &[], Lang::Bash).unwrap();
     let all = lines.join("\n");
     assert!(all.contains("tok-"), "bash produced no token spans: {all}");
+}
+@
+CSS produces token spans, with a byte-identical plain-text payload.
+<<css highlights>>=
+#[test]
+fn css_highlights() {
+    let lines = highlight(".chunk { color: red; }", &[], Lang::Css).unwrap();
+    let all = lines.join("\n");
+    assert!(all.contains("tok-"), "css produced no token spans: {all}");
+    assert_eq!(strip_tags(&lines[0]), ".chunk { color: red; }");
 }
 @

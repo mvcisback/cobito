@@ -23,6 +23,7 @@ pub enum Lang {
     Rust,
     Nix,
     Bash,
+    Css,
 }
 
 impl Lang {
@@ -32,6 +33,7 @@ impl Lang {
             Lang::Rust => "rust",
             Lang::Nix => "nix",
             Lang::Bash => "bash",
+            Lang::Css => "css",
         }
     }
 
@@ -42,6 +44,7 @@ impl Lang {
             "rust" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
             "bash" => Some(Lang::Bash),
+            "css" => Some(Lang::Css),
             _ => None,
         }
     }
@@ -52,6 +55,7 @@ impl Lang {
             "rs" => Some(Lang::Rust),
             "nix" => Some(Lang::Nix),
             "sh" | "bash" => Some(Lang::Bash),
+            "css" => Some(Lang::Css),
             _ => None,
         }
     }
@@ -220,6 +224,7 @@ fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
         Lang::Rust => (tree_sitter_rust::LANGUAGE, tree_sitter_rust::HIGHLIGHTS_QUERY),
         Lang::Nix => (tree_sitter_nix::LANGUAGE, tree_sitter_nix::HIGHLIGHTS_QUERY),
         Lang::Bash => (tree_sitter_bash::LANGUAGE, tree_sitter_bash::HIGHLIGHT_QUERY),
+        Lang::Css => (tree_sitter_css::LANGUAGE, tree_sitter_css::HIGHLIGHTS_QUERY),
     };
     let mut cfg = HighlightConfiguration::new(language.into(), lang.id(), query, "", "")
         .map_err(|e| HlError(e.to_string()))?;
@@ -442,5 +447,13 @@ mod tests {
         let lines = highlight("if true; then\n  echo hi\nfi", &[], Lang::Bash).unwrap();
         let all = lines.join("\n");
         assert!(all.contains("tok-"), "bash produced no token spans: {all}");
+    }
+
+    #[test]
+    fn css_highlights() {
+        let lines = highlight(".chunk { color: red; }", &[], Lang::Css).unwrap();
+        let all = lines.join("\n");
+        assert!(all.contains("tok-"), "css produced no token spans: {all}");
+        assert_eq!(strip_tags(&lines[0]), ".chunk { color: red; }");
     }
 }
