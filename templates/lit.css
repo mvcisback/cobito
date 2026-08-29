@@ -104,18 +104,13 @@
     }
   }
 
-  /* The current section's heading sticks to the top of the viewport while that
-     section is on screen. It is sticky *within its own <section>*, so headings
-     never stack: one scrolls away with its section exactly as the next arrives. */
   main :is(h1, h2, h3, h4) {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    margin-top: 0;
-    padding: 0.4rem 0.6rem 0.3rem;
-    background: var(--band);
-    border-bottom: 1px solid var(--rule);
-    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    margin-top: 1.5rem;
+  }
+
+  /* An anchored jump lands below the sticky nav bar, not under it. */
+  main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+    scroll-margin-top: 3.5rem;
   }
 }
 
@@ -248,14 +243,47 @@
   /* --- Navigation and pagination ---------------------------------------- */
 
   nav.toc {
-    margin-top: 1rem;
-    padding: 0 1rem;
-    font-size: 0.85rem;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    grid-column: full;
+    margin: 0;
+    padding-block: 0.45rem;
+    font-size: 0.8rem;
+    background: var(--band);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
 
+    /* The nav tree flattens into one horizontal row: every list lays its items
+       out in a row, so the whole thing is a scrollable list of sections. The
+       row is `max-content` wide, so it overflows the bar and scrolls sideways
+       rather than wrapping. */
     ul {
+      display: flex;
+      align-items: baseline;
+      gap: 0.9rem;
+      width: max-content;
+      margin: 0;
+      padding-inline: 1rem;
       list-style: none;
-      padding-left: 1rem;
-      margin: 0.2rem 0;
+    }
+
+    ul ul {
+      padding-inline: 0;
+    }
+
+    li {
+      display: flex;
+      gap: 0.9rem;
+      white-space: nowrap;
+    }
+
+    /* Top-level entries — the pages — read a touch stronger than their sections. */
+    & > ul > li > a {
+      font-weight: 600;
     }
 
     a {

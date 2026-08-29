@@ -131,10 +131,13 @@ tracks centre the whole content-plus-margin group, so the reading column sits a
 little left of centre and the margin has room. Every top-level block — the table of
 contents, the prose, the footer — sits in the `content` track. A narrow viewport has
 no room for a margin track, so the grid collapses to one centred column and the
-sidenotes fall inline. Each heading sticks to the top of the viewport within its own
-section, so headings never stack; the band paints over prose sliding underneath — a
-hair off the page shade, with a thin bottom rule and a soft lower shadow, a light
-marker, not a heavy bar.
+sidenotes fall inline.
+
+Headings sit in the normal flow. The sticky navigation bar (below) shows the reader
+where they are, so a heading needs no sticky band of its own — and two sticky
+headings never fight as one section leaves and the next arrives. A jump to an anchor
+lands below the sticky bar, not under it, so every section, heading, and float
+reserves that much scroll margin at the top.
 <<the grid page frame>>=
 @layer layout {
   body {
@@ -166,18 +169,13 @@ marker, not a heavy bar.
     }
   }
 
-  /* The current section's heading sticks to the top of the viewport while that
-     section is on screen. It is sticky *within its own <section>*, so headings
-     never stack: one scrolls away with its section exactly as the next arrives. */
   main :is(h1, h2, h3, h4) {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    margin-top: 0;
-    padding: 0.4rem 0.6rem 0.3rem;
-    background: var(--band);
-    border-bottom: 1px solid var(--rule);
-    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    margin-top: 1.5rem;
+  }
+
+  /* An anchored jump lands below the sticky nav bar, not under it. */
+  main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+    scroll-margin-top: 3.5rem;
   }
 }
 @
@@ -322,22 +320,59 @@ node, so it stays out of selections and quote selectors.
   }
 }
 @
-The table of contents and the footer pagination sit in the content track and share a
-quiet link colour. The table of contents is a nested list; the footer is a two-end
-row.
+The table of contents is a sticky bar across the top of the page — the one fixed
+landmark, in place of the old sticky headings. It spans the full width and holds a
+single horizontal, scrollable run of section links: each list, top level and nested,
+lays its items in a row, so the reader gets a flat scrollable list of every section
+and can reach any of them from anywhere. The bar carries the band treatment — a hair
+off the page shade, a thin bottom rule, a soft lower shadow. The footer pagination
+sits in the content track as a two-end row with a sitemap link between.
 <<navigation and pagination>>=
 @layer components {
   /* --- Navigation and pagination ---------------------------------------- */
 
   nav.toc {
-    margin-top: 1rem;
-    padding: 0 1rem;
-    font-size: 0.85rem;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    grid-column: full;
+    margin: 0;
+    padding-block: 0.45rem;
+    font-size: 0.8rem;
+    background: var(--band);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
 
+    /* The nav tree flattens into one horizontal row: every list lays its items
+       out in a row, so the whole thing is a scrollable list of sections. The
+       row is `max-content` wide, so it overflows the bar and scrolls sideways
+       rather than wrapping. */
     ul {
+      display: flex;
+      align-items: baseline;
+      gap: 0.9rem;
+      width: max-content;
+      margin: 0;
+      padding-inline: 1rem;
       list-style: none;
-      padding-left: 1rem;
-      margin: 0.2rem 0;
+    }
+
+    ul ul {
+      padding-inline: 0;
+    }
+
+    li {
+      display: flex;
+      gap: 0.9rem;
+      white-space: nowrap;
+    }
+
+    /* Top-level entries — the pages — read a touch stronger than their sections. */
+    & > ul > li > a {
+      font-weight: 600;
     }
 
     a {
