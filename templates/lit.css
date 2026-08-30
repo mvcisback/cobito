@@ -294,6 +294,13 @@
         text-decoration: underline;
       }
     }
+
+    /* The current page's own entry, marked statically by the weaver (§5.3), so
+       the reader's place shows with no script, in every browser. */
+    a[aria-current="page"] {
+      color: var(--ref);
+      font-weight: 700;
+    }
   }
 
   footer.pagination {

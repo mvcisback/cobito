@@ -11,7 +11,7 @@
 <body>
 <nav class="toc">
 {% macro tree(nodes) %}<ul>
-{% for n in nodes %}<li><a href="{{ n.href }}">{{ n.title }}</a>{% if n.children %}{{ tree(n.children) }}{% endif %}</li>
+{% for n in nodes %}<li><a href="{{ n.href }}"{% if n.current %} aria-current="page"{% endif %}>{{ n.title }}</a>{% if n.children %}{{ tree(n.children) }}{% endif %}</li>
 {% endfor %}</ul>{% endmacro %}
 {{ tree(nav) }}
 </nav>

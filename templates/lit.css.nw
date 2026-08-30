@@ -324,9 +324,11 @@ The table of contents is a sticky bar across the top of the page — the one fix
 landmark, in place of the old sticky headings. It spans the full width and holds a
 single horizontal, scrollable run of section links: each list, top level and nested,
 lays its items in a row, so the reader gets a flat scrollable list of every section
-and can reach any of them from anywhere. The bar carries the band treatment — a hair
-off the page shade, a thin bottom rule, a soft lower shadow. The footer pagination
-sits in the content track as a two-end row with a sitemap link between.
+and can reach any of them from anywhere. The weaver marks the current page's own
+entry, so it reads in the warm accent at full weight — a static "you are here" that
+needs no script and works in every browser. The bar carries the band treatment — a
+hair off the page shade, a thin bottom rule, a soft lower shadow. The footer
+pagination sits in the content track as a two-end row with a sitemap link between.
 <<navigation and pagination>>=
 @layer components {
   /* --- Navigation and pagination ---------------------------------------- */
@@ -382,6 +384,13 @@ sits in the content track as a two-end row with a sitemap link between.
       &:hover {
         text-decoration: underline;
       }
+    }
+
+    /* The current page's own entry, marked statically by the weaver (§5.3), so
+       the reader's place shows with no script, in every browser. */
+    a[aria-current="page"] {
+      color: var(--ref);
+      font-weight: 700;
     }
   }
 

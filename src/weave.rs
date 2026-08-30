@@ -467,7 +467,6 @@ pub fn render(
     let tmpl = env
         .get_template("page")
         .map_err(|e| WeaveError::Template(e.to_string()))?;
-    let nav = nav_context(&res.nav);
 
     let mut pages = Vec::with_capacity(res.pages.len());
     for (pi, meta) in res.pages.iter().enumerate() {
@@ -477,6 +476,9 @@ pub fn render(
             .filter(|(_, p)| **p == pi)
             .map(|(html, _)| html.as_str())
             .collect();
+        // The nav marks this page's own landing entry current, so each page ships
+        // its own "you are here" (§5.3) — static, no script, every browser.
+        let nav = nav_context(&res.nav, &meta.filename);
         let prev = pi.checked_sub(1).map(|j| link_context(&res.pages[j]));
         let next = res.pages.get(pi + 1).map(link_context);
         let html = tmpl
@@ -496,12 +498,13 @@ pub fn render(
     }
 
     // One standalone sitemap page: the whole nav tree, styled by lit.css. The
-    // title is the first page's, so the sitemap names the document it maps.
+    // title is the first page's, so the sitemap names the document it maps. It
+    // highlights nothing — an empty current means no entry is the current page.
     let site_title = res.pages.first().map_or("lit", |m| m.title.as_str());
     let sitemap = env
         .get_template("sitemap")
         .map_err(|e| WeaveError::Template(e.to_string()))?
-        .render(minijinja::context! { title => site_title, nav })
+        .render(minijinja::context! { title => site_title, nav => nav_context(&res.nav, "") })
         .map_err(|e| WeaveError::Template(e.to_string()))?;
 
     let json = site::build(doc, &res, &raws, site::Meta::default());
@@ -522,14 +525,15 @@ fn link_context(meta: &PageMeta) -> minijinja::Value {
     minijinja::context! { title => meta.title, href => meta.filename }
 }
 
-fn nav_context(nodes: &[NavNode]) -> Vec<minijinja::Value> {
+fn nav_context(nodes: &[NavNode], current: &str) -> Vec<minijinja::Value> {
     nodes
         .iter()
         .map(|n| {
             minijinja::context! {
                 title => n.title,
                 href => n.href,
-                children => nav_context(&n.children),
+                current => n.href == current,
+                children => nav_context(&n.children, current),
             }
         })
         .collect()
@@ -966,11 +970,21 @@ mod tests {
         let site = dev_render(&book(), Dialect::Html, "");
         for page in &site.pages {
             assert!(page.html.contains("<nav"));
-            assert!(page.html.contains("href=\"parsing.html\">Parsing</a>"));
             // The author labelled this heading `sec:lexing`, so its anchor is the
             // label's, not the text slug — the nav link follows.
             assert!(page.html.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
         }
+        // Each page marks its own landing entry current (§5.3) and no other, so the
+        // nav shows the reader's place statically. The Parsing page marks Parsing.
+        assert!(site.pages[1]
+            .html
+            .contains("href=\"parsing.html\" aria-current=\"page\">Parsing</a>"));
+        assert!(site.pages[1]
+            .html
+            .contains("href=\"index.html\">Front matter</a>"));
+        assert!(!site.pages[1]
+            .html
+            .contains("href=\"index.html\" aria-current=\"page\""));
     }
 
     #[test]
