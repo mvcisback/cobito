@@ -1,0 +1,26 @@
+@layer syntax {
+  /* --- Syntax highlighting (§5.5) --------------------------------------- *
+   * Pure classes over the existing bytes: no injected text, no <script>, so the
+   * copy-paste payload, data-line numbers, and annotation quote selectors all
+   * survive untouched. A chunk-use hole is never wrapped in one of these — its
+   * <a> stays opaque. Each class reads a --tok-* variable, so both themes set the
+   * palette in one place (the base block). */
+  .tok-keyword { color: var(--tok-keyword); }
+  .tok-string { color: var(--tok-string); }
+  .tok-escape { color: var(--tok-keyword); }
+  .tok-comment { color: var(--faint); font-style: italic; }
+  .tok-function { color: var(--tok-function); }
+  .tok-type,
+  .tok-constructor { color: var(--tok-type); }
+  .tok-module { color: var(--tok-type); }
+  .tok-number,
+  .tok-constant { color: var(--tok-number); }
+  .tok-attribute,
+  .tok-property { color: var(--tok-attribute); }
+  .tok-operator { color: var(--tok-operator); }
+  .tok-punctuation { color: var(--tok-punctuation); }
+  .tok-label,
+  .tok-tag { color: var(--tok-keyword); }
+  /* .tok-variable stays --ink: the default text color, so plain identifiers read
+     as prose, not decoration. */
+}

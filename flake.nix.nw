@@ -304,6 +304,8 @@ fi
 test -f $TMPDIR/a/sitemap.html
 grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
 grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
+# The syntax palette is imported by lit.css; both files must be in the output.
+test -f $TMPDIR/a/lit-syntax.css
 @
 This group checks the Markdown dialect (§6.4). It weaves two Markdown documents
 two times each and diffs them. It confirms that prose became HTML and that the
@@ -561,6 +563,7 @@ reason it exists).
 cd ${self}
 lit=${self.packages.${system}.lit}/bin/lit
 # Every module .nw must tangle byte-identically to its committed artifact.
+# templates/lit.css.nw tangles two roots; --check enumerates all of them.
 for nw in src/*.rs.nw templates/lit.css.nw; do
   $lit tangle --check "$nw" --out .
 done

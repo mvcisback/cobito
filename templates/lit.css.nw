@@ -18,7 +18,11 @@ Cascade layers order the sheet from general to specific — base, layout, compon
 then syntax. A later layer wins, so a component rule never fights a base rule by
 specificity. The chunks below fill those layers in turn: the page frame and tokens,
 the grid layout and margin column, the components (numbering, cross-references,
-navigation, code chunks, inline code), and the highlight palette.
+navigation, code chunks, inline code), and the highlight palette. The palette lives
+in its own file, `lit-syntax.css`, which the main sheet imports with a CSS
+`@import` at the top. The CSS spec permits a `@layer` ordering statement before
+`@import`, so the layer order is declared first; the import comes second, before any
+style rule with a block.
 <<templates/lit.css>>=
 <<the layer order and design tokens>>
 
@@ -36,8 +40,6 @@ navigation, code chunks, inline code), and the highlight palette.
 
 <<the code-chunk layout>>
 
-<<the syntax-highlight palette>>
-
 <<inline code>>
 @
 The base layer holds the design tokens and the body. The `@layer` line at the top
@@ -50,6 +52,7 @@ two themes stay in one place. `color-scheme` tells the browser to match its own 
 — the scrollbar and the form controls — to the page.
 <<the layer order and design tokens>>=
 @layer base, layout, components, syntax;
+@import url('lit-syntax.css') layer(syntax);
 
 @layer base {
   /* Tufte-flavoured tokens (§16). A float's identity is drawn from its data-id
@@ -466,13 +469,16 @@ of copies and quote selectors.
   }
 }
 @
-The highlight palette is pure classes over the existing bytes: no injected text, no
+The highlight palette lives in `lit-syntax.css` and is composed into the `syntax`
+layer by the `@import` above. Splitting it out lets authors swap the whole palette
+without touching the page chrome, and it shows how one CSS document can import
+another. The palette is pure classes over the existing bytes: no injected text, no
 script, so the copy-paste payload, the line numbers, and the quote selectors all
 survive. A chunk-use hole is never wrapped in one of these. Each class draws its
 colour from a `--tok-*` variable, so the light and the dark theme both set the palette
-in the one base block above; a plain identifier keeps the default ink so it reads as
-prose, not decoration.
-<<the syntax-highlight palette>>=
+in the base block of `lit.css`; a plain identifier keeps the default ink so it reads
+as prose, not decoration.
+<<templates/lit-syntax.css>>=
 @layer syntax {
   /* --- Syntax highlighting (§5.5) --------------------------------------- *
    * Pure classes over the existing bytes: no injected text, no <script>, so the

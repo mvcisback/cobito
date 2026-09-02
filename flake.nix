@@ -138,6 +138,8 @@
           test -f $TMPDIR/a/sitemap.html
           grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
           grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
+          # The syntax palette is imported by lit.css; both files must be in the output.
+          test -f $TMPDIR/a/lit-syntax.css
           # §6.4 Markdown dialect: ring.nw is authored in CommonMark (the default
           # dialect, so no lit.toml needed). Weave twice, byte-diff, and confirm
           # prose actually became HTML rather than passing through literally.
@@ -296,6 +298,7 @@
           cd ${self}
           lit=${self.packages.${system}.lit}/bin/lit
           # Every module .nw must tangle byte-identically to its committed artifact.
+          # templates/lit.css.nw tangles two roots; --check enumerates all of them.
           for nw in src/*.rs.nw templates/lit.css.nw; do
             $lit tangle --check "$nw" --out .
           done

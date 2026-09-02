@@ -834,6 +834,10 @@ pub fn write_site(
     std::fs::write(out.join("sitemap.html"), &site.sitemap).map_err(WeaveError::Io)?;
     std::fs::write(out.join("lit.css"), include_str!("../templates/lit.css"))
         .map_err(WeaveError::Io)?;
+    // The syntax palette is a separate file imported by lit.css via @import; both
+    // must be present in the output for the import to resolve offline.
+    std::fs::write(out.join("lit-syntax.css"), include_str!("../templates/lit-syntax.css"))
+        .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
     // The archival JSON (§8) is opt-in: plain `weave` stays an HTML-only
     // artifact. Per-page files sit beside their HTML for the annotation layer.
