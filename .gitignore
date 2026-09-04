@@ -3,3 +3,10 @@
 /result-*
 /_site
 /.lit-cache
+
+# Generated from the .nw sources (§13); the .nw files are the only authority.
+# notangle re-creates these on `nix develop`. flake.nix is the one exception:
+# Nix must read it, so it stays committed and the dogfood check guards it.
+/src/*.rs
+/templates/lit.css
+/templates/lit-syntax.css

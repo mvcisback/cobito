@@ -37,12 +37,25 @@
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        # Stage 0: build the tangler from the committed seed (the permanent
-        # bootstrap, §13). Stage 1 below rebuilds it from the tangled .nw.
-        litBootstrap = mkLit pkgs self;
-        # Stage 0 tangles every .nw over the seed, so stage 1 compiles from the
-        # literate sources, not the hand-committed .rs/.css (§13). templates/lit.css
-        # is include_str!'d into the weaver, so it must be tangled here too.
+        # Stage 0 source: notangle every .nw into the .rs/.css cargo needs, with no
+        # lit binary. notangle ships with noweb and makes the same bytes lit tangle
+        # makes (§15). templates/lit.css.nw has two roots; the rest one each.
+        bootstrapSource = pkgs.runCommand "lit-bootstrap-src" { } ''
+          cp -r ${self} $out
+          chmod -R +w $out
+          cd $out
+          export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
+          for nw in src/*.rs.nw; do
+            notangle -R"''${nw%.nw}" "$nw" > "''${nw%.nw}"
+          done
+          notangle -R'templates/lit.css' templates/lit.css.nw > templates/lit.css
+          notangle -R'templates/lit-syntax.css' templates/lit.css.nw > templates/lit-syntax.css
+        '';
+        # Stage 0: build the tangler from the notangle-bootstrapped sources.
+        litBootstrap = mkLit pkgs bootstrapSource;
+        # Stage 1 tangles every .nw with lit, so the shipped binary compiles from a
+        # tree lit itself made (§13). templates/lit.css is include_str!'d into the
+        # weaver, so it and its imported palette must be tangled here too.
         litSource = pkgs.runCommand "lit-src" { } ''
           cp -r ${self} $out
           chmod -R +w $out
@@ -51,7 +64,7 @@
             ${litBootstrap}/bin/lit tangle "$nw" --out .
           done
         '';
-        # Stage 1: the real package, compiled from the .nw-derived sources.
+        # Stage 1: the default package, compiled from the lit-tangled .nw sources.
         lit = mkLit pkgs litSource;
         # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
         # very output was built from — the dogfood loop as a buildable artifact
@@ -68,8 +81,17 @@
         default = pkgs.mkShell {
           packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer noweb ];
           shellHook = ''
-            export PATH="${pkgs.noweb}/lib/noweb:$PATH"
+            export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
             export LIT_KATEX_ASSETS="${katexAssets pkgs}"
+            # The .rs/.css are generated from the .nw (§13). On a fresh checkout they
+            # are absent, so notangle-bootstrap them once, the same as stage 0.
+            if [ ! -f src/main.rs ]; then
+              for nw in src/*.rs.nw; do
+                notangle -R"''${nw%.nw}" "$nw" > "''${nw%.nw}"
+              done
+              notangle -R'templates/lit.css' templates/lit.css.nw > templates/lit.css
+              notangle -R'templates/lit-syntax.css' templates/lit.css.nw > templates/lit-syntax.css
+            fi
           '';
         };
       });
@@ -291,16 +313,25 @@
           touch $out
         '';
 
-        # Self-host (§13): each src/*.rs.nw is a lit module told as a literate
-        # program. `lit tangle --check` proves it still tangles byte-for-byte to
-        # the committed .rs, so the literate source and the bootstrap never drift.
+        # Self-host (§13): with no committed .rs/.css, two independent tanglers —
+        # notangle and lit — must make the same bytes for every module. Their
+        # agreement is what makes the notangle-then-lit bootstrap sound.
         selfhost = pkgs.runCommand "lit-selfhost" { } ''
           cd ${self}
           lit=${self.packages.${system}.lit}/bin/lit
-          # Every module .nw must tangle byte-identically to its committed artifact.
-          # templates/lit.css.nw tangles two roots; --check enumerates all of them.
-          for nw in src/*.rs.nw templates/lit.css.nw; do
-            $lit tangle --check "$nw" --out .
+          export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
+          # notangle and lit must tangle every module to the same bytes. Each src/*.rs.nw
+          # has one root named for its target; templates/lit.css.nw has two.
+          for nw in src/*.rs.nw; do
+            root="''${nw%.nw}"
+            notangle -R"$root" "$nw" > $TMPDIR/nt
+            $lit tangle -R "$root" "$nw" > $TMPDIR/lt
+            diff $TMPDIR/nt $TMPDIR/lt
+          done
+          for root in templates/lit.css templates/lit-syntax.css; do
+            notangle -R"$root" templates/lit.css.nw > $TMPDIR/nt
+            $lit tangle -R "$root" templates/lit.css.nw > $TMPDIR/lt
+            diff $TMPDIR/nt $TMPDIR/lt
           done
           # Weave one Rust module to prove lit renders its own source: keywords and
           # strings colour, and the page needs no <script> (§5.5/§6.3).
