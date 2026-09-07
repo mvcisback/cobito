@@ -16,7 +16,7 @@ Determinism is a hard requirement (§8). Every map is ordered, there are no
 timestamps, and the KaTeX fonts are sorted before they are copied. So two weaves
 of the same input make byte-identical output.
 
-## How a code chunk renders
+## How a code chunk renders {#sec:A00S}
 
 A code chunk renders as a `section` that wraps a collapsible `details`. The
 `summary` holds the chunk name; the body holds one `span` per line:
@@ -61,7 +61,7 @@ language is resolved out of band, and the color is pure CSS. This preserves the
 copy-paste and the annotation invariants above. The `highlight` module owns that
 concern and states the full rule (§5.5).
 
-## How the code implements this
+## How the code implements this {#sec:LG7c}
 
 The module is the error type, the per-chunk and per-section renderers, the
 fragment passes, the mint-only lock path, the whole-document render, the asset

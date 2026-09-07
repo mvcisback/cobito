@@ -5,7 +5,7 @@ chunks after it are the implementation. Phase 1, this weaver, writes `site.json`
 Phase 2, the annotation and review tooling, reads it unchanged. lit emits it only
 under `lit weave --archive`.
 
-## Page boundaries
+## Page boundaries {#sec:pzpT}
 
 noweb has no starred-section concept. cweb's section levels do not exist here. So
 lit splits on the prose instead. A `[weave] split-at` key names the heading level
@@ -22,7 +22,7 @@ Everything before the first boundary is the index page. A code chunk always
 belongs to the page of the nearest preceding boundary. A chunk never starts a
 page.
 
-## The JSON is the single source of truth
+## The JSON is the single source of truth {#sec:Tjx4}
 
 `site.json` is the one contract between the two phases. Phase 1 writes it. Phase 2
 reads it and writes nothing back — annotations live entirely outside it
@@ -48,7 +48,7 @@ the chunk graph, and the pages:
 }
 ```
 
-## Why the shape looks like this
+## Why the shape looks like this {#sec:5Q9y}
 
 The `schema` field is versioned. Any consumer — the review agent, an external tool
 — checks it before use. A mismatch is a hard failure, not a runtime surprise.
@@ -65,7 +65,7 @@ clock.
 Per-page JSON is this same object with `pages` narrowed to one entry. The `nav`,
 `labels`, and `chunks` stay in full, so one page can render standalone.
 
-## How the code implements this
+## How the code implements this {#sec:Cafo}
 
 This module also owns the sidenote hoist. The contract keeps a section's prose and
 its margin material disjoint, so each `sidenote` aside is lifted out of the

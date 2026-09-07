@@ -3,7 +3,7 @@
 This module is the specification and the implementation of the IR parser. The
 prose is the specification. The chunks after it are the implementation.
 
-## What the parser reads
+## What the parser reads {#sec:0AwF}
 
 lit does not drive `noweave`. It reads the IR that noweb's `markup` stage emits,
 and it shells out to `notangle` for tangle. `markup` writes one tagged line per
@@ -34,7 +34,7 @@ Chunk structure is reliable with no extra filter. `markup` must emit `@defn` and
 `noidx`, which serve the identifier index, not chunk structure. So lit ships no
 identifier index in v1; it can come back later.
 
-## Verified against noweb 2.13
+## Verified against noweb 2.13 {#sec:Kt8c}
 
 R1 is retired. lit probed the real toolchain with `fixtures/hello.nw` and the
 parser encodes these facts (§4.2):
@@ -62,7 +62,7 @@ parser encodes these facts (§4.2):
 - A backslash-dollar in prose passes through untouched. That escape is lit's own
   convention (§6.2), not a noweb feature.
 
-## How the code implements this
+## How the code implements this {#sec:nsvK}
 
 The module is the event type, a line parser, and the `markup` runner that ties
 them together.

@@ -4,7 +4,7 @@ This module is `lit.toml`, the project manifest. The prose is the specification.
 The chunks after it are the implementation. Every table is optional, so an absent
 or empty file is valid — the CLI then falls back to its argument-derived defaults.
 
-## What the manifest declares
+## What the manifest declares {#sec:TLsr}
 
 A `[[document]]` table names the document: its id, title, authors, the `.nw` files
 in order, and the prose dialect. A `[tangle]` table sets the default output
@@ -26,7 +26,7 @@ chunk = "server/app.py"
 line-pragma = '# %L "%F"%N'
 ```
 
-## Root chunks and the line pragma
+## Root chunks and the line pragma {#sec:E4N0}
 
 A chunk whose name is path-shaped — it contains a `/`, or it matches a file
 extension — is a root. `notangle -L` takes a printf-ish format for its line
@@ -40,7 +40,7 @@ onto separate lines with column-preserving padding. So pragma'd output is a
 different shape, not just annotated text. This is acceptable for generated code,
 and it is why the default is off.
 
-## Two prose dialects
+## Two prose dialects {#sec:ZZAp}
 
 A docs chunk is authored in one of two dialects, set per document by `dialect`.
 The `markdown` dialect (the default) is CommonMark: paragraphs, emphasis, lists,
@@ -54,7 +54,7 @@ the already-reassembled prose. Everything downstream — the numbering, the refs
 the math render, the sidenote hoist, `site.json` — is dialect-agnostic and
 byte-identical.
 
-## How the code implements this
+## How the code implements this {#sec:Er9s}
 
 This module is a set of serde structs, one per manifest table, plus one `impl`
 block that loads the file and answers the questions the rest of lit asks of it:

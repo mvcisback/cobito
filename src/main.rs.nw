@@ -32,6 +32,8 @@ dialect, and inlined where it does not.
 
 <<the lock command>>
 
+<<the rename-label command>>
+
 <<the labels command>>
 
 <<the id command>>
@@ -60,6 +62,7 @@ mod noweb;
 mod prose;
 mod resolve;
 mod rewrite;
+mod section;
 mod site;
 mod tangle;
 mod weave;
@@ -67,6 +70,7 @@ mod weave;
 The binary needs only two names from the standard library: a path type for the
 files it reads and writes, and the process exit code it returns.
 <<imports>>=
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 @
@@ -80,6 +84,7 @@ lit — web-first literate programming (early scaffold)
 USAGE:
     lit weave <file.nw>...        weave to _site/ (single page; M2 adds splitting)
     lit lock <file.nw>...         mint frozen ids for every label into lit.lock (§7.1)
+    lit rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     lit labels <file.nw>          list the file's label → id map from lit.lock
     lit id <file.nw> <label>      print the frozen id for one label
     lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
@@ -119,6 +124,7 @@ fn main() -> ExitCode {
         Some(("dump-model", files)) if !files.is_empty() => dump_model(files),
         Some(("weave", args)) if !args.is_empty() => weave_cmd(args),
         Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
+        Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
@@ -314,13 +320,17 @@ fn build_doc(files: &[String]) -> Result<(model::DocModel, config::Dialect), Exi
 }
 @
 The lock command mints a frozen id for every label without rendering. It loads the
-lock file, records the count before, mints into it, and saves it back. Ids already
-present are left untouched, so re-running is idempotent. The report shows how many
-were newly minted.
+lock file and records the count. First it mints an id for every float and every
+author `sec:` heading. Then it gives every unlabelled `h2`/`h3` heading an id too:
+it mints one, records it, and writes a `sec:` anchor into the heading's source line
+(§7.1, `section.rs`). It saves the grown lock. Ids already present are left
+untouched, and an already anchored heading is skipped, so re-running is idempotent.
+The report shows how many were newly minted.
 <<the lock command>>=
 /// `lit lock`: mint a frozen id for every label into `lit.lock` without rendering
-/// (§7.1). Ids already present are left untouched; new ones are written back so a
-/// later `--locked` weave finds them.
+/// (§7.1). It also gives every unlabelled `h2`/`h3` heading an id, anchored into the
+/// `.nw` source. Ids already present are left untouched; new ones are written back
+/// so a later `--locked` weave finds them.
 fn lock_cmd(files: &[String]) -> ExitCode {
     let (doc, dialect) = match build_doc(files) {
         Ok(pair) => pair,
@@ -336,9 +346,25 @@ fn lock_cmd(files: &[String]) -> ExitCode {
     };
     let before = lock.count();
     let mut minter = lock::Minter::from_entropy();
+    // Mint floats and author-labelled sections against the source as it is.
     if let Err(e) = weave::mint_lock(&doc, dialect, &mut lock, &mut minter) {
         eprintln!("{e}");
         return ExitCode::FAILURE;
+    }
+    // §7.1: give every unlabelled h2/h3 heading a frozen id, anchored in its source.
+    let mut edits: BTreeMap<String, Vec<(u32, String)>> = BTreeMap::new();
+    for site in section::headings(&doc, dialect) {
+        if site.anchored || site.level < 2 {
+            continue;
+        }
+        let id = lock.mint_section(&site.file, &mut minter);
+        edits.entry(site.file).or_default().push((site.line, id));
+    }
+    for (file, list) in &edits {
+        if let Err(e) = section::apply_anchors(Path::new(file), list, dialect) {
+            eprintln!("lit: error[E032]: could not anchor {file}: {e}");
+            return ExitCode::FAILURE;
+        }
     }
     if let Err(e) = lock.save(path) {
         eprintln!("{e}");
@@ -349,6 +375,81 @@ fn lock_cmd(files: &[String]) -> ExitCode {
         lock.count(),
         lock.count() - before
     );
+    ExitCode::SUCCESS
+}
+@
+The rename-label command gives an auto-anchored section id a human name. It takes
+the frozen id and a bare name, and never changes the id, so every reference and
+permalink still resolves. First it validates the name — letters, digits, hyphen, and
+underscore only, since it becomes a `sec:` label. Then it finds the section entry the
+id belongs to, and refuses if the target name already exists in that file. It
+rewrites the source anchor from `sec:<id>` to `sec:<name>`, then rekeys the lock and
+saves it. The source edit runs before the lock save, so a write failure never leaves
+a lock that points at an anchor the source does not carry.
+<<the rename-label command>>=
+/// `lit rename-label <id> <name>`: give an auto section id a human `sec:` name
+/// (§7.1). The frozen id never changes, so every reference and permalink still
+/// resolves; only the source anchor and the lock key change.
+fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
+    // The name becomes a `sec:` label, so keep it to a safe label segment.
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        eprintln!("lit: error: `{name}` is not a valid name (letters, digits, - or _)");
+        return ExitCode::FAILURE;
+    }
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let dialect = cfg.document().map(|d| d.dialect).unwrap_or_default();
+    let path = Path::new("lit.lock");
+    let mut lock = match lock::LockFile::load(path) {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (file, old_label) = match lock.find_section(id) {
+        Some(pair) => pair,
+        None => {
+            eprintln!("lit: error: no section has id `{id}` in lit.lock (run `lit lock`)");
+            return ExitCode::FAILURE;
+        }
+    };
+    let new_label = format!("sec:{name}");
+    if new_label == old_label {
+        println!("{id}: already named {new_label}");
+        return ExitCode::SUCCESS;
+    }
+    if lock.get(&file, &new_label).is_some() {
+        eprintln!("lit: error: `{new_label}` already exists in {file}");
+        return ExitCode::FAILURE;
+    }
+    let old_name = old_label.strip_prefix("sec:").unwrap_or(&old_label);
+    match section::rename_anchor(Path::new(&file), old_name, name, dialect) {
+        Ok(true) => {}
+        Ok(false) => {
+            eprintln!("lit: error: no `{old_label}` anchor found in {file}");
+            return ExitCode::FAILURE;
+        }
+        Err(e) => {
+            eprintln!("lit: error[E032]: {file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    lock.rename(&file, &old_label, &new_label);
+    if let Err(e) = lock.save(path) {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
+    println!("renamed {old_label} → {new_label} ({id}) in {file}");
     ExitCode::SUCCESS
 }
 @

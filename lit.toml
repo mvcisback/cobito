@@ -17,6 +17,7 @@
 "lock check script" = "bash"
 "assert the frozen label lock" = "bash"
 "assert the language resolver" = "bash"
+"section-anchor check script" = "bash"
 "tangle check script" = "bash"
 "noweb-drift script" = "bash"
 "dogfood script" = "bash"

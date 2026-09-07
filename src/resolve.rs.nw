@@ -6,7 +6,7 @@ implementation. Planning turns the raw scan (§6.2 step 4 inputs) into what the
 second rewrite pass and the templates need: page assignment, the nav tree, the
 label table, and one resolved target for each `data-ref` site.
 
-## Identity is document-global
+## Identity is document-global {#sec:iBsg}
 
 Identity is document-global, so a reference works across pages. lit assigns every
 number and anchor first, then splits the document into pages. A page is a
@@ -18,7 +18,7 @@ shows a stable opaque id, not a position-dependent "Figure 3". The anchoring and
 caption mechanics here are unchanged; what changed is what the id is, and the
 attribute that carries it (`data-id`, not `data-number`).
 
-## Labels and references
+## Labels and references {#sec:fnwt}
 
 Prose carries a label on the target and a reference at the use site. In `html`
 mode these are attributes; in `markdown` mode `\label` and `\ref` lower to the
@@ -43,7 +43,7 @@ A `chunk:` target is synthesized from a chunk name, so prose can link to code.
 Its anchor is the chunk's first defining section, and the default link text is
 the chunk name.
 
-## Identity never enters a text node
+## Identity never enters a text node {#sec:m11o}
 
 Like a code line number (§5.4), a float's id lands in an attribute and the
 stylesheet draws it. Because CSS `attr()` reads only the element's own
@@ -57,7 +57,7 @@ separate HTML file, so a counter could not give a document-global id on the
 second page. The attribute holds the globally-assigned id instead — which under
 §7.1 is minted once and frozen, so it is stable across documents too.
 
-## How the code implements this
+## How the code implements this {#sec:XwSp}
 
 The module is the label-id map, the error type, the resolution's data types, a
 slug-uniquifier, the `plan` entry point (walked in phases), and the nav builder.

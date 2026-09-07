@@ -3,7 +3,7 @@
 This module is the text behind `lit --explain <CODE>`. The prose is the
 specification. The chunks after it are the implementation.
 
-## One format for every error
+## One format for every error {#sec:9zhc}
 
 lit reports one diagnostic format from every stage. The format leads with a stable
 code and a one-line message, then points at the source, then adds any notes:
@@ -24,7 +24,7 @@ known language — W104, §5.5) is a warning, and `--deny-warnings` promotes eve
 warning to an error for CI. And `lit --explain <CODE>` prints the long form, which
 is the text this module holds.
 
-## How the code implements this
+## How the code implements this {#sec:ZCuq}
 
 The module is one function and its tests. `explain` is a single `match` over the
 code. The arms must stay in the order of the §12 registry, so this page groups

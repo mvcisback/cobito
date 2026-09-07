@@ -4,7 +4,7 @@ This module is the specification and the implementation of the Markdown prose
 dialect. The prose is the specification. The chunks after it are the
 implementation.
 
-## Why Markdown
+## Why Markdown {#sec:xZ8V}
 
 The ergonomic prose dialect is CommonMark, not LaTeX. In `html` mode the author
 wraps every paragraph in a `<p>` and every display equation in an equation div,
@@ -14,7 +14,7 @@ LaTeX text expander the first plan called for: it is more ergonomic than raw
 HTML and lets lit drop the hardest part of that plan. Only the math-only macro
 table stays, as roadmap (§6.5).
 
-## The transform
+## The transform {#sec:TAUn}
 
 lit renders CommonMark with `pulldown-cmark`, as a post-`markup` transform
 (§6.2). It runs on the reassembled prose of a docs chunk, between step 2 and the
@@ -46,7 +46,7 @@ HTML rewrite, and only in `markdown` mode. GFM tables are on only inside a
    become a `<code>`. Math placeholders, stashed floats, and raw-HTML islands
    pass through. lit then swaps the stashed floats back in.
 
-## Labels and namespaces
+## Labels and namespaces {#sec:k8T0}
 
 A `\label{ns:name}` namespace must match the fence kind: `eq:` for `math`,
 `fig:` for `figure`, `tbl:` for `table`. The rewrite pass keys a label off its
@@ -56,14 +56,14 @@ referenceable, because an unreferenceable float has no stable identity (§7.1). 
 fenced float emits exactly the same tagged element an island would, so all
 downstream identity and resolution is the same as `html` mode.
 
-## Raw-HTML islands
+## Raw-HTML islands {#sec:UWqg}
 
 CommonMark passes block-level raw HTML through untouched. So anything a directive
 does not cover, most often a sidenote aside, is written as raw HTML dropped
 inside the Markdown. `examples/ring.nw` is the worked example. `fixtures/md.nw`
 is the end-to-end fixture that exercises all three directives and `\ref`.
 
-## How the code implements this
+## How the code implements this {#sec:lisV}
 
 The module is the error type, the top-level render, the shared prose path, the
 raw helpers that skip code and balance braces, the fence machinery, the
@@ -185,14 +185,18 @@ fn fence_err(message: impl Into<String>) -> MarkdownError {
 The top level runs the three phases: protect fenced blocks, render the remaining
 prose, then splice the protected blocks back. Math found on the way (fenced
 display first, then inline) appends to `math`, mirroring the HTML-mode contract so
-substitution resolves both by index.
+substitution resolves both by index. Heading attributes are on for the outer
+document, so `## Lexing {#sec:lexing}` sets the heading id the resolver reads for a
+`sec:` label and its permalink (§7.1). `lit lock` writes the same `{#sec:<id>}`
+attribute when it auto-anchors a section.
 <<render a docs chunk>>=
 /// Render one docs chunk's reassembled prose as Markdown. Appends any math it
 /// finds (fenced display first, then inline) to `math`, mirroring the HTML-mode
-/// contract so `substitute_math` resolves both by index later.
+/// contract so `substitute_math` resolves both by index later. Heading attributes
+/// are on so `## H {#sec:name}` sets a `sec:` id the resolver reads (§7.1).
 pub fn render(input: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
     let (protected, code_blocks) = protect_fences(input, math)?;
-    let html = render_prose(&protected, math, Options::empty())?;
+    let html = render_prose(&protected, math, Options::ENABLE_HEADING_ATTRIBUTES)?;
     Ok(restore_fences(html, &code_blocks))
 }
 @

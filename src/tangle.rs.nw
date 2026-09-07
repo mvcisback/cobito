@@ -5,7 +5,7 @@ are the implementation. Tangle extracts compilable source from `.nw` files. It i
 the inverse of weave: it pulls a root chunk, and everything the root references,
 out as a plain source file.
 
-## Three sub-commands
+## Three sub-commands {#sec:mtmH}
 
 `lit tangle <file.nw>…` writes every root chunk to the output directory (the
 current directory by default). `lit tangle -R 'name'` writes a single chunk to
@@ -20,7 +20,7 @@ come from the CLI, the same as weave. A per-root line-pragma format is read from
 skips a write when the content is unchanged, so a build system that watches mtimes
 does not rebuild for no reason. noweb ships `cpif` for exactly this reason.
 
-## Why lit shells out to notangle
+## Why lit shells out to notangle {#sec:dd8Y}
 
 v1 shells out to noweb's `notangle`. This is correct by construction and carries
 zero implementation risk. The cost is a runtime dependency on noweb, and no single
@@ -49,7 +49,7 @@ Until one of those bites, the dependency is a feature: it is a correct,
 battle-tested implementation lit did not write, and it keeps `.nw` compatibility
 honest by construction rather than by test.
 
-## How the code implements this
+## How the code implements this {#sec:TXnD}
 
 The module is the error type, the single-root shell-out, two batch drivers (write
 to a directory, and check against it without writing), and the disk helpers those

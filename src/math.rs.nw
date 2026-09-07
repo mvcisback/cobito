@@ -4,13 +4,13 @@ This module is the specification and the implementation of math rendering. The
 prose is the specification. The chunks after it are the implementation. It is
 step 6 of the prose pipeline (§6.2).
 
-## The rule
+## The rule {#sec:sHOO}
 
 lit renders KaTeX server-side, at weave time, so the archival site needs no
 JavaScript. A render failure is a hard error with the source and the location,
 never a silent fall back to raw text.
 
-## The engine and the cache
+## The engine and the cache {#sec:PzZ2}
 
 The `katex` Rust crate bundles a JS engine to run `katex.js`. This adds real
 build weight and Nix-closure cost. The alternatives are worse: a `katex` CLI is
@@ -19,7 +19,7 @@ takes the crate and caches each rendered result under
 `hash(math_source + display_mode + macros)` in `.lit-cache`. Without the cache,
 re-rendering every equation on every weave would dominate build time.
 
-## Why the assets are not optional
+## Why the assets are not optional {#sec:iVXH}
 
 "No client-side JavaScript" and "no client-side assets" are different claims.
 lit gets the first for free and must work for the second (verified 2026-08-23):
@@ -39,7 +39,7 @@ lit gets the first for free and must work for the second (verified 2026-08-23):
   assets are pinned in `flake.nix` by `fetchzip` at the crate's version and
   exposed as `LIT_KATEX_ASSETS`. Bump the crate and the pin together.
 
-## Considered and rejected
+## Considered and rejected {#sec:1uIU}
 
 Pure-MathML output needs no CSS, no fonts, and no JS — a genuine single-file
 artifact. lit rejects it for v1, because browser-native math typography is much
@@ -48,7 +48,7 @@ Tufte-styled site. Revisit this if a zero-asset artifact ever outranks
 typography. Every output mode keeps the original TeX in an annotation element,
 which is what makes math copy-pasteable (relevant to `ANNOTATIONS.md` AN-2).
 
-## How the code implements this
+## How the code implements this {#sec:EqJN}
 
 The module is five pieces: the error type, the cache-key hash, the renderer, the
 atomic cache write, and the tests.

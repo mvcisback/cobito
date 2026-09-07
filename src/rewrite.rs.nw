@@ -4,7 +4,7 @@ This module is steps 3 through 5 of the prose pipeline (§6.2). It parses the
 now math-free prose, rewrites it, and serializes it. The prose after this is the
 specification. The chunks after the prose are the implementation.
 
-## Why lit needs an HTML parser
+## Why lit needs an HTML parser {#sec:9k7W}
 
 An early draft claimed the pipeline format lets lit avoid a parser. That claim
 was wrong. This phase must find the `h1` boundaries for page splitting, add `id`
@@ -23,7 +23,7 @@ that number to the caption handler through a one-slot cell. The number must land
 on the caption element, because CSS `attr()` cannot read an ancestor's attribute
 (§7).
 
-## The two-pass discipline
+## The two-pass discipline {#sec:poyA}
 
 Two passes run over identical bytes. The first pass, `scan`, collects what the
 numbering and the cross-referencing must know about the whole document: the
@@ -36,7 +36,7 @@ Both passes walk the same input in the same order. So the counters and the
 per-site indices stay in lockstep. That agreement is what lets `apply` avoid a
 re-derivation of anything.
 
-## Identity is an attribute, never text
+## Identity is an attribute, never text {#sec:SAwZ}
 
 Identity lands in a `data-id` attribute — the frozen opaque id of §7.1 — never in
 a text node. The stylesheet draws the kind-and-id label from that attribute. Only
@@ -49,7 +49,7 @@ that shifts each time an earlier figure is added. A renumber changes the generat
 reference *text* but never an element id, so a quote selector on the nearby prose
 still holds.
 
-## The annotation contract (§9)
+## The annotation contract (§9) {#sec:9p9p}
 
 Commenting is not lit's job. It belongs to a separate tool, specced in
 `ANNOTATIONS.md`. What lit owes that tool is HTML it can anchor to, plus room in
@@ -75,7 +75,7 @@ page, so a hosted annotator needs no code change. The archival site stays fully
 readable with the overlay absent — annotation is progressive enhancement by
 construction.
 
-## How the code implements this
+## How the code implements this {#sec:G7pc}
 
 The module is the error and kind types, the anchor and slug helpers, the scan's
 input and state types, the rewriter runner, the two passes, and the plan cursor

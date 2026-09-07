@@ -3,21 +3,21 @@
 This module is the specification and the implementation of syntax highlighting.
 The prose is the specification. The chunks after it are the implementation.
 
-## What highlighting must do
+## What highlighting must do {#sec:Zi6G}
 
 Highlighting gives color to the bytes that a reader already sees. It never
 changes those bytes (§2). Color is the only thing it adds. This keeps three
 promises from §5.4 and §6.3: the copy of a code chunk is the same text as
 before, the line numbers stay out of that copy, and the page needs no script.
 
-## The hard part
+## The hard part {#sec:QRS0}
 
 A code chunk is not a valid program. It is target-language text with chunk uses
 spliced in. A chunk use is lit's own syntax, not the target's. A plain tokenizer
 reads the two brackets of a chunk use as a shift operator and chokes. Three
 moves make highlighting safe.
 
-## Move 1 — a chunk use is an opaque hole
+## Move 1 — a chunk use is an opaque hole {#sec:vXmF}
 
 Section 5.4 already draws each chunk use as an anchor inside its line span. The
 reader sees the hole's opaque id (§7.1), never target source. So the tokenizer
@@ -27,7 +27,7 @@ hole. It never reads across a hole. This is the discipline the math pass uses
 line `let c = HOLE;` tokenizes as `let`, `c`, `=`, and `;`, and the hole in the
 middle stays untouched, so the two brackets never lex as a shift operator.
 
-## Move 2 — lit resolves the language, once, out of band
+## Move 2 — lit resolves the language, once, out of band {#sec:50k1}
 
 The engine never guesses the language. lit resolves it in three tiers. The most
 specific tier wins.
@@ -53,14 +53,14 @@ lit ships four grammars: Rust, Nix, Bash, and CSS. CSS is here so lit can
 present its own stylesheet as a literate document (§13). Each further grammar is
 one more dependency (§19.5).
 
-## Move 3 — one resolver, shared by weave and editor
+## Move 3 — one resolver, shared by weave and editor {#sec:gGq9}
 
 The three tiers are one function. lit exposes it as `lit language <file>
 <chunk>`, which prints the language id or exits nonzero. Weave calls it inside.
 An editor plugin runs the same command. So the woven page and the editor can
 never disagree on the language of a chunk.
 
-## The weave-time pipeline
+## The weave-time pipeline {#sec:sQwN}
 
 Highlighting runs inside §5.4's render, after the chunk-use anchors exist.
 tree-sitter needs the whole chunk as one buffer, because a string or a comment
@@ -85,7 +85,7 @@ are already there. There is no inline style and no script, so the archival rule
 (§6.3) and determinism (§8) hold, and a token span adds no text of its own, so
 §5.4's copy and quote guarantees stay true.
 
-## Future work — tangle-then-backout highlighting
+## Future work — tangle-then-backout highlighting {#sec:rxh8}
 
 This slice colors each chunk on its own. A chunk body that is only a fragment,
 such as `count += 1;` with no enclosing function, leans on tree-sitter's error
@@ -99,7 +99,7 @@ eventually own or fork `notangle` (§11). Chunk-local highlighting is the interi
 It is correct for a whole-chunk root, and it falls back to plain text for a
 fragment.
 
-## How the code implements this
+## How the code implements this {#sec:Hjwm}
 
 The module is the language enum and its resolver, the highlight-name tables, a
 per-language grammar cache, and the line-splitting merge that does the real work.

@@ -35,3 +35,359 @@ kind = "figure"
 ["fixtures/md.nw"."tbl:units"]
 id = "EaO1"
 kind = "table"
+
+["flake.nix.nw"."sec:3OSt"]
+id = "3OSt"
+kind = "section"
+
+["flake.nix.nw"."sec:9hJs"]
+id = "9hJs"
+kind = "section"
+
+["flake.nix.nw"."sec:ATUX"]
+id = "ATUX"
+kind = "section"
+
+["flake.nix.nw"."sec:ETOA"]
+id = "ETOA"
+kind = "section"
+
+["flake.nix.nw"."sec:FT5y"]
+id = "FT5y"
+kind = "section"
+
+["flake.nix.nw"."sec:Mh65"]
+id = "Mh65"
+kind = "section"
+
+["flake.nix.nw"."sec:NJXp"]
+id = "NJXp"
+kind = "section"
+
+["flake.nix.nw"."sec:P3N3"]
+id = "P3N3"
+kind = "section"
+
+["flake.nix.nw"."sec:UIDl"]
+id = "UIDl"
+kind = "section"
+
+["flake.nix.nw"."sec:Vv1B"]
+id = "Vv1B"
+kind = "section"
+
+["flake.nix.nw"."sec:dNbo"]
+id = "dNbo"
+kind = "section"
+
+["flake.nix.nw"."sec:hwLv"]
+id = "hwLv"
+kind = "section"
+
+["flake.nix.nw"."sec:kHIL"]
+id = "kHIL"
+kind = "section"
+
+["flake.nix.nw"."sec:mxHP"]
+id = "mxHP"
+kind = "section"
+
+["flake.nix.nw"."sec:zQ5K"]
+id = "zQ5K"
+kind = "section"
+
+["lit.nw"."sec:4y6v"]
+id = "4y6v"
+kind = "section"
+
+["lit.nw"."sec:68J6"]
+id = "68J6"
+kind = "section"
+
+["lit.nw"."sec:7p6J"]
+id = "7p6J"
+kind = "section"
+
+["lit.nw"."sec:8GfD"]
+id = "8GfD"
+kind = "section"
+
+["lit.nw"."sec:Fv9U"]
+id = "Fv9U"
+kind = "section"
+
+["lit.nw"."sec:JPcq"]
+id = "JPcq"
+kind = "section"
+
+["lit.nw"."sec:LEQV"]
+id = "LEQV"
+kind = "section"
+
+["lit.nw"."sec:QznE"]
+id = "QznE"
+kind = "section"
+
+["lit.nw"."sec:UnND"]
+id = "UnND"
+kind = "section"
+
+["lit.nw"."sec:av7Q"]
+id = "av7Q"
+kind = "section"
+
+["lit.nw"."sec:lxbi"]
+id = "lxbi"
+kind = "section"
+
+["lit.nw"."sec:oXEK"]
+id = "oXEK"
+kind = "section"
+
+["lit.nw"."sec:teiT"]
+id = "teiT"
+kind = "section"
+
+["lit.nw"."sec:zBDS"]
+id = "zBDS"
+kind = "section"
+
+["src/config.rs.nw"."sec:E4N0"]
+id = "E4N0"
+kind = "section"
+
+["src/config.rs.nw"."sec:Er9s"]
+id = "Er9s"
+kind = "section"
+
+["src/config.rs.nw"."sec:TLsr"]
+id = "TLsr"
+kind = "section"
+
+["src/config.rs.nw"."sec:ZZAp"]
+id = "ZZAp"
+kind = "section"
+
+["src/diag.rs.nw"."sec:9zhc"]
+id = "9zhc"
+kind = "section"
+
+["src/diag.rs.nw"."sec:ZCuq"]
+id = "ZCuq"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:50k1"]
+id = "50k1"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:Hjwm"]
+id = "Hjwm"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:QRS0"]
+id = "QRS0"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:Zi6G"]
+id = "Zi6G"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:gGq9"]
+id = "gGq9"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:rxh8"]
+id = "rxh8"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:sQwN"]
+id = "sQwN"
+kind = "section"
+
+["src/highlight.rs.nw"."sec:vXmF"]
+id = "vXmF"
+kind = "section"
+
+["src/lock.rs.nw"."sec:5II3"]
+id = "5II3"
+kind = "section"
+
+["src/lock.rs.nw"."sec:GIRD"]
+id = "GIRD"
+kind = "section"
+
+["src/lock.rs.nw"."sec:X0Yp"]
+id = "X0Yp"
+kind = "section"
+
+["src/lock.rs.nw"."sec:YZLc"]
+id = "YZLc"
+kind = "section"
+
+["src/lock.rs.nw"."sec:acTW"]
+id = "acTW"
+kind = "section"
+
+["src/lock.rs.nw"."sec:erRn"]
+id = "erRn"
+kind = "section"
+
+["src/lock.rs.nw"."sec:jJzq"]
+id = "jJzq"
+kind = "section"
+
+["src/lock.rs.nw"."sec:oaLc"]
+id = "oaLc"
+kind = "section"
+
+["src/markdown.rs.nw"."sec:TAUn"]
+id = "TAUn"
+kind = "section"
+
+["src/markdown.rs.nw"."sec:UWqg"]
+id = "UWqg"
+kind = "section"
+
+["src/markdown.rs.nw"."sec:k8T0"]
+id = "k8T0"
+kind = "section"
+
+["src/markdown.rs.nw"."sec:lisV"]
+id = "lisV"
+kind = "section"
+
+["src/markdown.rs.nw"."sec:xZ8V"]
+id = "xZ8V"
+kind = "section"
+
+["src/math.rs.nw"."sec:1uIU"]
+id = "1uIU"
+kind = "section"
+
+["src/math.rs.nw"."sec:EqJN"]
+id = "EqJN"
+kind = "section"
+
+["src/math.rs.nw"."sec:PzZ2"]
+id = "PzZ2"
+kind = "section"
+
+["src/math.rs.nw"."sec:iVXH"]
+id = "iVXH"
+kind = "section"
+
+["src/math.rs.nw"."sec:sHOO"]
+id = "sHOO"
+kind = "section"
+
+["src/model.rs.nw"."sec:N3uM"]
+id = "N3uM"
+kind = "section"
+
+["src/model.rs.nw"."sec:Ugl4"]
+id = "Ugl4"
+kind = "section"
+
+["src/model.rs.nw"."sec:jijh"]
+id = "jijh"
+kind = "section"
+
+["src/model.rs.nw"."sec:m7n3"]
+id = "m7n3"
+kind = "section"
+
+["src/noweb.rs.nw"."sec:0AwF"]
+id = "0AwF"
+kind = "section"
+
+["src/noweb.rs.nw"."sec:Kt8c"]
+id = "Kt8c"
+kind = "section"
+
+["src/noweb.rs.nw"."sec:nsvK"]
+id = "nsvK"
+kind = "section"
+
+["src/prose.rs.nw"."sec:O0Sz"]
+id = "O0Sz"
+kind = "section"
+
+["src/prose.rs.nw"."sec:bz51"]
+id = "bz51"
+kind = "section"
+
+["src/prose.rs.nw"."sec:iquM"]
+id = "iquM"
+kind = "section"
+
+["src/resolve.rs.nw"."sec:XwSp"]
+id = "XwSp"
+kind = "section"
+
+["src/resolve.rs.nw"."sec:fnwt"]
+id = "fnwt"
+kind = "section"
+
+["src/resolve.rs.nw"."sec:iBsg"]
+id = "iBsg"
+kind = "section"
+
+["src/resolve.rs.nw"."sec:m11o"]
+id = "m11o"
+kind = "section"
+
+["src/rewrite.rs.nw"."sec:9k7W"]
+id = "9k7W"
+kind = "section"
+
+["src/rewrite.rs.nw"."sec:9p9p"]
+id = "9p9p"
+kind = "section"
+
+["src/rewrite.rs.nw"."sec:G7pc"]
+id = "G7pc"
+kind = "section"
+
+["src/rewrite.rs.nw"."sec:SAwZ"]
+id = "SAwZ"
+kind = "section"
+
+["src/rewrite.rs.nw"."sec:poyA"]
+id = "poyA"
+kind = "section"
+
+["src/site.rs.nw"."sec:5Q9y"]
+id = "5Q9y"
+kind = "section"
+
+["src/site.rs.nw"."sec:Cafo"]
+id = "Cafo"
+kind = "section"
+
+["src/site.rs.nw"."sec:Tjx4"]
+id = "Tjx4"
+kind = "section"
+
+["src/site.rs.nw"."sec:pzpT"]
+id = "pzpT"
+kind = "section"
+
+["src/tangle.rs.nw"."sec:TXnD"]
+id = "TXnD"
+kind = "section"
+
+["src/tangle.rs.nw"."sec:dd8Y"]
+id = "dd8Y"
+kind = "section"
+
+["src/tangle.rs.nw"."sec:mtmH"]
+id = "mtmH"
+kind = "section"
+
+["src/weave.rs.nw"."sec:A00S"]
+id = "A00S"
+kind = "section"
+
+["src/weave.rs.nw"."sec:LG7c"]
+id = "LG7c"
+kind = "section"

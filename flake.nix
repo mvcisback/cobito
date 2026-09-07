@@ -249,6 +249,53 @@
           touch $out
         '';
 
+        section-anchors = pkgs.runCommand "lit-section-anchors" { } ''
+          lit=${self.packages.${system}.lit}/bin/lit
+          # `lit lock` edits the source in place, so work on a writable copy; the
+          # store path is read-only.
+          work=$TMPDIR/sec
+          mkdir -p $work
+          cp ${self}/fixtures/sections.nw $work/sections.nw
+          chmod u+w $work/sections.nw
+          cd $work
+
+          # The three headings start unlabelled. `lit lock` mints an id for each.
+          grep -qE '^## Lexing$' sections.nw
+          $lit lock sections.nw | grep -q '3 newly minted'
+
+          # §7.1 lit lock writes a {#sec:<id>} anchor into the source, in place …
+          grep -qE '^## Lexing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+          grep -qE '^### Cost \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+          grep -qE '^## Parsing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+          # … and a matching Section entry into the lock.
+          $lit labels sections.nw | grep -qE '^sec:[0-9A-Za-z]{4}\s+[0-9A-Za-z]{4}\s+Section$'
+
+          # The weave draws a clickable permalink prefix and a stable heading id.
+          $lit weave --locked sections.nw --out out
+          grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
+          # The archival no-<script> rule still holds (§6.3).
+          if grep -q '<script' out/index.html; then
+            echo "section weave emitted <script>" >&2
+            exit 1
+          fi
+
+          # §7.1 lit rename-label gives an auto id a human name; the id never changes.
+          label=$(grep -oE 'sec:[0-9A-Za-z]{4}' sections.nw | head -1)
+          id=$(printf '%s' "$label" | cut -c5-)
+          $lit rename-label $id lexing
+          grep -qE '^## Lexing \{#sec:lexing\}$' sections.nw
+          test "$($lit id sections.nw sec:lexing)" = "$id"
+          # The old auto label is gone: a rename moves the name, not the id.
+          if $lit id sections.nw $label; then
+            echo "the old auto label survived a rename" >&2
+            exit 1
+          fi
+
+          # A second lock is idempotent: an already-anchored heading is left alone.
+          $lit lock sections.nw | grep -q '0 newly minted'
+          touch $out
+        '';
+
         # Tangle differential (§15): `lit tangle` must byte-match `notangle`
         # itself, and `--check` must be clean after a tangle and flag drift
         # after an edit. This is also the acceptance test for the eventual Rust

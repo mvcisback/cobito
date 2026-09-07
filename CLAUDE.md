@@ -19,7 +19,8 @@ cargo run -- dump-ir fixtures/hello.nw   # end-to-end against real markup
 cargo run -- weave fixtures/hello.nw     # writes _site/ (needs LIT_KATEX_ASSETS)
 cargo run -- weave --archive book.nw     # also emit site.json + per-page JSON (§8)
 cargo run -- weave --locked book.nw      # never mint; error on a label absent from lit.lock (§7.1)
-cargo run -- lock fixtures/book.nw       # mint frozen float ids into lit.lock (§7.1)
+cargo run -- lock fixtures/book.nw       # mint ids; auto-anchor every unlabelled h2/h3 into the .nw source (§7.1)
+cargo run -- rename-label k3f9 lexing    # give an auto section id a human sec: name (rewrites source + lock, keeps id)
 cargo run -- labels fixtures/book.nw     # list the file's label → id map from lit.lock
 cargo run -- tangle fixtures/hello.nw    # extract roots via notangle (--out, -R, --check)
 cargo run -- --explain E014              # long form of a diagnostic (§12)
@@ -82,10 +83,18 @@ or they silently won't exist. Do not commit unless asked.
   and write the lock back; `weave --locked` (CI, the read-only Nix sandbox) never
   mints and errors (E031) on any label absent from the lock. Only labelled floats
   get an id — an unreferenceable float has no stable identity, so no `data-id`.
-  A heading the author pins with a `sec:` id (`kind = "section"`) joins the same
-  scheme: it earns an opaque id and leads with a clickable permalink prefix
-  (`<a class="sec-uid" … data-id>`, drawn by CSS). An h1 is its page and is never
-  minted; an unlabelled section gets no id or prefix.
+  A `sec:`-labelled heading (`kind = "section"`) joins the same scheme: it earns
+  an opaque id and leads with a clickable permalink prefix (`<a class="sec-uid" …
+  data-id>`, drawn by CSS). The author need not label by hand: `lit lock`
+  auto-anchors every unlabelled h2/h3 by minting an id and writing `{#sec:<id>}`
+  (Markdown) / `id="sec:<id>"` (HTML) into the `.nw` heading line, so every section
+  is linkable and the id is source-anchored (survives a reword). `lit rename-label
+  <id> <name>` gives an auto id a human `sec:` name — rewrites source + rekeys the
+  lock, frozen id unchanged. Source-side anchoring lives in `src/section.rs.nw`; the
+  weave path is untouched (an auto-anchored heading is just a `sec:` heading).
+  Markdown heading attributes are enabled (`ENABLE_HEADING_ATTRIBUTES`) so
+  `{#sec:name}` parses. An h1 is its page and is never minted. Anchoring happens
+  only in the dev-time `lit lock` pass; `weave --locked` never edits source.
 - Docs-chunk prose has two dialects, set by `dialect` in `lit.toml`
   (`src/config.rs.nw` §6.1, `src/markdown.rs.nw` §6.4): `markdown` (default —
   CommonMark plus fenced-float directives) and

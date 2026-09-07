@@ -50,7 +50,7 @@ gives the `packages`, `devShells`, and `checks`.
     };
 }
 @
-## System iteration
+## System iteration {#sec:kHIL}
 
 lit builds each output for the four systems in the list. `eachSystem` is the
 helper for this. It maps a function of `system` and `pkgs` across the list with
@@ -61,7 +61,7 @@ systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 eachSystem = f: nixpkgs.lib.genAttrs systems (system:
   f system nixpkgs.legacyPackages.${system});
 @
-## The KaTeX pin
+## The KaTeX pin {#sec:hwLv}
 
 lit renders math at weave time. The HTML from KaTeX is coupled to its own CSS
 and font metrics. The assets must match the version of KaTeX that the `katex`
@@ -79,7 +79,7 @@ katexAssets = pkgs: pkgs.fetchzip {
   sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
 };
 @
-## The builder
+## The builder {#sec:Mh65}
 
 One function builds a `lit` from a source tree. It is a `buildRustPackage` with
 one special step. The pipeline stages of noweb (`markup`, `nt`, and more) are in
@@ -105,7 +105,7 @@ mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
   '';
 };
 @
-## The package: two stages
+## The package: two stages {#sec:UIDl}
 
 lit builds in two stages, so the literate `.nw` sources are the only source of
 lit (§13). The `.nw` files are the one authority. No `.rs` or `.css` file is
@@ -167,7 +167,7 @@ litSource = pkgs.runCommand "lit-src" { } ''
   done
 '';
 @
-## The tangled flake, as an output
+## The tangled flake, as an output {#sec:3OSt}
 
 This output makes the dogfood loop a file that you can build. `nix build .#flake`
 tangles `flake.nix.nw` with the new `lit` binary. It makes the same `flake.nix`
@@ -185,7 +185,7 @@ flake = pkgs.runCommand "flake.nix" { } ''
   cp $TMPDIR/flake.nix $out
 '';
 @
-## The dev shell
+## The dev shell {#sec:zQ5K}
 
 The dev shell has the Rust toolchain and noweb. It makes the same two changes to
 the environment that the wrapper makes in the package. With these changes, `cargo
@@ -213,7 +213,7 @@ default = pkgs.mkShell {
   '';
 };
 @
-## The checks
+## The checks {#sec:P3N3}
 
 `nix flake check` runs the full test set of lit. Each check is an independent
 derivation. Together the checks guard the build, byte-determinism, the frozen
@@ -225,6 +225,8 @@ label lock, the tangle differential, and the noweb output.
 
 <<the lock check>>
 
+<<the section-anchor check>>
+
 <<the tangle check>>
 
 <<the noweb-drift check>>
@@ -233,7 +235,7 @@ label lock, the tangle differential, and the noweb output.
 
 <<the selfhost check>>
 @
-### build
+### build {#sec:9hJs}
 
 This is the cheapest check. It builds the package. `buildRustPackage` also runs
 the cargo tests. A green build shows that the unit tests passed. This check is
@@ -242,7 +244,7 @@ one Nix expression, not a shell script, so it stays Nix.
 # Building the package also runs the (hermetic) cargo tests.
 build = self.packages.${system}.lit;
 @
-### determinism
+### determinism {#sec:dNbo}
 
 This is the most important check. It weaves several documents two times each and
 compares the bytes. The JSON contract of §8 and the archival goal both need this
@@ -410,7 +412,7 @@ if grep -q '<script' $TMPDIR/hl-a/index.html; then
   exit 1
 fi
 @
-### lock
+### lock {#sec:Vv1B}
 
 The committed `lit.lock` is the source of truth for the frozen id of each label.
 This check tests the read-only CLI on top of the lock. The Nix wrapper hands the
@@ -466,7 +468,70 @@ if $lit language fixtures/hl.nw nope; then
   exit 1
 fi
 @
-### tangle differential
+### section anchors {#sec:FT5y}
+
+Every section earns an opaque id (§7.1). `lit lock` auto-anchors an unlabelled
+`h2`/`h3`: it mints an id and writes a `{#sec:<id>}` anchor into the `.nw` source,
+in place, so the id survives a later reword. `lit lock` writes to the source, so
+this check first copies the fixture to a writable place — the Nix store is
+read-only. It then proves the round trip: the source gets the anchor, the lock
+gets a `Section` entry, the weave draws a permalink prefix, `lit rename-label`
+gives the id a human name without changing the id, and a second `lit lock` mints
+nothing.
+<<the section-anchor check>>=
+section-anchors = pkgs.runCommand "lit-section-anchors" { } ''
+  <<section-anchor check script>>
+'';
+@
+The script works on a writable copy of `sections.nw`, a Markdown-dialect fixture
+with three unlabelled headings (two `h2`, one `h3`).
+<<section-anchor check script>>=
+lit=${self.packages.${system}.lit}/bin/lit
+# `lit lock` edits the source in place, so work on a writable copy; the
+# store path is read-only.
+work=$TMPDIR/sec
+mkdir -p $work
+cp ${self}/fixtures/sections.nw $work/sections.nw
+chmod u+w $work/sections.nw
+cd $work
+
+# The three headings start unlabelled. `lit lock` mints an id for each.
+grep -qE '^## Lexing$' sections.nw
+$lit lock sections.nw | grep -q '3 newly minted'
+
+# §7.1 lit lock writes a {#sec:<id>} anchor into the source, in place …
+grep -qE '^## Lexing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+grep -qE '^### Cost \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+grep -qE '^## Parsing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+# … and a matching Section entry into the lock.
+$lit labels sections.nw | grep -qE '^sec:[0-9A-Za-z]{4}\s+[0-9A-Za-z]{4}\s+Section$'
+
+# The weave draws a clickable permalink prefix and a stable heading id.
+$lit weave --locked sections.nw --out out
+grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
+# The archival no-<script> rule still holds (§6.3).
+if grep -q '<script' out/index.html; then
+  echo "section weave emitted <script>" >&2
+  exit 1
+fi
+
+# §7.1 lit rename-label gives an auto id a human name; the id never changes.
+label=$(grep -oE 'sec:[0-9A-Za-z]{4}' sections.nw | head -1)
+id=$(printf '%s' "$label" | cut -c5-)
+$lit rename-label $id lexing
+grep -qE '^## Lexing \{#sec:lexing\}$' sections.nw
+test "$($lit id sections.nw sec:lexing)" = "$id"
+# The old auto label is gone: a rename moves the name, not the id.
+if $lit id sections.nw $label; then
+  echo "the old auto label survived a rename" >&2
+  exit 1
+fi
+
+# A second lock is idempotent: an already-anchored heading is left alone.
+$lit lock sections.nw | grep -q '0 newly minted'
+touch $out
+@
+### tangle differential {#sec:ATUX}
 
 `lit tangle` must make the same bytes as `notangle`. `--check` must be clean just
 after a tangle. `--check` must report drift after an edit. This check is also the
@@ -500,7 +565,7 @@ if $lit tangle --check "$nw" --out $TMPDIR/out; then
 fi
 touch $out
 @
-### noweb drift guard
+### noweb drift guard {#sec:ETOA}
 
 This is a golden guard. The output of `markup` for the fixtures must not change
 across noweb or nixpkgs updates. If it changes, this diff shows the change. To
@@ -524,7 +589,7 @@ for f in fixtures/*.nw; do
 done
 touch $out
 @
-### dogfood
+### dogfood {#sec:NJXp}
 
 This check closes the loop. `flake.nix.nw`, this page, is the flake as a literate
 program. `packages.flake` is the tangled output of this page. The Nix wrapper
@@ -576,7 +641,7 @@ if grep -q '<script' $TMPDIR/df-a/index.html; then
   exit 1
 fi
 @
-### self-host
+### self-host {#sec:mxHP}
 
 This check closes the self-host loop for the crate (§13). Each `src/*.rs.nw` is
 one module of lit, and `templates/lit.css.nw` is its stylesheet, each told as a

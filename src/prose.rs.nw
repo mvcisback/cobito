@@ -9,7 +9,7 @@ verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
 LaTeX subset, does not expand author macros, and shows math as italics. lit does
 its own prose layer instead.
 
-## Two prose dialects
+## Two prose dialects {#sec:iquM}
 
 An author writes a docs chunk in one of two dialects. The `dialect` key in
 `lit.toml` sets it per document (§5.2):
@@ -27,7 +27,7 @@ reassembled prose. It slots in after math extraction and before the HTML
 rewrite. Everything after that step — numbering, references, math render,
 sidenote hoist, and `site.json` — is the same for both dialects, byte for byte.
 
-## The pipeline (the order is load-bearing)
+## The pipeline (the order is load-bearing) {#sec:O0Sz}
 
 lit processes each docs chunk in this order:
 
@@ -56,7 +56,7 @@ lit does not sanitize prose. The author is the trusted party. A margin comment
 is the annotation layer's problem (`ANNOTATIONS.md`), never merged into lit's
 output.
 
-## How the code implements this
+## How the code implements this {#sec:bz51}
 
 This module is steps 1 and 2. It holds the extracted-math type, the prose error,
 the escaper, step 1 (reassembly), the helpers that mark skip regions and find

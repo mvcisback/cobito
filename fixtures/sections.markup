@@ -1,0 +1,61 @@
+@file fixtures/sections.nw
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Sections fixture
+@nl
+@text 
+@nl
+@text A small document in the *Markdown* dialect. It has unlabelled `h2` and `h3`
+@nl
+@text headings. `lit lock` auto-anchors each one: it mints an opaque id and writes a
+@nl
+@text `{#sec:<id>}` anchor into this source, in place. The weave then draws a clickable
+@nl
+@text permalink prefix for the heading (§7.1).
+@nl
+@text 
+@nl
+@text ## Lexing
+@nl
+@text 
+@nl
+@text The lexer reads bytes and gives tokens. This heading has no author label, so
+@nl
+@text `lit lock` gives it one.
+@nl
+@text 
+@nl
+@text ### Cost
+@nl
+@text 
+@nl
+@text A short note under a level-three heading. It also earns an id.
+@nl
+@text 
+@nl
+@text ## Parsing
+@nl
+@text 
+@nl
+@text The parser reads tokens and builds a tree. The code lives in
+@nl
+@text \ref{chunk:src/answer.rs}.
+@nl
+@text 
+@nl
+@end docs 1
+@begin code 2
+@defn src/answer.rs
+@nl
+@text pub fn answer() -> u32 {
+@nl
+@text     42
+@nl
+@text }
+@nl
+@end code 2
+@begin docs 3
+@text 
+@nl
+@end docs 3

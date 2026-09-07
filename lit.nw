@@ -12,7 +12,7 @@ then shows the code that meets it. This top-level document holds the parts that
 cross every module — the goals, the vocabulary, the architecture — and points to
 the module that owns each detail.
 
-## Goals
+## Goals {#sec:teiT}
 
 lit has six goals.
 
@@ -30,7 +30,7 @@ lit has six goals.
 6. Self-hosting. lit is written in itself: each `.nw` file tangles to its part of
    the Rust crate (see "Self-hosting" below).
 
-## Non-goals
+## Non-goals {#sec:68J6}
 
 - PDF or print output. A `--tex` backend may come later.
 - Pretty-printing or code reformatting. lit never reflows, re-indents, or rewrites
@@ -43,7 +43,7 @@ lit has six goals.
 - A comment or annotation server. That is a separate tool (`ANNOTATIONS.md`).
 - Multi-user real-time collaboration. Comments are asynchronous.
 
-## Vocabulary
+## Vocabulary {#sec:lxbi}
 
 | Term | Meaning |
 |---|---|
@@ -58,7 +58,7 @@ A document may span several `.nw` files, because `markup` accepts several and
 emits a file marker between them. The numbering, the labels, and the chunk
 resolution are all document-wide.
 
-## Architecture
+## Architecture {#sec:8GfD}
 
 lit shells out to noweb's front end, not its back end. `markup` converts a `.nw`
 file into noweb's line-oriented pipeline format. lit consumes that as its IR and
@@ -95,7 +95,7 @@ than as generated markup it would have to scrape back.
   annotations (W3C JSON) ──> lit review ──> unified diff against *.nw
 ```
 
-## Where each part lives
+## Where each part lives {#sec:Fv9U}
 
 Each module carries the specification for its own job. This is the reading order.
 
@@ -109,6 +109,7 @@ Each module carries the specification for its own job. This is the reading order
 | Math rendering: KaTeX at weave time, the cache | `src/math.rs.nw` |
 | Labels, numbering, cross-references, the resolver | `src/resolve.rs.nw` |
 | Stable ids and the lock file | `src/lock.rs.nw` |
+| Source-side section anchors: auto ids, `rename-label` | `src/section.rs.nw` |
 | Prose rewriting, the HTML parser, the annotation contract | `src/rewrite.rs.nw` |
 | The `site.json` contract and page boundaries | `src/site.rs.nw` |
 | The weaver: rendering a code chunk | `src/weave.rs.nw` |
@@ -118,7 +119,7 @@ Each module carries the specification for its own job. This is the reading order
 | The CLI | `src/main.rs.nw` |
 | The build, told as a literate program | `flake.nix.nw` |
 
-## The review loop
+## The review loop {#sec:av7Q}
 
 `lit review` closes the loop from a reader's margin comment back to the source. It
 runs in six steps.
@@ -140,7 +141,7 @@ runs in six steps.
 Step 4 holds the important safety property: prose feedback must not silently alter
 the program.
 
-## Self-hosting
+## Self-hosting {#sec:7p6J}
 
 lit is written in itself. The path had three stages. First, lit was written
 normally in Rust. Second, once weave and tangle were stable, each module was ported
@@ -173,7 +174,7 @@ runs `lit tangle --check` so the literate source and this one bootstrap file nev
 drift, and it weaves the page to prove the Nix grammar colored it — self-hosting the
 highlighter, which is why Nix is the second grammar.
 
-## Nix
+## Nix {#sec:JPcq}
 
 The build is flake-based. `pkgs.noweb` is a genuine runtime dependency in phase 1,
 not merely a test oracle, so the CLI is wrapped to put both `\${noweb}/bin` and
@@ -188,7 +189,7 @@ differential against `notangle`, and the self-host and dogfood checks above. Bec
 a flake sees only git-tracked files, a new file must be added to git before any
 `nix` command will see it. The full build lives in `flake.nix.nw`.
 
-## Testing
+## Testing {#sec:LEQV}
 
 Each layer has its own strategy.
 
@@ -202,7 +203,7 @@ Each layer has its own strategy.
 | Determinism | Weave twice, diff. |
 | Annotation contract | Assert every section carries its id and provenance and a margin slot. |
 
-## Milestones
+## Milestones {#sec:UnND}
 
 Phase 1, the static generator, is complete: the flake and IR parser (M0), the prose
 pipeline and math (M1), numbering and page splitting and templates (M2), tangle via
@@ -220,7 +221,7 @@ remaining phase-3 work.
 Replacing noweb with a Rust `markup` and `notangle` is not a scheduled milestone. It
 is a contingency with explicit triggers, recorded in `tangle.rs.nw`.
 
-## Open questions
+## Open questions {#sec:QznE}
 
 - One review patch per run, or per thread? Per-thread accepts granularly but
   conflicts when two threads touch the same prose. The lean is one patch per run
@@ -232,7 +233,7 @@ Resolved questions are recorded where they were settled: the two prose dialects 
 in `config.rs.nw`, the two-pass rewriter in `rewrite.rs.nw`, and the choice to skip
 `noweave` in this document's architecture section.
 
-## Risks
+## Risks {#sec:4y6v}
 
 - KaTeX via a JS engine adds build weight and weave latency. The cache mitigates it.
 - Self-hosting could make a weaver bug a bootstrap risk. The mitigation is that
@@ -242,7 +243,7 @@ in `config.rs.nw`, the two-pass rewriter in `rewrite.rs.nw`, and the choice to s
   `ANNOTATIONS.md`, because the anchoring is done by its selector machinery rather
   than by heuristics lit invents.
 
-## Error codes
+## Error codes {#sec:oXEK}
 
 lit reports one diagnostic format from every stage (`diag.rs.nw`). Each code is
 stable, so a test or a suppression can name one error and no other. When a module
@@ -272,7 +273,7 @@ introduces a code, it claims the next free number in this registry.
 | W103 | figure or table without a caption | `resolve.rs` |
 | W104 | code chunk resolved to no known language | `weave.rs` |
 
-## Conventions
+## Conventions {#sec:zBDS}
 
 - Dependencies are added reluctantly, one at a time, only when a task needs them.
   Never add one speculatively.
