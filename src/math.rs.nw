@@ -6,9 +6,19 @@ step 6 of the prose pipeline (§6.2).
 
 ## The rule {#sec:sHOO}
 
-lit renders KaTeX server-side, at weave time, so the archival site needs no
-JavaScript. A render failure is a hard error with the source and the location,
-never a silent fall back to raw text.
+lit renders KaTeX server-side, at weave time, so the content of the archival site
+needs no JavaScript. Every equation, code chunk, cross-reference, and float is
+inert markup that a reader reads with script off. A render failure is a hard error
+with the source and the location, never a silent fall back to raw text.
+
+The site carries exactly one script: the `nav-spy` navigation aid in `page.html`
+(§5.3). It is progressive enhancement — it marks the section the reader is on and
+scrolls the nav to it, and nothing else. It injects no content text, so copy-paste
+and the annotation quote selectors (§9.2) still hold, and the page reads fully
+without it. So the rule is not "no script"; it is "no script the content depends
+on". lit still links no CDN and ships every byte in `_site`, so the archive stays
+self-contained. The script is inline and identical on every page, so the weave
+stays byte-deterministic.
 
 ## The engine and the cache {#sec:PzZ2}
 
@@ -21,13 +31,15 @@ re-rendering every equation on every weave would dominate build time.
 
 ## Why the assets are not optional {#sec:iVXH}
 
-"No client-side JavaScript" and "no client-side assets" are different claims.
-lit gets the first for free and must work for the second (verified 2026-08-23):
+"Math needs no client-side JavaScript" and "no client-side assets" are different
+claims. lit gets the first for free and must work for the second (verified
+2026-08-23):
 
 - The crate runs `katex.js` inside the lit binary at weave time. The output is
   inert markup: a hidden `katex-mathml` span that carries MathML, plus a
-  `katex-html` visual span. No script reaches the site. `checks.determinism`
-  asserts this.
+  `katex-html` visual span. No math script reaches the site — the only script is
+  the `nav-spy` aid (§6.3, above), which math does not touch. `checks.determinism`
+  asserts the page carries no script beyond it.
 - The default output needs `katex.min.css` and the woff2 fonts for correctness,
   not for looks. The stylesheet is what hides the MathML layer. Without it both
   layers render and every equation appears twice.
@@ -72,7 +84,7 @@ no client JavaScript, and a slow engine that must be cached.
 <<the module banner>>=
 //! Step 6 of the prose pipeline: KaTeX at weave time (§6.3).
 //!
-//! Rendering is server-side so the archival site needs no JavaScript. The
+//! Rendering is server-side so the math needs no client JavaScript. The
 //! `katex` crate drives a bundled JS engine, which is slow enough that every
 //! result is cached on disk keyed by a content hash — otherwise re-rendering
 //! every equation on every weave dominates build time.

@@ -136,13 +136,20 @@
             echo "float still carries a sequential data-number; §7.1 wants an opaque id" >&2
             exit 1
           fi
-          # The archival artifact must need no JavaScript (§6.3).
+          # §6.3 the content needs no JavaScript: the only script a page may carry is
+          # the inline nav-spy aid — no math script, no external src.
           for p in $TMPDIR/a/*.html; do
-            if grep -q '<script' "$p"; then
-              echo "$p contains <script>; math must render at weave time" >&2
+            if grep '<script' "$p" | grep -qv '<script id="nav-spy">'; then
+              echo "$p carries a script other than the nav-spy aid; math must render at weave time" >&2
+              exit 1
+            fi
+            if grep -qE '<script[^>]*src=' "$p"; then
+              echo "$p links an external script; the archive must stay self-contained" >&2
               exit 1
             fi
           done
+          # The nav-spy aid is present on a content page (progressive enhancement).
+          grep -q '<script id="nav-spy">' $TMPDIR/a/index.html
           # §8 site.json: frozen schema, one file per page, sidenotes hoisted
           # out of prose into margin[] (no <aside> survives in the JSON bodies).
           grep -q '"schema": 2' $TMPDIR/a/site.json
@@ -156,7 +163,7 @@
           fi
           # The weaver emits one standalone sitemap page that lists the whole nav
           # tree through the same hrefs, and every page footer links to it. The
-          # <script> loop above already proved the sitemap needs no JavaScript.
+          # script loop above already proved no page carries a stray script.
           test -f $TMPDIR/a/sitemap.html
           grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
           grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
@@ -178,8 +185,8 @@
           grep -qE 'id="eq-wrap" data-id="[0-9A-Za-z]{4}"' $TMPDIR/md-a/index.html
           grep -q 'href="#eq-wrap"' $TMPDIR/md-a/index.html
           grep -q 'href="#tbl-api"' $TMPDIR/md-a/index.html
-          if grep -q '<script' $TMPDIR/md-a/index.html; then
-            echo "Markdown weave emitted <script>; math must render at weave time" >&2
+          if grep '<script' $TMPDIR/md-a/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "Markdown weave emitted a script other than the nav-spy aid; math must render at weave time" >&2
             exit 1
           fi
           # The md.nw fixture additionally exercises the ```figure``` fence: a real
@@ -208,9 +215,9 @@
             echo "a chunk-use hole was wrapped in a highlight span; §5.5 wants it opaque" >&2
             exit 1
           fi
-          # Highlighting is pure CSS classes — the archival no-<script> rule holds.
-          if grep -q '<script' $TMPDIR/hl-a/index.html; then
-            echo "highlighted weave emitted <script>; coloring must be pure CSS" >&2
+          # Highlighting is pure CSS classes — the only script is the nav-spy aid.
+          if grep '<script' $TMPDIR/hl-a/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "highlighted weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
           touch $out
@@ -273,9 +280,9 @@
           # The weave draws a clickable permalink prefix and a stable heading id.
           $lit weave --locked sections.nw --out out
           grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
-          # The archival no-<script> rule still holds (§6.3).
-          if grep -q '<script' out/index.html; then
-            echo "section weave emitted <script>" >&2
+          # The only script the archival page carries is the nav-spy aid (§6.3).
+          if grep '<script' out/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "section weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
 
@@ -352,9 +359,9 @@
             echo "a chunk-use hole was wrapped in a highlight span; §5.5 wants it opaque" >&2
             exit 1
           fi
-          # Pure CSS coloring: the archival no-<script> rule holds here too.
-          if grep -q '<script' $TMPDIR/df-a/index.html; then
-            echo "dogfood weave emitted <script>; coloring must be pure CSS" >&2
+          # Pure CSS coloring: the only script here is the nav-spy aid too.
+          if grep '<script' $TMPDIR/df-a/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "dogfood weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
           touch $out
@@ -381,17 +388,17 @@
             diff $TMPDIR/nt $TMPDIR/lt
           done
           # Weave one Rust module to prove lit renders its own source: keywords and
-          # strings colour, and the page needs no <script> (§5.5/§6.3).
+          # strings colour, and the page carries no script but the nav-spy aid (§5.5/§6.3).
           $lit weave --locked src/diag.rs.nw --out $TMPDIR/sh
           grep -q 'class="tok-keyword">' $TMPDIR/sh/index.html
           grep -q 'class="tok-string">' $TMPDIR/sh/index.html
           # Weave the stylesheet to prove lit colours its own CSS: a property name is a
-          # tok token, and the page still needs no <script>.
+          # tok token, and the page carries no script but the nav-spy aid.
           $lit weave --locked templates/lit.css.nw --out $TMPDIR/shcss
           grep -q 'class="tok-property">' $TMPDIR/shcss/index.html
           for page in $TMPDIR/sh $TMPDIR/shcss; do
-            if grep -q '<script' "$page"/index.html; then
-              echo "self-host weave emitted <script>; coloring must be pure CSS" >&2
+            if grep '<script' "$page"/index.html | grep -qv '<script id="nav-spy">'; then
+              echo "self-host weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
               exit 1
             fi
           done

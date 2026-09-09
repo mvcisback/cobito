@@ -18,6 +18,56 @@
 <main>
 {% for section in sections %}{{ section }}
 {% endfor %}</main>
+<script id="nav-spy">
+// Progressive enhancement only (§5.3): the page renders fully without it. It
+// marks the nav entry for the section you are reading and scrolls the bar to it.
+// It adds no content text, so copy-paste and the annotation quote selectors
+// (§9.2) are untouched.
+(function () {
+  var nav = document.querySelector("nav.toc");
+  if (!nav) return;
+  var links = {};
+  nav.querySelectorAll('a[href*="#sec-"]').forEach(function (a) {
+    var h = a.getAttribute("href"), i = h.indexOf("#");
+    if (i >= 0) links[h.slice(i)] = a;
+  });
+  // Only headings that have a matching nav entry; in document order, so their
+  // tops increase down the page.
+  var heads = Array.prototype.slice.call(
+    document.querySelectorAll('main [id^="sec-"]'))
+    .filter(function (h) { return links["#" + h.id]; });
+  if (!heads.length) return;
+  var current = null;
+  function activate(a) {
+    if (a === current) return;
+    if (current) current.removeAttribute("data-current-section");
+    a.setAttribute("data-current-section", "");
+    current = a;
+    // Centre the active entry in the bar. block:"nearest" keeps the already-
+    // visible sticky bar from dragging the page up or down; only the bar's own
+    // horizontal overflow scrolls.
+    a.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }
+  // The current section is the last heading above a reading line near the top —
+  // the section you are inside, not one that happens to sit in a narrow band.
+  // This is defined at every scroll position, so the mark never goes blank mid
+  // section. A rAF throttle keeps the scroll handler cheap.
+  var ticking = false;
+  function update() {
+    ticking = false;
+    var line = window.innerHeight * 0.3, best = null;
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].getBoundingClientRect().top - line <= 0) best = heads[i];
+      else break;
+    }
+    if (best) activate(links["#" + best.id]);
+  }
+  addEventListener("scroll", function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+})();
+</script>
 <footer class="pagination">
 {% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% else %}<span></span>{% endif %}
 <a class="sitemap-link" href="sitemap.html">Sitemap</a>

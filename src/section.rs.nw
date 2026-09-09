@@ -222,7 +222,7 @@ fn insert_html_id(body: &str, id: &str) -> String {
         let open = format!("<h{level}");
         if let Some(pos) = body.find(&open) {
             let at = pos + open.len();
-            return format!("{}{}{}", &body[..at], format!(" id=\"sec:{id}\""), &body[at..]);
+            return format!("{} id=\"sec:{id}\"{}", &body[..at], &body[at..]);
         }
     }
     body.to_string()

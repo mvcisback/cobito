@@ -39,16 +39,22 @@ or they silently won't exist. Do not commit unless asked.
 - `fixtures/*.markup` files are generated, never hand-edited:
   `markup fixtures/NAME.nw > fixtures/NAME.markup` inside the devShell.
 - Weave output must be byte-deterministic: no timestamps, no unordered maps.
-- Math renders at weave time; the site must contain **no `<script>`**. KaTeX's
-  CSS and fonts are mandatory (without them equations render twice) and are
-  pinned in `flake.nix` to the `katex` crate's own version — bump both
-  together. Details and the rejected MathML-only option: `src/math.rs.nw` §6.3.
+- Math renders at weave time; the archival **content needs no JavaScript**. The
+  only script a page may carry is the inline `nav-spy` navigation aid in
+  `templates/page.html` (§5.3) — a single, identical, inline block, no external
+  `src`, that injects no content text (so copy-paste and quote selectors survive)
+  and only marks/scrolls the nav to the section you are reading. So the rule is "no
+  script the content depends on", and the flake checks assert every page carries no
+  `<script>` **but** the nav-spy block. KaTeX's CSS and fonts are mandatory (without
+  them equations render twice) and are pinned in `flake.nix` to the `katex` crate's
+  own version — bump both together. Details and the rejected MathML-only option:
+  `src/math.rs.nw` §6.3.
 - Code chunk line numbers are `.nw` source lines drawn by CSS from `data-line`,
   never text nodes — text-node numbers would be copy-pasted and would break the
   annotation layer's quote selectors (`src/weave.rs.nw` §5.4).
 - Syntax highlighting (`src/highlight.rs.nw` §5.5) colors the existing bytes with `tok-*` CSS
-  classes only — no injected text, no `<script>`, so copy-paste, `data-line`, and
-  quote selectors survive. A chunk-use `<<hole>>` stays opaque: tree-sitter tokens
+  classes only — no injected text and no script (the nav-spy aid aside), so
+  copy-paste, `data-line`, and quote selectors survive. A chunk-use `<<hole>>` stays opaque: tree-sitter tokens
   only the literal runs between holes and the `<a>` anchor is spliced back outside
   any color span. Language is resolved out of band by `highlight::resolve` (the same
   logic `lit language <file> <chunk>` prints), most specific tier first: a

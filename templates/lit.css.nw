@@ -18,7 +18,8 @@ Cascade layers order the sheet from general to specific — base, layout, compon
 then syntax. A later layer wins, so a component rule never fights a base rule by
 specificity. The chunks below fill those layers in turn: the page frame and tokens,
 the grid layout and margin column, the components (numbering, cross-references,
-navigation, code chunks, inline code), and the highlight palette. The palette lives
+navigation, code chunks, inline code, tables), the highlight palette, and a last
+block of phone refinements. The palette lives
 in its own file, `lit-syntax.css`, which the main sheet imports with a CSS
 `@import` at the top. The CSS spec permits a `@layer` ordering statement before
 `@import`, so the layer order is declared first; the import comes second, before any
@@ -41,6 +42,10 @@ style rule with a block.
 <<the code-chunk layout>>
 
 <<inline code>>
+
+<<tables>>
+
+<<phone refinements>>
 @
 The base layer holds the design tokens and the body. The `@layer` line at the top
 names the four layers in order, once, so every block below joins a named layer and
@@ -329,7 +334,10 @@ single horizontal, scrollable run of section links: each list, top level and nes
 lays its items in a row, so the reader gets a flat scrollable list of every section
 and can reach any of them from anywhere. The weaver marks the current page's own
 entry, so it reads in the warm accent at full weight — a static "you are here" that
-needs no script and works in every browser. The bar carries the band treatment — a
+works before any script and in every browser. On top of that static mark, the
+`nav-spy` script (§5.3, in `page.html`) marks the section the reader is on with a
+soft pill and scrolls the bar to keep it in view. The mark is progressive
+enhancement: the page reads fully without it. The bar carries the band treatment — a
 hair off the page shade, a thin bottom rule, a soft lower shadow. The footer
 pagination sits in the content track as a two-end row with a sitemap link between.
 <<navigation and pagination>>=
@@ -390,10 +398,21 @@ pagination sits in the content track as a two-end row with a sitemap link betwee
     }
 
     /* The current page's own entry, marked statically by the weaver (§5.3), so
-       the reader's place shows with no script, in every browser. */
+       the reader's place shows even before the script runs, in every browser. */
     a[aria-current="page"] {
       color: var(--ref);
       font-weight: 700;
+    }
+
+    /* The section the reader is on, marked live by the nav-spy script (§5.3).
+       It paints a soft accent pill so the moving mark reads apart from both the
+       bar (also --band) and the static page mark above. */
+    a[data-current-section] {
+      color: var(--ref);
+      background: color-mix(in srgb, var(--ref) 16%, var(--bg));
+      border-radius: 0.7rem;
+      padding: 0.1rem 0.45rem;
+      margin-inline: -0.2rem;
     }
   }
 
@@ -506,7 +525,11 @@ as prose, not decoration.
      as prose, not decoration. */
 }
 @
-Inline code in prose keeps the same monospace face on a faint background.
+Inline code in prose keeps the same monospace face on a faint background. A fenced
+code block in prose — not a chunk, but a plain ` ``` ` block such as the architecture
+diagram — is a `pre` with no chunk class. It scrolls sideways on its own, so a wide
+line (an ASCII diagram) never widens the page on a narrow screen. The `code` inside it
+drops the inline background and padding, which would otherwise tile behind every line.
 <<inline code>>=
 @layer components {
   code {
@@ -514,6 +537,108 @@ Inline code in prose keeps the same monospace face on a faint background.
     font-size: 0.9em;
     background: var(--code-bg);
     padding: 0.05em 0.25em;
+  }
+
+  /* A prose code block (not a chunk): scroll sideways instead of widening the
+     page, and drop the inline-code background/padding on the nested <code>. */
+  pre:not(.chunk-body) {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    background: var(--code-bg);
+    padding: 0.8rem;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+    }
+  }
+}
+@
+A table from a `table` fence (§6.4) reads in the Tufte style: no vertical rules,
+one rule under the header, one under the last row, and generous cell padding. The
+caption sits above. A wide table does not push the page wide — the element scrolls
+sideways on its own when the viewport is narrow.
+<<tables>>=
+@layer components {
+  /* --- Tables (from a `table` fence, §6.4) ------------------------------ */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+    /* A wide table scrolls sideways instead of widening the page. */
+    display: block;
+    overflow-x: auto;
+  }
+
+  th,
+  td {
+    padding: 0.4rem 0.9rem 0.4rem 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+  }
+
+  tbody tr:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+}
+@
+The rules above already adapt to a narrow viewport: the grid collapses to one column,
+the sidenotes fall inline, and a wide code chunk or table scrolls on its own. This
+last block tunes a phone. The reading gutter gets smaller so the column uses more of
+the screen, the block spacing tightens, the scrolling nav gives each link a taller tap
+target, a long previous or next title wraps instead of overlapping its neighbour, and
+the code face shrinks a step so more of a line shows before it scrolls. The break is
+34rem — about a large phone in portrait.
+<<phone refinements>>=
+@layer layout {
+  @media (max-width: 34rem) {
+    main {
+      margin-block: 1.25rem;
+      padding-inline: 0.75rem;
+    }
+
+    main :is(h1, h2, h3, h4) {
+      margin-top: 1.25rem;
+    }
+
+    /* The sticky bar is shorter here, so a jump needs less scroll room. */
+    main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+      scroll-margin-top: 3rem;
+    }
+  }
+}
+
+@layer components {
+  @media (max-width: 34rem) {
+    /* A taller tap target for each section link in the scrolling bar. */
+    nav.toc a {
+      display: inline-block;
+      padding-block: 0.35rem;
+    }
+
+    /* A long previous/next title wraps instead of colliding with its neighbour. */
+    footer.pagination {
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    /* A smaller code face shows more of a line before it scrolls sideways. */
+    details.chunk > summary,
+    pre.chunk-body {
+      font-size: 0.8rem;
+      padding-inline: 0.6rem;
+    }
   }
 }
 @

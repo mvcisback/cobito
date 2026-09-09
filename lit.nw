@@ -45,6 +45,8 @@ lit has six goals.
 
 ## Vocabulary {#sec:lxbi}
 
+```table
+\caption{The words this document uses.}
 | Term | Meaning |
 |---|---|
 | project | A directory with a `lit.toml`. It holds one or more documents. |
@@ -53,6 +55,7 @@ lit has six goals.
 | section | lit's unit of anchoring and rendering. One chunk makes one section. |
 | page | An output HTML file. It holds a contiguous run of sections. |
 | root | A code chunk that tangles to a file on disk. |
+```
 
 A document may span several `.nw` files, because `markup` accepts several and
 emits a file marker between them. The numbering, the labels, and the chunk
@@ -99,6 +102,8 @@ than as generated markup it would have to scrape back.
 
 Each module carries the specification for its own job. This is the reading order.
 
+```table
+\caption{Each concern and the module that owns it.}
 | Concern | Module |
 |---|---|
 | The noweb boundary: the IR, verified noweb behavior, `markup` | `src/noweb.rs.nw` |
@@ -118,6 +123,7 @@ Each module carries the specification for its own job. This is the reading order
 | Long-form diagnostics | `src/diag.rs.nw` |
 | The CLI | `src/main.rs.nw` |
 | The build, told as a literate program | `flake.nix.nw` |
+```
 
 ## The review loop {#sec:av7Q}
 
@@ -193,6 +199,8 @@ a flake sees only git-tracked files, a new file must be added to git before any
 
 Each layer has its own strategy.
 
+```table
+\caption{The test strategy for each layer.}
 | Layer | Strategy |
 |---|---|
 | IR parser | Golden tests over pinned `markup` output; guards against noweb version drift. |
@@ -202,6 +210,7 @@ Each layer has its own strategy.
 | Tangle | Differential against `notangle` on a fixture corpus. |
 | Determinism | Weave twice, diff. |
 | Annotation contract | Assert every section carries its id and provenance and a margin slot. |
+```
 
 ## Milestones {#sec:UnND}
 
@@ -249,6 +258,8 @@ lit reports one diagnostic format from every stage (`diag.rs.nw`). Each code is
 stable, so a test or a suppression can name one error and no other. When a module
 introduces a code, it claims the next free number in this registry.
 
+```table
+\caption{The error and warning codes.}
 | Code | Meaning | Module |
 |---|---|---|
 | E001 | malformed IR line from `markup` | `noweb.rs` |
@@ -272,6 +283,7 @@ introduces a code, it claims the next free number in this registry.
 | W102 | chunk defined but never used | `model.rs` |
 | W103 | figure or table without a caption | `resolve.rs` |
 | W104 | code chunk resolved to no known language | `weave.rs` |
+```
 
 ## Conventions {#sec:zBDS}
 
