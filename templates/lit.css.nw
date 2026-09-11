@@ -259,6 +259,13 @@ id sits in the right margin of its centred block.
     font-weight: bold;
   }
 
+  /* A wide display equation scrolls sideways rather than widening the page.
+     KaTeX's own stylesheet does not guard this, and it matters most on a phone. */
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
   .equation {
     position: relative;
     margin: 1rem 0;
@@ -609,6 +616,21 @@ the code face shrinks a step so more of a line shows before it scrolls. The brea
 
     main :is(h1, h2, h3, h4) {
       margin-top: 1.25rem;
+    }
+
+    /* The browser's em-based headings are too tall on a phone: a long title
+       wraps to four lines. Step them down so a heading fills fewer lines. */
+    main h1 {
+      font-size: 1.75rem;
+      line-height: 1.15;
+    }
+
+    main h2 {
+      font-size: 1.35rem;
+    }
+
+    main h3 {
+      font-size: 1.1rem;
     }
 
     /* The sticky bar is shorter here, so a jump needs less scroll room. */
