@@ -220,6 +220,78 @@
             echo "highlighted weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
+          # §10 transclusion: tx.nw puts a title, an intro, and the source heading
+          # in one @ chunk, then transcludes the source into a later section. Weave
+          # twice, byte-diff, and confirm the node model and scoping are sound.
+          $lit weave --locked fixtures/tx.nw --out $TMPDIR/tx-a
+          $lit weave --locked fixtures/tx.nw --out $TMPDIR/tx-b
+          diff -r $TMPDIR/tx-a $TMPDIR/tx-b
+          # The node is spliced as a transclusion section whose chrome links back to
+          # the canonical anchor with the heading text.
+          grep -q '<section class="transclusion" data-transclude="sec:source">' $TMPDIR/tx-a/index.html
+          grep -q '<a href="#sec-source">The source</a>' $TMPDIR/tx-a/index.html
+          # Node extent is the markdown heading, not the @ chunk: the h1 that shares
+          # the source's chunk is NOT pulled into the copy, so the page has one h1.
+          test "$(grep -oE '<h1[ >]' $TMPDIR/tx-a/index.html | wc -l)" -eq 1
+          # The copy scopes its ids; the canonical heading keeps the bare id.
+          grep -q 'id="tx1-sec-source"' $TMPDIR/tx-a/index.html
+          grep -q 'id="sec-source"' $TMPDIR/tx-a/index.html
+          # The node runs across the following code chunk, so the copy reproduces it
+          # — one canonical chunk body, one in the copy.
+          test "$(grep -oE 'class="chunk-body"' $TMPDIR/tx-a/index.html | wc -l)" -eq 2
+          # Transclusion duplicates finished HTML, so it adds no script: the only
+          # script a page may carry is the nav-spy aid (§6.3).
+          if grep '<script' $TMPDIR/tx-a/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "transcluded weave emitted a script other than the nav-spy aid" >&2
+            exit 1
+          fi
+          # §10 node pages: every uid-bearing node earns a standalone page under n/.
+          # The two h2 nodes get a page; the h1 (no uid) does not.
+          test "$(ls $TMPDIR/tx-a/n/*.html | wc -l)" -eq 2
+          # The heading in context leads with a node-page link, drawn by CSS (no text).
+          grep -q 'class="node-link" href="n/' $TMPDIR/tx-a/index.html
+          # A node page carries the node body, a breadcrumb up to the document h1, and a
+          # "read in context" link to the canonical anchor — both one directory up. The
+          # source node is the one whose own context link points at sec-source.
+          src=$(grep -l 'href="../index.html#sec-source">Read in context' $TMPDIR/tx-a/n/*.html)
+          grep -q '<a href="../index.html">Transclusion fixture</a>' "$src"
+          grep -q 'Transcluded by' "$src"
+          # A node page is archival too: it carries no script at all.
+          if grep -q '<script' $TMPDIR/tx-a/n/*.html; then
+            echo "a node page emitted a script" >&2
+            exit 1
+          fi
+          # §10 floats are nodes: txf.nw labels an equation and a figure, then
+          # transcludes each into a later section. Weave twice, byte-diff, and
+          # confirm a float is cut, paged, linked, and transcludable.
+          $lit weave --locked fixtures/txf.nw --out $TMPDIR/txf-a
+          $lit weave --locked fixtures/txf.nw --out $TMPDIR/txf-b
+          diff -r $TMPDIR/txf-a $TMPDIR/txf-b
+          # Two heading nodes and two float nodes each earn a standalone page under n/.
+          test "$(ls $TMPDIR/txf-a/n/*.html | wc -l)" -eq 4
+          # The figure is transcluded on its own: a transclusion section keyed to the
+          # float, and the copy scopes the figure id with the tx prefix.
+          grep -q '<section class="transclusion" data-transclude="fig:demo">' $TMPDIR/txf-a/index.html
+          grep -q 'id="tx1-fig-demo"' $TMPDIR/txf-a/index.html
+          grep -q '<section class="transclusion" data-transclude="eq:demo">' $TMPDIR/txf-a/index.html
+          # The canonical figure keeps its bare id; only one canonical figure exists.
+          test "$(grep -oE 'id="fig-demo"' $TMPDIR/txf-a/index.html | wc -l)" -eq 1
+          # In context, a float leads with a node-page link, drawn by CSS (no text). The
+          # figcaption carries one; so does the equation.
+          grep -qE '<figcaption[^>]*>.*<a class="node-link" href="n/' $TMPDIR/txf-a/index.html
+          grep -qE 'class="equation"[^>]*><a class="node-link" href="n/' $TMPDIR/txf-a/index.html
+          # The figure's node page carries the figure, a breadcrumb up to the document
+          # h1, a "read in context" link to the canonical anchor, and a "Transcluded by"
+          # backlink. Find it by the context link that points at fig-demo.
+          fig=$(grep -l 'href="../index.html#fig-demo">Read in context' $TMPDIR/txf-a/n/*.html)
+          grep -q '<a href="../index.html">Float transclusion fixture</a>' "$fig"
+          grep -q '<figure id="fig-demo"' "$fig"
+          grep -q 'Transcluded by' "$fig"
+          # A float node page is archival too: no script at all.
+          if grep -q '<script' $TMPDIR/txf-a/n/*.html; then
+            echo "a float node page emitted a script" >&2
+            exit 1
+          fi
           touch $out
         '';
 
@@ -333,6 +405,23 @@
           for f in fixtures/*.nw; do
             ${pkgs.noweb}/lib/noweb/markup "$f" > "$TMPDIR/got"
             diff -u "''${f%.nw}.markup" "$TMPDIR/got"
+          done
+          touch $out
+        '';
+
+        # Full-corpus differential (§4.1): the native reader (`lit dump-ir`) must
+        # make the same events as noweb `markup` (`lit dump-ir --oracle`) for every
+        # tracked .nw file. Two independent readers that agree prove the port.
+        reader = pkgs.runCommand "lit-reader" { } ''
+          lit=${self.packages.${system}.lit}/bin/lit
+          cd ${self}
+          for nw in *.nw src/*.nw fixtures/*.nw; do
+            $lit dump-ir "$nw" > "$TMPDIR/reader"
+            $lit dump-ir --oracle "$nw" > "$TMPDIR/oracle"
+            if ! diff -u "$TMPDIR/oracle" "$TMPDIR/reader"; then
+              echo "reader diverged from noweb markup for $nw" >&2
+              exit 1
+            fi
           done
           touch $out
         '';

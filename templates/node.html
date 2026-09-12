@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="../katex/katex.min.css">
+<link rel="stylesheet" href="../lit.css">
+{{ embed }}
+</head>
+<body>
+<nav class="toc">
+{% macro tree(nodes) %}<ul>
+{% for n in nodes %}<li><a href="{{ n.href }}"{% if n.current %} aria-current="page"{% endif %}>{{ n.title }}</a>{% if n.children %}{{ tree(n.children) }}{% endif %}</li>
+{% endfor %}</ul>{% endmacro %}
+{{ tree(nav) }}
+</nav>
+<main class="node">
+{% if crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><ol>
+{% for c in crumbs %}<li><a href="{{ c.href }}">{{ c.title }}</a></li>
+{% endfor %}</ol></nav>
+{% endif %}<article class="node-body">{{ body }}</article>
+<p class="node-context"><a href="{{ context }}">Read in context &rarr;</a></p>
+{% if transcluded_by or referenced_by %}<section class="backlinks">
+{% if transcluded_by %}<h2>Transcluded by</h2>
+<ul>{% for b in transcluded_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
+{% endif %}{% if referenced_by %}<h2>Referenced by</h2>
+<ul>{% for b in referenced_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
+{% endif %}</section>
+{% endif %}</main>
+<footer class="pagination">
+<span></span>
+<a class="sitemap-link" href="../sitemap.html">Sitemap</a>
+<span></span>
+</footer>
+</body>
+</html>

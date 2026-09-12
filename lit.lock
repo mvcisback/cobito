@@ -36,6 +36,30 @@ kind = "figure"
 id = "EaO1"
 kind = "table"
 
+["fixtures/tx.nw"."sec:reuse"]
+id = "ZYhb"
+kind = "section"
+
+["fixtures/tx.nw"."sec:source"]
+id = "5QKY"
+kind = "section"
+
+["fixtures/txf.nw"."eq:demo"]
+id = "3KtH"
+kind = "equation"
+
+["fixtures/txf.nw"."fig:demo"]
+id = "tbL3"
+kind = "figure"
+
+["fixtures/txf.nw"."sec:home"]
+id = "2tYh"
+kind = "section"
+
+["fixtures/txf.nw"."sec:reuse"]
+id = "fpIK"
+kind = "section"
+
 ["flake.nix.nw"."sec:3OSt"]
 id = "3OSt"
 kind = "section"
@@ -74,6 +98,10 @@ kind = "section"
 
 ["flake.nix.nw"."sec:Vv1B"]
 id = "Vv1B"
+kind = "section"
+
+["flake.nix.nw"."sec:c8DE"]
+id = "c8DE"
 kind = "section"
 
 ["flake.nix.nw"."sec:dNbo"]

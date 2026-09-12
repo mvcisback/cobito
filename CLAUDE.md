@@ -63,6 +63,18 @@ or they silently won't exist. Do not commit unless asked.
   plain text + a W104 warning, never an error; an unknown id in either `[weave]` key
   is E033. Grammars (Rust, Nix, Bash, CSS) are one dep each (§19.5); CSS self-hosts
   lit's own `templates/lit.css` as a literate document (§13).
+- Transclusion (`src/transclude.rs.nw` §10) shows one **node** a second time in
+  place. A node is a heading and the content under it, cut at the **markdown
+  heading** boundary (the next heading at the same or a shallower level), never at
+  the `@`-chunk boundary — so one chunk can hold many nodes and a node can span
+  chunks. `\transclude{sec:name}` (Markdown) lowers to an inert
+  `<div class="transclusion" data-transclude=…>` island the weaver splices after
+  section wrapping and before the page split. The copy keeps the canonical bytes,
+  gets scope-prefixed ids (`tx<n>-…`) on every id it defines and every in-copy link,
+  a backlink header, and a section with no directive is byte-unchanged. A cycle is
+  W105, an unknown target W106 — both inert markers, never an error. The node body
+  is cut from the final section bodies by the `id` `apply` stamps on every heading;
+  deferred slices (floats as nodes, per-node pages, cross-document) are in §10.
 - `flake.nix` is **generated** from `flake.nix.nw` — lit's own build file told as a
   literate program (the first self-host dogfood, `lit.nw` §13). Edit the `.nw` and
   re-tangle (`lit tangle flake.nix.nw --out .`), never hand-edit `flake.nix`. The

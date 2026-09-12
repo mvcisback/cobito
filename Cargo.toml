@@ -17,3 +17,6 @@ tree-sitter-css = "0.25.0"
 tree-sitter-highlight = "0.26.13"
 tree-sitter-nix = "0.3.0"
 tree-sitter-rust = "0.24.2"
+
+[dev-dependencies]
+peg = "0.8.6"

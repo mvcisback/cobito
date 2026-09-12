@@ -1,0 +1,25 @@
+@ # Transclusion fixture
+
+A tiny document in the *Markdown* dialect that exercises transclusion (§10). The
+title, an intro, and the source section all live in one `@` chunk, so the node
+boundary is the markdown heading, not the chunk. A later section pulls the source
+in with `\transclude`, so the weave must cut the node at the heading, splice it in
+place, scope its ids, and link back to it.
+
+## The source {#sec:source}
+
+This section is the transclusion target. The title above it belongs to a
+shallower node, so the copy must start here and leave the `h1` out. It owns a
+small code chunk, so the transcluded copy must scope a code section's id too.
+
+<<demo.rs>>=
+pub fn demo() -> u32 {
+    7
+}
+@ ## The reuse {#sec:reuse}
+
+The source section appears again here, transcluded in place:
+
+\transclude{sec:source}
+
+The document continues after the copy.

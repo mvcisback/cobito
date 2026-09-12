@@ -215,6 +215,13 @@ pub fn anchor_of(label: &str) -> String {
     label.replace(':', "-")
 }
 
+/// The empty node-page link stamped on a node in context (§10): an `<a>` to
+/// `n/<id>.html`, drawn by CSS as the ⧉ glyph. It carries no text node, so
+/// copy-paste and the annotation quote selectors survive (§5.4).
+pub fn node_link(uid: &str) -> String {
+    format!("<a class=\"node-link\" href=\"n/{uid}.html\" aria-label=\"node page\"></a>")
+}
+
 pub fn slug(s: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
@@ -535,8 +542,13 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 if let Some(anchor) = heading_anchors.get(*i) {
                     el.set_attribute("id", anchor).ok();
                     if let Some(Some(uid)) = heading_uids.get(*i) {
+                        // Two empty anchors, drawn by CSS (no text node, so
+                        // copy-paste and quote selectors survive, §5.4): a
+                        // permalink to this section, and a link to the node's own
+                        // page at `n/<id>.html` (§10 node pages).
                         let tag = format!(
-                            "<a class=\"sec-uid\" href=\"#{anchor}\" data-id=\"{uid}\"></a>"
+                            "<a class=\"sec-uid\" href=\"#{anchor}\" data-id=\"{uid}\"></a>{}",
+                            node_link(uid)
                         );
                         el.prepend(&tag, ContentType::Html);
                     }
@@ -570,6 +582,8 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 move |el| {
                     if let Some(opaque) = pending_fig.borrow_mut().take() {
                         el.set_attribute("data-id", &opaque).ok();
+                        // A link to the float's own node page (§10), drawn by CSS.
+                        el.append(&node_link(&opaque), ContentType::Html);
                     }
                     Ok(())
                 }
@@ -579,6 +593,7 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 move |el| {
                     if let Some(opaque) = pending_tbl.borrow_mut().take() {
                         el.set_attribute("data-id", &opaque).ok();
+                        el.append(&node_link(&opaque), ContentType::Html);
                     }
                     Ok(())
                 }
@@ -589,6 +604,9 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 }
                 if let Some(opaque) = id_of(el) {
                     el.set_attribute("data-id", &opaque).ok();
+                    // An equation has no caption, so its node link rides the
+                    // block itself; CSS places it at the left margin (§10).
+                    el.prepend(&node_link(&opaque), ContentType::Html);
                 }
                 if let Some(label) = el.get_attribute("id") {
                     if Kind::from_label(&label).is_some() {
@@ -771,8 +789,11 @@ fn apply_stamps_ids_into_attributes_never_text() {
     .unwrap();
     assert!(out.contains("id=\"fig-pipeline\" data-id=\"k3f9\""));
     // The id rides on the caption so CSS can draw "Figure k3f9" there; the
-    // caption *text* is untouched.
-    assert!(out.contains("<figcaption data-id=\"k3f9\">The pipeline.</figcaption>"));
+    // caption *text* is untouched, and an empty node-page link (§10) follows it.
+    assert!(out.contains(
+        "<figcaption data-id=\"k3f9\">The pipeline.\
+         <a class=\"node-link\" href=\"n/k3f9.html\" aria-label=\"node page\"></a></figcaption>"
+    ));
     assert!(!out.contains("Figure k3f9"));
 }
 @
@@ -836,7 +857,8 @@ fn apply_prepends_a_clickable_uid_to_a_labelled_section() {
     let out = apply("<h1>Parsing</h1><h2>Lexing</h2>", &mut plan).unwrap();
     assert!(out.contains("<h1 id=\"parsing\">Parsing</h1>"));
     assert!(out.contains(
-        "<h2 id=\"sec-lexing\"><a class=\"sec-uid\" href=\"#sec-lexing\" data-id=\"k3f9\"></a>Lexing</h2>"
+        "<h2 id=\"sec-lexing\"><a class=\"sec-uid\" href=\"#sec-lexing\" data-id=\"k3f9\"></a>\
+         <a class=\"node-link\" href=\"n/k3f9.html\" aria-label=\"node page\"></a>Lexing</h2>"
     ));
     assert!(!out.contains(">k3f9<"));
 }

@@ -6,13 +6,14 @@ a small function that prints its own diagnostics and returns an `ExitCode`, so t
 dispatcher stays a flat table.
 
 The exit codes follow one rule. A usage mistake — a missing argument, an unknown
-command — exits with code 2. A real failure — noweb failed, the model rejected the
-document, disk write failed — exits with code 1 (`ExitCode::FAILURE`). Success is
+command — exits with code 2. A real failure — a file did not read, the model
+rejected the document, disk write failed — exits with code 1 (`ExitCode::FAILURE`).
+Success is
 code 0. A build script can therefore tell "you called me wrong" apart from "the
 work failed".
 
 The front half of `weave`, `lock`, `language`, `tangle`, and both dump commands is
-the same: run noweb markup, fold the events into the document model. That shared
+the same: read the `.nw` files, fold the events into the document model. That shared
 front half is factored into `build_doc` where the command needs the resolved prose
 dialect, and inlined where it does not.
 <<src/main.rs>>=
@@ -56,6 +57,7 @@ mod diag;
 mod highlight;
 mod lock;
 mod markdown;
+mod markup;
 mod math;
 mod model;
 mod noweb;
@@ -65,6 +67,7 @@ mod rewrite;
 mod section;
 mod site;
 mod tangle;
+mod transclude;
 mod weave;
 @
 The binary needs only two names from the standard library: a path type for the
@@ -88,7 +91,7 @@ USAGE:
     lit labels <file.nw>          list the file's label → id map from lit.lock
     lit id <file.nw> <label>      print the frozen id for one label
     lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
-    lit dump-ir <file.nw>...      run noweb markup, print the parsed IR events
+    lit dump-ir [--oracle] <file.nw>...  print the parsed IR events (--oracle: via noweb)
     lit dump-model <file.nw>...   fold the IR into the document model, print it
     lit tangle <file.nw>...       tangle every root chunk (via notangle)
 
@@ -163,8 +166,8 @@ fn explain_cmd(code: Option<&str>) -> ExitCode {
     }
 }
 @
-The weave command is the main path. It parses its own options, runs noweb, builds
-the model, loads config, resolves the highlighting language, then calls
+The weave command is the main path. It parses its own options, reads the files,
+builds the model, loads config, resolves the highlighting language, then calls
 `weave::write_site`. Lints from the model and lints from the site are both
 counted; `--deny-warnings` turns a nonzero count into a nonzero exit after the
 site is written, so CI fails but the artifact stays available.
@@ -200,7 +203,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     }
 
-    let events = match noweb::run_markup(&files) {
+    let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
             eprintln!("lit: {e}");
@@ -292,16 +295,16 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     }
 }
 @
-`build_doc` is the shared front half of `lock`. It runs noweb, builds the model,
-loads config, and returns the model together with the resolved prose dialect. It
+`build_doc` is the shared front half of `lock`. It reads the files, builds the
+model, loads config, and returns the model with the resolved prose dialect. It
 prints its own diagnostics and carries the exit code in the `Err`, so the caller
 returns that code directly.
 <<build the document once>>=
-/// Run noweb + fold the IR into the model + resolve the prose dialect — the front
-/// half shared by `weave` and `lock`. Diagnostics are printed here; the `Err`
-/// carries the process exit code.
+/// Read the `.nw` files + fold the IR into the model + resolve the prose dialect —
+/// the front half shared by `weave` and `lock`. Diagnostics are printed here; the
+/// `Err` carries the process exit code.
 fn build_doc(files: &[String]) -> Result<(model::DocModel, config::Dialect), ExitCode> {
-    let events = noweb::run_markup(files).map_err(|e| {
+    let events = markup::read(files).map_err(|e| {
         eprintln!("lit: {e}");
         ExitCode::FAILURE
     })?;
@@ -538,7 +541,7 @@ exits nonzero, so a build can gate on it.
 /// on it.
 fn language_cmd(file: &str, chunk: &str) -> ExitCode {
     let files = [file.to_string()];
-    let events = match noweb::run_markup(&files) {
+    let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
             eprintln!("lit: {e}");
@@ -654,7 +657,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
 
     // The whole-document modes enumerate roots from the model, which also
     // surfaces E010 (use of an undefined chunk) before we spawn notangle.
-    let events = match noweb::run_markup(&files) {
+    let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
             eprintln!("lit: {e}");
@@ -717,12 +720,12 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
     }
 }
 @
-The dump-model command prints the folded document model for inspection. It runs
-noweb, builds the model, prints its lints, then prints the files, roots, every
+The dump-model command prints the folded document model for inspection. It reads
+the files, builds the model, prints its lints, then prints the files, roots, every
 section, and every chunk. It is a debugging window into the model stage.
 <<dump the model>>=
 fn dump_model(files: &[String]) -> ExitCode {
-    let events = match noweb::run_markup(files) {
+    let events = match markup::read(files) {
         Ok(events) => events,
         Err(e) => {
             eprintln!("lit: {e}");
@@ -757,11 +760,30 @@ fn dump_model(files: &[String]) -> ExitCode {
 }
 @
 The dump-ir command prints the raw markup events, one per line. It is the thinnest
-window in the tool: run noweb, print what it returned. It is the first thing to
-reach for when the model looks wrong, because it shows the input the model folds.
+window in the tool: read the files, print what the reader returned. It is the first
+thing to reach for when the model looks wrong, because it shows the input the model
+folds.
+
+With `--oracle` it reads the same files through noweb `markup` instead of the native
+reader. The two paths must print the same events for every file: that is the
+differential the `reader` flake check runs (§4.1). So `--oracle` keeps noweb as the
+reader's oracle, even though no other command spawns `markup` now.
 <<dump the ir>>=
-fn dump_ir(files: &[String]) -> ExitCode {
-    match noweb::run_markup(files) {
+fn dump_ir(args: &[String]) -> ExitCode {
+    let (oracle, files) = match args.split_first() {
+        Some((first, rest)) if first == "--oracle" => (true, rest),
+        _ => (false, args),
+    };
+    if files.is_empty() {
+        eprintln!("lit: dump-ir needs at least one .nw file");
+        return ExitCode::from(2);
+    }
+    let events = if oracle {
+        noweb::run_markup(files).map_err(|e| e.to_string())
+    } else {
+        markup::read(files).map_err(|e| e.to_string())
+    };
+    match events {
         Ok(events) => {
             for event in &events {
                 println!("{event:?}");

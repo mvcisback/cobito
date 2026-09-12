@@ -265,8 +265,17 @@ Run `markup` over the given files and parse the result. The binary comes from PA
 overridable with `LIT_MARKUP`. A nonzero exit, or an `@fatal` anywhere in the
 events, is an error — `markup` sometimes exits zero alongside a fatal, so both are
 checked.
+
+The native reader (§4.1) now reads every file at run time, so no command needs this
+function on its default path. It stays as the reader's oracle: `lit dump-ir
+--oracle` calls it, and the `reader` flake check diffs the two paths for every
+tracked `.nw`. Two independent readers that agree is what proves the native reader
+right, the same idea as the two-tangler self-host check (§13).
 <<run markup>>=
 /// Run noweb's `markup` over the given `.nw` files and parse its output.
+///
+/// This is the reader's oracle (`lit dump-ir --oracle`), not a run-time path: the
+/// native reader (`markup::read`) reads files for every command now.
 ///
 /// The binary is found on `PATH` (override with `LIT_MARKUP`). Callers should
 /// pass paths relative to the project root so `@file` events stay portable.

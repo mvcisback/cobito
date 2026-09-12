@@ -43,10 +43,13 @@
     if (current) current.removeAttribute("data-current-section");
     a.setAttribute("data-current-section", "");
     current = a;
-    // Centre the active entry in the bar. block:"nearest" keeps the already-
-    // visible sticky bar from dragging the page up or down; only the bar's own
-    // horizontal overflow scrolls.
-    a.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    // Centre the active entry in the bar. Scroll the bar's OWN horizontal
+    // overflow only, never scrollIntoView: that would let the browser animate
+    // an ancestor scroller (the page) and fight the reader's live scroll, which
+    // is the jerkiness we are avoiding. This moves the page not at all.
+    var navBox = nav.getBoundingClientRect(), aBox = a.getBoundingClientRect();
+    var delta = (aBox.left + aBox.width / 2) - (navBox.left + navBox.width / 2);
+    nav.scrollBy({ left: delta, behavior: "smooth" });
   }
   // The current section is the last heading above a reading line near the top —
   // the section you are inside, not one that happens to sit in a narrow band.

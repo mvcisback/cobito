@@ -99,6 +99,8 @@ copy, and the top-level `write_site` that ties them to disk.
 
 <<the page link and nav context>>
 
+<<the node page context>>
+
 <<copy the katex assets>>
 
 <<write the site to disk>>
@@ -135,6 +137,7 @@ use crate::prose::{self, Math, ProseError};
 use crate::resolve::{self, LabelIds, NavNode, PageMeta, ResolveError};
 use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
+use crate::transclude;
 @
 The error type collects a failure from every stage the weaver drives. The prose
 and markdown variants carry the source coordinate so a diagnostic points at the
@@ -364,6 +367,9 @@ pub struct RenderedPage {
 
 pub struct Site {
     pub pages: Vec<RenderedPage>,
+    /// One per-node page (§10), as `(relative path, html)` — the path is
+    /// `n/<id>.html`, one directory down from the document pages.
+    pub node_pages: Vec<(String, String)>,
     /// A standalone page listing the whole navigation tree (`sitemap.html`),
     /// always emitted so a reader has one flat overview of every section.
     pub sitemap: String,
@@ -611,6 +617,9 @@ pub fn render(
         .render_all(&math)
         .map_err(WeaveError::Math)?;
     let mut wrapped: Vec<String> = Vec::with_capacity(frags.len());
+    // The inner body of each section, before the provenance envelope — the source
+    // transclusion cuts node bodies from, at heading boundaries (§10).
+    let mut bodies: Vec<String> = Vec::with_capacity(frags.len());
     let mut raws: Vec<site::RawSection> = Vec::with_capacity(frags.len());
     // Document-global so sidenote ids are unique and stable across pages (§8).
     let mut sn = 0usize;
@@ -647,6 +656,7 @@ pub fn render(
             )
         };
         raws.push(raw);
+        bodies.push(page_body.clone());
         wrapped.push(wrap_section(
             &section.id,
             class,
@@ -657,11 +667,38 @@ pub fn render(
         ));
     }
 
+    // §10 transclusion: splice each `\transclude` placeholder's node into its
+    // host section, recursively, before the page split — so a copy rides on its
+    // host's page. Node bodies are cut from the inner section bodies at heading
+    // boundaries, so the placeholder's own host section is byte-unchanged unless
+    // it carries a directive, and the archival JSON (built above from
+    // pre-expansion bodies) is untouched. The scope counter is document-wide, so
+    // every copy's scoped ids are unique and the output stays deterministic (§8).
+    let mut tx = transclude::Context::build(&scan, &res, &bodies);
+    let mut tx_lints: Vec<Lint> = Vec::new();
+    let mut tx_scope = 0usize;
+    for (k, w) in wrapped.iter_mut().enumerate() {
+        let sec = &doc.sections[k];
+        *w = tx.expand(
+            w,
+            res.section_page[k],
+            &mut tx_scope,
+            &mut tx_lints,
+            &sec.file,
+            sec.line,
+        );
+    }
+    // §10 node pages: expand and rebase each node's body once, after the host
+    // pass, reusing the same document-wide scope counter so ids stay unique.
+    tx.finish_node_pages(&mut tx_scope);
+
     // §5.3 page split: group wrapped sections by their assigned page.
     let mut env = minijinja::Environment::new();
     env.add_template("page", include_str!("../templates/page.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
     env.add_template("sitemap", include_str!("../templates/sitemap.html"))
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
+    env.add_template("node", include_str!("../templates/node.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
     let tmpl = env
         .get_template("page")
@@ -706,13 +743,40 @@ pub fn render(
         .render(minijinja::context! { title => site_title, nav => nav_context(&res.nav, "") })
         .map_err(|e| WeaveError::Template(e.to_string()))?;
 
+    // §10 node pages: one `n/<id>.html` per heading node — the node body on its
+    // own, a breadcrumb of parents, a link to the node in context, and the
+    // backlinks. Nav and asset links get a `../` prefix because the page sits one
+    // directory down. The nav marks nothing current here.
+    let node_tmpl = env
+        .get_template("node")
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
+    let based_nav = rebased_nav(&res.nav, "../");
+    let mut node_pages = Vec::with_capacity(tx.node_pages().len());
+    for np in tx.node_pages() {
+        let html = node_tmpl
+            .render(minijinja::context! {
+                title => np.title,
+                body => np.body,
+                context => np.context,
+                crumbs => links_context(&np.crumbs),
+                transcluded_by => links_context(&np.transcluded_by),
+                referenced_by => links_context(&np.referenced_by),
+                embed,
+                nav => based_nav,
+            })
+            .map_err(|e| WeaveError::Template(e.to_string()))?;
+        node_pages.push((format!("n/{}.html", np.id), html));
+    }
+
     let json = site::build(doc, &res, &raws, site::Meta::default());
 
     let mut lints = res.lints;
     lints.extend(hl_lints);
+    lints.extend(tx_lints);
 
     Ok(Site {
         pages,
+        node_pages,
         sitemap,
         math_count: math.len(),
         lints,
@@ -743,6 +807,31 @@ fn nav_context(nodes: &[NavNode], current: &str) -> Vec<minijinja::Value> {
                 children => nav_context(&n.children, current),
             }
         })
+        .collect()
+}
+@
+A node page sits one directory down, so its nav links need a `../` prefix; it
+marks nothing current. A breadcrumb step and a backlink are each a title and an
+href, so one helper serves both.
+<<the node page context>>=
+fn rebased_nav(nodes: &[NavNode], base: &str) -> Vec<minijinja::Value> {
+    nodes
+        .iter()
+        .map(|n| {
+            minijinja::context! {
+                title => n.title,
+                href => format!("{base}{}", n.href),
+                current => false,
+                children => rebased_nav(&n.children, base),
+            }
+        })
+        .collect()
+}
+
+fn links_context(links: &[transclude::Link]) -> Vec<minijinja::Value> {
+    links
+        .iter()
+        .map(|l| minijinja::context! { title => l.title, href => l.href })
         .collect()
 }
 @
@@ -830,6 +919,13 @@ pub fn write_site(
     std::fs::create_dir_all(out).map_err(WeaveError::Io)?;
     for page in &site.pages {
         std::fs::write(out.join(&page.meta.filename), &page.html).map_err(WeaveError::Io)?;
+    }
+    // §10 node pages live under `n/`; create it once, then write each.
+    if !site.node_pages.is_empty() {
+        std::fs::create_dir_all(out.join("n")).map_err(WeaveError::Io)?;
+        for (path, html) in &site.node_pages {
+            std::fs::write(out.join(path), html).map_err(WeaveError::Io)?;
+        }
     }
     std::fs::write(out.join("sitemap.html"), &site.sitemap).map_err(WeaveError::Io)?;
     std::fs::write(out.join("lit.css"), include_str!("../templates/lit.css"))
@@ -920,6 +1016,12 @@ mod tests {
     <<the markdown dialect renders prose and fenced math>>
 
     <<markdown fenced floats are labelled and referenced>>
+
+    <<transclusion cuts a heading node and scopes the copy>>
+
+    <<every node gets a standalone page with context and backlinks>>
+
+    <<a float is a node with its own page and can be transcluded>>
 }
 @
 The scaffolding builds a model from a fixture's markup and renders it. The
@@ -940,6 +1042,14 @@ fn book() -> DocModel {
 
 fn md() -> DocModel {
     model_of(include_str!("../fixtures/md.markup"))
+}
+
+fn tx() -> DocModel {
+    model_of(include_str!("../fixtures/tx.markup"))
+}
+
+fn txf() -> DocModel {
+    model_of(include_str!("../fixtures/txf.markup"))
 }
 
 fn cache() -> PathBuf {
@@ -1254,11 +1364,21 @@ fn floats_are_identified_by_opaque_id_in_attributes_only() {
     // Each labeled float carries its frozen opaque id (§7.1) as data-id, and
     // its caption repeats the same id so CSS can draw "Figure <id>" once.
     let fig = id_at(&html, "fig-pipeline");
-    assert!(html.contains(&format!("<figcaption data-id=\"{fig}\">The weave pipeline.</figcaption>")));
+    assert!(html.contains(&format!(
+        "<figcaption data-id=\"{fig}\">The weave pipeline.\
+         <a class=\"node-link\" href=\"n/{fig}.html\" aria-label=\"node page\"></a></figcaption>"
+    )));
     let eq = id_at(&html, "eq-cost");
     assert_eq!(eq.len(), ID_LEN as usize);
+    // An equation has no caption, so its node-page link (§10) rides the block.
+    assert!(html.contains(&format!(
+        "<a class=\"node-link\" href=\"n/{eq}.html\" aria-label=\"node page\"></a>"
+    )));
     let tbl = id_at(&html, "tbl-opcodes");
-    assert!(html.contains(&format!("<caption data-id=\"{tbl}\">Opcodes.</caption>")));
+    assert!(html.contains(&format!(
+        "<caption data-id=\"{tbl}\">Opcodes.\
+         <a class=\"node-link\" href=\"n/{tbl}.html\" aria-label=\"node page\"></a></caption>"
+    )));
     // No numbers anywhere — identity is the opaque id, never a sequential
     // count injected into a node.
     assert!(!html.contains("data-number"));
@@ -1305,8 +1425,12 @@ fn labelled_section_carries_a_clickable_opaque_uid() {
         + needle.len();
     let uid = &parsing[start..start + ID_LEN as usize];
     assert_eq!(uid.len(), ID_LEN as usize);
-    // The id does not leak into the heading's own text run.
-    assert!(parsing.contains(&format!("data-id=\"{uid}\"></a>Lexing</h2>")));
+    // The permalink is followed by an empty node-page link (drawn by CSS), and
+    // neither id leaks into the heading's own text run.
+    assert!(parsing.contains(&format!(
+        "data-id=\"{uid}\"></a>\
+         <a class=\"node-link\" href=\"n/{uid}.html\" aria-label=\"node page\"></a>Lexing</h2>"
+    )));
     // A cross-page \ref back to the section renders "Section <id>" (§7.1),
     // links to the section anchor, and reuses the very same opaque id.
     assert!(site.pages[2].html.contains(&format!(
@@ -1453,5 +1577,110 @@ fn markdown_fenced_floats_are_labeled_and_referenced() {
     assert!(html.contains("href=\"#eq-mass\""));
     assert!(html.contains("href=\"#fig-diagram\""));
     assert!(html.contains("href=\"#tbl-units\""));
+}
+@
+The transclusion fixture puts a title, an intro, and the source heading in one `@`
+chunk, then transcludes the source into a later section. The copy is cut at the
+heading — the shallower `h1` stays out — runs across the following code chunk, and
+carries scoped ids so it cannot collide with the canonical node.
+<<transclusion cuts a heading node and scopes the copy>>=
+#[test]
+fn transclusion_cuts_a_heading_node_and_scopes_the_copy() {
+    let site = dev_render(&tx(), Dialect::Markdown, "");
+    let html = site.all_html();
+    // The node is spliced as a `transclusion` section whose chrome links back to
+    // the canonical anchor with the heading text (§10).
+    assert!(html.contains("<section class=\"transclusion\" data-transclude=\"sec:source\">"));
+    assert!(html.contains("<a href=\"#sec-source\">The source</a>"));
+    // Node extent is the heading, not the chunk: the `h1` that shares the source's
+    // chunk is NOT pulled into the copy, so the whole page still has one `h1`.
+    assert_eq!(html.matches("<h1").count(), 1);
+    // The copy scopes its ids; the canonical heading keeps the bare id.
+    assert!(html.contains("id=\"tx1-sec-source\""));
+    assert!(html.contains("id=\"sec-source\""));
+    // The node runs across the following code chunk, so the copy reproduces it —
+    // one canonical chunk body, one in the copy.
+    assert_eq!(html.matches("chunk-body").count(), 2);
+    // The target resolves, so no transclusion lint fires.
+    assert!(site.lints.iter().all(|l| l.code != "W105" && l.code != "W106"));
+}
+@
+Every uid-bearing node earns a standalone page under `n/` (§10). The page carries
+the node body, a breadcrumb up to the document `h1`, a "read in context" link to
+the canonical anchor, and the backlinks that point at the node. The `h1` itself
+has no uid, so it earns no page.
+<<every node gets a standalone page with context and backlinks>>=
+#[test]
+fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
+    let site = dev_render(&tx(), Dialect::Markdown, "");
+    // The two h2 nodes each get a page; the h1 (no uid) does not.
+    assert_eq!(site.node_pages.len(), 2);
+    for (path, html) in &site.node_pages {
+        assert!(path.starts_with("n/") && path.ends_with(".html"));
+        // A node page is archival too: no script.
+        assert!(!html.contains("<script"));
+    }
+    // The source node page: found by its "read in context" link to the canonical
+    // anchor, which sits one directory up (`../`).
+    let source = site
+        .node_pages
+        .iter()
+        .find(|(_, h)| h.contains("href=\"../index.html#sec-source\""))
+        .map(|(_, h)| h)
+        .expect("source node page exists and links back into context");
+    // Its breadcrumb climbs to the document h1, one directory up.
+    assert!(source.contains("<a href=\"../index.html\">Transclusion fixture</a>"));
+    // It carries the node body — the source heading and its code chunk.
+    assert!(source.contains("id=\"sec-source\""));
+    assert!(source.contains("chunk-body"));
+    // "The reuse" transcludes the source, so the source page lists it as a
+    // backlink that points at the reuse node's own page (a sibling in `n/`).
+    assert!(source.contains("Transcluded by"));
+    let reuse_uid = site
+        .node_pages
+        .iter()
+        .map(|(p, _)| p.trim_start_matches("n/").trim_end_matches(".html"))
+        .find(|uid| source.contains(&format!("<a href=\"{uid}.html\">The reuse</a>")))
+        .expect("source page backlinks the reuse node page");
+    assert_eq!(reuse_uid.len(), ID_LEN as usize);
+}
+@
+A labelled float is a node too (§10). `\transclude{fig:…}` lifts the one figure
+out of its section and inlines it with a scoped id and chrome that names the
+caption. The figure and the equation each earn a node page, and each leads with a
+node-page link in context.
+<<a float is a node with its own page and can be transcluded>>=
+#[test]
+fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
+    let site = dev_render(&txf(), Dialect::Markdown, "");
+    let idx = &site.pages[0].html;
+    // \transclude{fig:demo} lifts the one figure out and inlines it with a
+    // scoped id, its chrome naming the caption text.
+    assert!(idx.contains("<section class=\"transclusion\" data-transclude=\"fig:demo\">"));
+    assert!(idx.contains(">A tiny schematic.</a>"));
+    assert!(idx.contains("id=\"tx1-fig-demo\""));
+    // The canonical figure still carries its bare id, once.
+    assert_eq!(idx.matches("id=\"fig-demo\"").count(), 1);
+    // Two headings and two floats each earn a node page.
+    assert_eq!(site.node_pages.len(), 4);
+    // The figure leads with a node-page link in context (drawn by CSS, no text).
+    let figid = id_at(idx, "fig-demo");
+    assert!(idx.contains(&format!("href=\"n/{figid}.html\"")));
+    // The figure's node page carries the figure, a breadcrumb to the heading it
+    // sits in, a context link, and a backlink to the node that transcludes it.
+    let (_, figpage) = site
+        .node_pages
+        .iter()
+        .find(|(p, _)| p == &format!("n/{figid}.html"))
+        .expect("the figure earns a node page");
+    assert!(figpage.contains("<figure id=\"fig-demo\""));
+    assert!(figpage.contains(">The originals</a>"));
+    assert!(figpage.contains("href=\"../index.html#fig-demo\""));
+    assert!(figpage.contains("Transcluded by"));
+    // The equation is a node too: \transclude{eq:demo} inlines it, and it earns
+    // its own page.
+    assert!(idx.contains("data-transclude=\"eq:demo\""));
+    let eqid = id_at(idx, "eq-demo");
+    assert!(site.node_pages.iter().any(|(p, _)| p == &format!("n/{eqid}.html")));
 }
 @

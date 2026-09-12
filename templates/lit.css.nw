@@ -37,6 +37,10 @@ style rule with a block.
 
 <<internal cross-references>>
 
+<<transcluded nodes>>
+
+<<node pages>>
+
 <<navigation and pagination>>
 
 <<the code-chunk layout>>
@@ -331,6 +335,198 @@ node, so it stays out of selections and quote selectors.
     &:hover {
       text-decoration: underline;
       text-underline-offset: 0.15em;
+    }
+  }
+
+  /* A second, fainter glyph after the permalink links to the node's own page
+     (§10 node pages): the same section shown on its own, with a breadcrumb and
+     backlinks. Like the permalink it is generated content, never a text node, so
+     it stays out of selections and the quote selectors (§9.2). */
+  .node-link {
+    font-size: 0.7em;
+    color: var(--faint);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
+
+    &::before {
+      content: "⧉";
+    }
+
+    &:hover {
+      color: var(--ref);
+    }
+  }
+
+  /* A float is a node too (§10). Its node link rides the caption, after the
+     caption text. An equation has no caption, so its link rides the block and
+     drops into the left margin, a mirror of the number at the right. */
+  figcaption .node-link,
+  caption .node-link {
+    margin-right: 0;
+    margin-left: 0.4em;
+  }
+
+  .equation .node-link {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+}
+@
+A transcluded node (§10) is one part of the document shown a second time in
+another place. A reader must see that the text is a copy, and must be able to go
+to the canonical place. So the copy gets a soft inset card with a left rule, and a
+small header that names the node and links back to it. The two fault markers — an
+unknown target and a cycle — get the same card in a warm error tone, so a broken
+directive is visible but never an error. The card draws only from classes, so it
+adds no text a copy-paste or a quote selector would pick up (§9.2).
+<<transcluded nodes>>=
+@layer components {
+  /* --- Transcluded nodes (§10) ------------------------------------------- */
+
+  /* The copy reads as an inset card: a soft band, a left rule in the warm
+     accent, and room to breathe, so a reader sees the text is shown from another
+     place and is not the canonical node. */
+  .transclusion {
+    margin-block: 1.5rem;
+    padding: 0.25rem 1rem;
+    border-left: 3px solid var(--ref);
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* The header names the node and links back to its canonical place. It sits in
+     the same warm sans accent as a cross-reference, a hair smaller than body, and
+     leads with a hook glyph so it reads as "transcluded from". */
+  .transclusion-from {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    letter-spacing: 0.01em;
+    margin-block: 0.25rem 0.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &::before {
+        content: "⮢ ";
+      }
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* A broken directive — an unknown target or a cycle — is visible but inert: the
+     same card in a warm error tone, with the fault named by generated content so
+     it stays out of the copy-paste and the quote selectors. */
+  .transclusion-missing,
+  .transclusion-cycle {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1rem;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid #c0392b;
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+    color: #c0392b;
+  }
+}
+@
+A node page (§10) shows one node on its own, the way a forester wiki shows one
+tree. Three parts frame the node body: a breadcrumb of the parents above it, a
+link to the node in context, and the backlinks below it — the nodes that
+transclude it and the nodes that refer to it. All three read in the quiet sans
+accent and sit off the body text, so the node body stays the center of the page.
+<<node pages>>=
+@layer components {
+  /* --- Per-node pages (§10) --------------------------------------------- */
+
+  /* The breadcrumb of parents, above the node body. A row of small sans links
+     with a slash between, in the muted tone, so it frames the node without
+     competing with it. */
+  .crumbs {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    margin-block-end: 1.5rem;
+
+    ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+    }
+
+    li:not(:last-child)::after {
+      content: "/";
+      margin-left: 0.5em;
+      color: var(--faint);
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The link back to the node in its document page, just under the node body. */
+  .node-context {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The backlinks, below the node, set off by a top rule. Each list is a plain
+     run of sans links to the nodes that use this one. */
+  .backlinks {
+    margin-block-start: 2.5rem;
+    padding-block-start: 1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--sans);
+
+    h2 {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--faint);
+      margin-block: 1rem 0.25rem;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.2em;
+      font-size: 0.9em;
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
     }
   }
 }

@@ -227,14 +227,19 @@ fn to_html(md: &str, options: Options) -> String {
 @
 Cross-references lower to the same `<a data-ref>` site the HTML dialect uses, so
 the resolve pass treats fence-authored and hand-authored references alike. The
-scan skips code regions and backtick spans, so a ref command inside a backtick
-span is a documented no-op — passed through verbatim, never lowered then escaped.
+same scan lowers `\transclude{addr}` to the exact placeholder island the weaver's
+transclusion pass expands (§10), so a transclusion written in Markdown and one
+written as a raw island are identical downstream. The scan skips code regions and
+backtick spans, so either command inside a backtick span is a documented no-op —
+passed through verbatim, never lowered then escaped.
 <<lower cross-references>>=
 /// Lower `\ref{ns:name}` to the same `<a data-ref>` site the HTML dialect uses,
 /// so the resolve pass (§7) treats fence-authored and hand-authored references
-/// identically. Runs on raw prose, skipping `<code>`/`<pre>` regions and Markdown
-/// backtick spans; a `\ref` inside a backtick span is a documented no-op
-/// (§6.4) — it is passed through verbatim, never lowered then escaped.
+/// identically, and lower `\transclude{addr}` to the placeholder island the
+/// weaver's transclusion pass expands (§10). Runs on raw prose, skipping
+/// `<code>`/`<pre>` regions and Markdown backtick spans; either command inside a
+/// backtick span is a documented no-op (§6.4) — passed through verbatim, never
+/// lowered then escaped.
 fn substitute_refs(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;
@@ -257,6 +262,24 @@ fn substitute_refs(input: &str) -> String {
                 if let Some((name, end)) = brace_content(input, brace_at) {
                     out.push_str(&format!(
                         "<a data-ref=\"{}\"></a>",
+                        prose::escape(name.trim())
+                    ));
+                    i = end;
+                    continue;
+                }
+            }
+        }
+        if input[i..].starts_with("\\transclude") {
+            let rest = &input[i + "\\transclude".len()..];
+            let ws = rest.len() - rest.trim_start().len();
+            let brace_at = i + "\\transclude".len() + ws;
+            if input[brace_at..].starts_with('{') {
+                if let Some((name, end)) = brace_content(input, brace_at) {
+                    // The exact island the weaver's transclusion pass scans for
+                    // (§10). A `<div>` on its own line is a CommonMark HTML block,
+                    // so it passes through the render untouched.
+                    out.push_str(&format!(
+                        "<div class=\"transclusion\" data-transclude=\"{}\"></div>",
                         prose::escape(name.trim())
                     ));
                     i = end;
@@ -705,6 +728,8 @@ mod tests {
 
     <<a ref lowers to a data-ref>>
 
+    <<a transclude lowers to a placeholder>>
+
     <<a ref inside inline html code is skipped>>
 
     <<a ref inside a backtick span is literal>>
@@ -865,6 +890,18 @@ fn ref_lowers_to_a_data_ref() {
     let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
     assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
     assert!(html.contains("<a data-ref=\"eq:wrap\"></a>"));
+}
+@
+A transclude command lowers to the placeholder island the weaver expands.
+<<a transclude lowers to a placeholder>>=
+#[test]
+fn transclude_lowers_to_a_placeholder() {
+    let (html, _) = run("before\n\n\\transclude{sec:lexing}\n\nafter");
+    assert!(html.contains("<div class=\"transclusion\" data-transclude=\"sec:lexing\"></div>"));
+    // A backtick span keeps it literal, like `\ref` (§6.4).
+    let (lit, _) = run("write `\\transclude{sec:x}` here");
+    assert!(lit.contains("<code>\\transclude{sec:x}</code>"));
+    assert!(!lit.contains("data-transclude=\"sec:x\""));
 }
 @
 A ref inside inline HTML code is skipped.
