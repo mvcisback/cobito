@@ -7,6 +7,7 @@ edition = "2021"
 katex = "0.4.6"
 lol_html = "3.0.1"
 minijinja = "2.24.0"
+peg = "0.8.6"
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -17,6 +18,3 @@ tree-sitter-css = "0.25.0"
 tree-sitter-highlight = "0.26.13"
 tree-sitter-nix = "0.3.0"
 tree-sitter-rust = "0.24.2"
-
-[dev-dependencies]
-peg = "0.8.6"

@@ -234,10 +234,12 @@ are recorded in `transclude.rs.nw`.
 
 The native reader is the first slice of M15: lit reads its own `.nw` source with a
 Rust reader (`markup.rs`), so no `markup` process runs at read time and lit can ship
-as one binary. noweb does not go away. `notangle` still does tangle, and `markup`
-stays as the reader's test oracle — a second reader built from the grammar
-(`markup.rs.nw`) checks the first. Replacing `notangle` too stays a contingency with
-explicit triggers, recorded in `tangle.rs.nw`.
+as one binary. The reader is a formal PEG grammar that the `peg` crate builds into a
+parser at compile time (`markup.rs.nw`). noweb does not go away. `notangle` still
+does tangle, and `markup` stays as the reader's test oracle — the differential test
+and the flake `reader` check diff the reader against real `markup` for every module.
+Replacing `notangle` too stays a contingency with explicit triggers, recorded in
+`tangle.rs.nw`.
 
 ## Open questions {#sec:QznE}
 

@@ -55,11 +55,11 @@ each checked against real `markup` (§4.2):
 ## The grammar {#sec:read-grammar}
 
 The rules above are the whole behavior. This section gives the syntactic core as a
-formal grammar. The grammar is the reference for the parser, and for later syntax
-that `markup` cannot express (§11). It is a Parsing Expression Grammar (PEG): the
-choice operator `/` tries the left side first, and repetition is greedy. The
-hand-written parser follows the same order and the same greed, so the two stay
-close. A second, runnable copy of this grammar tests the parser (§15).
+formal grammar, and the reader runs the grammar directly: the `peg` crate turns it
+into the parser at compile time (§sec:read-code). The grammar is also the reference
+for later syntax that `markup` cannot express (§11). It is a Parsing Expression
+Grammar (PEG): the choice operator `/` tries the left side first, and repetition is
+greedy.
 
 A file is a list of lines. Each line is one of three kinds. This is the line level:
 
@@ -123,9 +123,22 @@ becomes the reference for it. The slot is not parsed yet.
 
 ## How the code implements this {#sec:read-code}
 
-The module is the read error, the entry point that reads each file, a stateful
-`Reader` that walks the lines of one file, the line dispatch, the two line
-scanners (documentation and code), and the tests.
+The reader runs the grammar of §sec:read-grammar directly. The `peg` crate turns
+the grammar into a parser at compile time. The grammar tokenizes one line into a
+list of `Seg` atoms — text, a chunk use, a quote open, or a quote close — and sorts
+a whole line into its `Line` kind. A stateful `Reader` then lowers the atoms to
+events with the state rules of §sec:read-rules: the chunk counter, the open chunk,
+the `%def` wait, and the cross-line quote. So the grammar owns the shape and the
+`Reader` owns the state.
+
+The grammar is the one parser. noweb stays the oracle at test time, not a second
+reader: the differential test (§15) and the flake `reader` check diff this reader
+against real `markup` for every module, so the grammar can never drift from the
+behavior it copies.
+
+The module is the read error, the `Seg` and `Line` types the grammar makes, the
+grammar, the escape helper, the entry point that reads each file, the stateful
+`Reader`, and the tests.
 <<src/markup.rs>>=
 <<the reader banner>>
 
@@ -133,23 +146,17 @@ scanners (documentation and code), and the tests.
 
 <<the read error>>
 
+<<the line and segment types>>
+
+<<the grammar>>
+
+<<the escape helper>>
+
 <<read the files>>
 
 <<the reader state>>
 
-<<open and close a chunk>>
-
-<<dispatch one line>>
-
-<<the documentation scanner>>
-
-<<the code scanner>>
-
-<<the code helpers>>
-
 <<the reader tests>>
-
-<<the peg oracle>>
 @
 The banner states the module's job and the one safety rule: noweb stays the
 oracle, so this reader must match it byte for byte.
@@ -183,6 +190,131 @@ impl fmt::Display for ReadError {
 }
 
 impl std::error::Error for ReadError {}
+@
+The grammar makes two small types. `Seg` is one atom of a line: a text run, a
+chunk use, a quote open, or a quote close. `Line` is the kind of a whole line: a
+code definition, an `@` control line, or a plain line. The `Reader` reads these,
+never raw characters.
+<<the line and segment types>>=
+enum Seg {
+    Text(String),
+    Use(String),
+    Open,
+    Close,
+}
+
+enum Line {
+    Def(String),
+    Control(String),
+    Plain(String),
+}
+@
+The grammar is the runnable form of §sec:read-grammar. Each rule returns the atoms
+of one line. A `pub rule` is one the `Reader` calls: `classify` sorts a line into
+its kind, `code_line` tokenizes a code line, and `docs_out`/`docs_in` tokenize a
+documentation line from each quote state. `docs_out` starts outside a quote and
+`docs_in` starts inside one; each returns the atoms and whether the quote is still
+open, so the `Reader` carries the open state to the next line.
+
+The run rules (`code_run`, `docs_run`, `docs_qrun`) capture the whole text run as
+one slice, then `resolve_esc` strips the `@` from each escape in one pass. This is
+faster than one string per character, and it makes the same text either way.
+<<the grammar>>=
+peg::parser! {
+    grammar nw() for str {
+        pub rule classify() -> Line
+            = d:def_line() { Line::Def(d) }
+            / c:control_line() { c }
+            / p:$([_]*) { Line::Plain(p.to_string()) }
+
+        rule def_line() -> String
+            = "@<<" n:$((!"@>>=" [_])*) "@>>=" [' ' | '\t']* ![_] { n.to_string() }
+
+        rule control_line() -> Line
+            = "@" ![_] { Line::Control(String::new()) }
+            / "@" [' ' | '\t'] r:$([_]*) { Line::Control(r.to_string()) }
+
+        pub rule code_line() -> Vec<Seg>
+            = run:code_run() rest:code_after()* {
+                let mut v = vec![Seg::Text(run)];
+                for r in rest {
+                    v.extend(r);
+                }
+                v
+            }
+
+        rule code_after() -> Vec<Seg>
+            = u:use_tok() run:code_run() { vec![Seg::Use(u), Seg::Text(run)] }
+            / lone:$("@<<") run:code_run() { vec![Seg::Text(format!("{lone}{run}"))] }
+
+        rule use_tok() -> String
+            = "@<<" n:$((!"@>>" [_])*) "@>>" { n.to_string() }
+
+        rule code_run() -> String = s:$(code_ch()*) { resolve_esc(s) }
+        rule code_ch() = escape() / (!"@<<" [_] {})
+
+        pub rule docs_out() -> (Vec<Seg>, bool)
+            = run:docs_run() rest:docs_block()* {
+                let mut v = vec![Seg::Text(run)];
+                let mut open = false;
+                for (segs, ended) in rest {
+                    v.extend(segs);
+                    open = ended;
+                }
+                (v, open)
+            }
+
+        pub rule docs_in() -> (Vec<Seg>, bool)
+            = content:docs_qrun() tail:docs_reopen()? {
+                match tail {
+                    Some((mut segs, ended)) => {
+                        let mut v = vec![Seg::Text(content), Seg::Close];
+                        v.append(&mut segs);
+                        (v, ended)
+                    }
+                    None => (vec![Seg::Text(content)], true),
+                }
+            }
+
+        rule docs_reopen() -> (Vec<Seg>, bool)
+            = docs_close() rest:docs_out() { rest }
+
+        rule docs_block() -> (Vec<Seg>, bool)
+            = "[[" content:docs_qrun() close:docs_close()? post:docs_run() {
+                let mut v = vec![Seg::Open, Seg::Text(content)];
+                match close {
+                    Some(()) => {
+                        v.push(Seg::Close);
+                        v.push(Seg::Text(post));
+                        (v, false)
+                    }
+                    None => (v, true),
+                }
+            }
+
+        rule docs_close() -> () = "]]" !"]" { () }
+
+        rule docs_run() -> String = s:$(docs_ch()*) { resolve_esc(s) }
+        rule docs_ch() = escape() / (!"[[" [_] {})
+
+        rule docs_qrun() -> String = s:$(qrun_ch()*) { resolve_esc(s) }
+        rule qrun_ch() = escape() / (!docs_close() [_] {})
+
+        rule escape() = "@@<<" / "@@>>"
+    }
+}
+@
+A text run keeps its escapes as written, so one pass strips them: `@@<<` becomes
+`@<<` and `@@>>` becomes `@>>`. Most runs hold no `@`, so the reader checks for one
+before it makes a new string.
+<<the escape helper>>=
+fn resolve_esc(s: &str) -> String {
+    if s.as_bytes().contains(&b'@') {
+        s.replace("@@<<", "@<<").replace("@@>>", "@>>")
+    } else {
+        s.to_string()
+    }
+}
 @
 The entry point reads each file and folds it into one event stream. It emits one
 `@file` per file with the path as given, so `@file` events stay portable, the
@@ -223,49 +355,26 @@ struct Reader {
 }
 
 impl Reader {
+    <<open and close a chunk>>
+
+    <<lower a line to events>>
+
+    <<dispatch one line>>
+
     <<walk one file>>
-
-    <<the emit helpers>>
-
-    <<the line dispatch>>
-
-    <<scan a documentation line>>
-
-    <<scan a code line>>
 }
+
+<<the directive helper>>
 @
-One file: emit `@file`, open the leading empty documentation chunk, walk every
-line, then close whatever chunk stays open at the end.
-<<walk one file>>=
-fn file(&mut self, path: &str, text: &str) {
-    self.push(Event::File(path.to_string()));
-    self.open_docs();
-    for line in text.lines() {
-        self.line(line);
-    }
-    self.close_current();
-}
-@
-The emit helpers keep the walk readable. `push` adds one event; `text` adds a
-text token. `open_docs`/`open_code` take the next number and emit the `@begin`.
+`open_docs`/`open_code` take the next number and emit the `@begin`.
 `close_current` emits the `@end` for the open chunk and clears the `%def` wait.
 <<open and close a chunk>>=
-@
-<<the emit helpers>>=
-fn push(&mut self, e: Event) {
-    self.out.push(e);
-}
-
-fn text(&mut self, s: &str) {
-    self.out.push(Event::Text(s.to_string()));
-}
-
 fn open_docs(&mut self) {
     let n = self.counter;
     self.counter += 1;
     self.cur = n;
     self.open = Some(false);
-    self.push(Event::BeginDocs(n));
+    self.out.push(Event::BeginDocs(n));
 }
 
 fn open_code(&mut self) {
@@ -273,14 +382,14 @@ fn open_code(&mut self) {
     self.counter += 1;
     self.cur = n;
     self.open = Some(true);
-    self.push(Event::BeginCode(n));
+    self.out.push(Event::BeginCode(n));
 }
 
 fn close_current(&mut self) {
     self.defs_pending = false;
     if let Some(code) = self.open.take() {
         let n = self.cur;
-        self.push(if code {
+        self.out.push(if code {
             Event::EndCode(n)
         } else {
             Event::EndDocs(n)
@@ -288,232 +397,124 @@ fn close_current(&mut self) {
     }
 }
 @
-The dispatch decides what one line is. A `@<<name@>>=` line opens a code chunk. An
-`@ ` line (or bare `@`) is a control: `%def`/`%use` add index entries to the open
-code chunk, anything else opens a documentation chunk. Every other line continues
-the open chunk — opening a fresh documentation chunk first if a `%def` just
-closed the code chunk.
-<<dispatch one line>>=
-@
-<<the line dispatch>>=
-fn line(&mut self, l: &str) {
-    if let Some(name) = code_def_name(l) {
-        self.close_current();
-        self.open_code();
-        self.push(Event::Defn(name));
-        self.push(Event::Nl);
-        return;
-    }
-    if l == "@" || l.starts_with("@ ") || l.starts_with("@\t") {
-        let content = if l == "@" { "" } else { &l[2..] };
-        if let Some(rest) = def_directive(content, "%def") {
-            self.index_directive(rest, true);
-            return;
+`emit_segs` turns one line's atoms into events. It drops an empty text run before a
+marker but keeps the last run of the line, even when it is empty, so the empty-text
+rule of §sec:read-rules holds. One `@nl` ends the line. `code_emit` and `docs_emit`
+tokenize a line with the grammar, then emit its atoms; `docs_emit` picks the quote
+state and carries the new state forward. `index` adds `%def`/`%use` entries to the
+open code chunk and waits to close it.
+<<lower a line to events>>=
+fn emit_segs(&mut self, segs: Vec<Seg>) {
+    let n = segs.len();
+    for (i, seg) in segs.into_iter().enumerate() {
+        let last = i + 1 == n;
+        match seg {
+            Seg::Text(s) => {
+                if last || !s.is_empty() {
+                    self.out.push(Event::Text(s));
+                }
+            }
+            Seg::Use(u) => self.out.push(Event::Use(u)),
+            Seg::Open => self.out.push(Event::Quote),
+            Seg::Close => self.out.push(Event::EndQuote),
         }
-        if let Some(rest) = def_directive(content, "%use") {
-            self.index_directive(rest, false);
-            return;
-        }
-        self.close_current();
-        self.open_docs();
-        self.docs_line(content);
-        return;
     }
-    if self.defs_pending {
-        self.close_current();
-    }
-    if self.open.is_none() {
-        self.open_docs();
-    }
-    if self.open == Some(true) {
-        self.code_line(l);
-    } else {
-        self.docs_line(l);
-    }
+    self.out.push(Event::Nl);
 }
 
-/// Add index entries to the open code chunk and wait to close it. If no code
-/// chunk is open, the directive is just documentation text.
-fn index_directive(&mut self, ids: &str, defn: bool) {
+fn code_emit(&mut self, l: &str) {
+    let segs = nw::code_line(l).expect("a code line tokenizes");
+    self.emit_segs(segs);
+}
+
+fn docs_emit(&mut self, l: &str) {
+    let (segs, ended) = if self.in_quote {
+        nw::docs_in(l).expect("a docs line tokenizes")
+    } else {
+        nw::docs_out(l).expect("a docs line tokenizes")
+    };
+    self.in_quote = ended;
+    self.emit_segs(segs);
+}
+
+fn index(&mut self, ids: &str, defn: bool) {
     if self.open != Some(true) {
         self.close_current();
         self.open_docs();
-        self.docs_line(if defn { "%def" } else { "%use" });
+        self.docs_emit(if defn { "%def" } else { "%use" });
         return;
     }
     for id in ids.split_whitespace() {
-        self.push(if defn {
+        self.out.push(if defn {
             Event::IndexDefn(id.to_string())
         } else {
             Event::IndexUse(id.to_string())
         });
     }
-    self.push(Event::IndexNl);
+    self.out.push(Event::IndexNl);
     self.defs_pending = true;
 }
 @
-A documentation line splits on `[[quoted code]]`. Two open brackets start a quote
-and the first `]]` whose next character is not `]` closes it. A quote can run over
-more than one line, so the scanner keeps the open state in `in_quote` and each
-line ends with one `@nl`, whether the quote is open or not.
-
-An `@` before a doubled bracket is an escape: the reader drops the `@` and keeps
-the two brackets, so `@<<name@>>` in prose is the literal text `@<<name@>>`, not a
-use. A single `@<` or `@>` is literal, `@` and all. The escape works inside a
-quote too. The scanner flushes the run before a quote open when the run is not
-empty, and it always flushes the trailing run at the end of the line, even when
-that run is empty. It flushes the run before a quote close only when the run is
-not empty.
-<<the documentation scanner>>=
-@
-<<scan a documentation line>>=
-fn docs_line(&mut self, l: &str) {
-    let chars: Vec<char> = l.chars().collect();
-    let mut i = 0;
-    let mut seg = String::new();
-    while i < chars.len() {
-        if self.in_quote {
-            if is_quote_close(&chars, i) {
-                if !seg.is_empty() {
-                    self.text(&seg);
-                }
-                seg.clear();
-                self.push(Event::EndQuote);
-                self.in_quote = false;
-                i += 2;
-                continue;
-            }
-            if let Some(b) = escaped_bracket(&chars, i) {
-                seg.push(b);
-                seg.push(b);
-                i += 3;
-                continue;
-            }
-            seg.push(chars[i]);
-            i += 1;
-            continue;
+The dispatch decides what one line is. `classify` sorts it. A `Def` opens a code
+chunk. A `Control` is `%def`/`%use` (index entries) or an `@ ` line that opens a
+documentation chunk. A `Plain` line continues the open chunk — opening a fresh
+documentation chunk first if a `%def` just closed the code chunk.
+<<dispatch one line>>=
+fn line(&mut self, l: &str) {
+    match nw::classify(l).expect("every line classifies") {
+        Line::Def(name) => {
+            self.close_current();
+            self.open_code();
+            self.out.push(Event::Defn(name));
+            self.out.push(Event::Nl);
         }
-        if let Some(b) = escaped_bracket(&chars, i) {
-            seg.push(b);
-            seg.push(b);
-            i += 3;
-            continue;
-        }
-        if chars[i] == '[' && i + 1 < chars.len() && chars[i + 1] == '[' {
-            if !seg.is_empty() {
-                self.text(&seg);
-            }
-            seg.clear();
-            self.push(Event::Quote);
-            self.in_quote = true;
-            i += 2;
-            continue;
-        }
-        seg.push(chars[i]);
-        i += 1;
-    }
-    self.text(&seg);
-    self.push(Event::Nl);
-}
-@
-A code line splits on `@<<name@>>` uses. An `@` before a doubled bracket drops
-the `@` and keeps the two brackets, so an escaped `@<<` is the literal text `@<<`
-and starts no use. A single `@<` or `@>` is literal, `@` and all. An unescaped
-`@<<` with no later `>>` is literal, but `markup` still breaks the text token
-there: it flushes the run before the `@<<` and starts a new run that begins with
-the `@<<`. The scanner flushes the text run before each use or literal `@<<` when
-the run is not empty, and always flushes the trailing run, even when it is empty.
-One `@nl` ends the line.
-<<the code scanner>>=
-@
-<<scan a code line>>=
-fn code_line(&mut self, l: &str) {
-    let chars: Vec<char> = l.chars().collect();
-    let mut i = 0;
-    let mut seg = String::new();
-    while i < chars.len() {
-        if let Some(b) = escaped_bracket(&chars, i) {
-            seg.push(b);
-            seg.push(b);
-            i += 3;
-            continue;
-        }
-        if chars[i] == '<' && i + 1 < chars.len() && chars[i + 1] == '<' {
-            if !seg.is_empty() {
-                self.text(&seg);
-            }
-            seg.clear();
-            if let Some(end) = use_close(&chars, i + 2) {
-                let name: String = chars[i + 2..end].iter().collect();
-                self.push(Event::Use(name));
-                i = end + 2;
+        Line::Control(content) => {
+            if let Some(rest) = directive(&content, "%def") {
+                self.index(rest, true);
+            } else if let Some(rest) = directive(&content, "%use") {
+                self.index(rest, false);
             } else {
-                seg.push('<');
-                seg.push('<');
-                i += 2;
+                self.close_current();
+                self.open_docs();
+                self.docs_emit(&content);
             }
-            continue;
         }
-        seg.push(chars[i]);
-        i += 1;
+        Line::Plain(l) => {
+            if self.defs_pending {
+                self.close_current();
+            }
+            if self.open.is_none() {
+                self.open_docs();
+            }
+            if self.open == Some(true) {
+                self.code_emit(&l);
+            } else {
+                self.docs_emit(&l);
+            }
+        }
     }
-    self.text(&seg);
-    self.push(Event::Nl);
 }
 @
-Three free helpers do the small pattern jobs the scanners need.
-
-`code_def_name` returns the name of a `@<<name@>>=` definition line, or `None`.
-The line must start with `@<<`, hold `>>=`, and have nothing but that after the
-name.
-<<the code helpers>>=
-/// The name in a `@<<name@>>=` definition line, or `None`.
-fn code_def_name(l: &str) -> Option<String> {
-    let rest = l.strip_prefix("<<")?;
-    let end = rest.find(">>=")?;
-    if !rest[end + 3..].trim().is_empty() {
-        return None;
+One file: emit `@file`, open the leading empty documentation chunk, walk every
+line, then close whatever chunk stays open at the end.
+<<walk one file>>=
+fn file(&mut self, path: &str, text: &str) {
+    self.out.push(Event::File(path.to_string()));
+    self.open_docs();
+    for line in text.lines() {
+        self.line(line);
     }
-    Some(rest[..end].to_string())
+    self.close_current();
 }
-
-/// The text after an `@ ` control directive keyword, or `None`. `%def` and
-/// `%def x` both match; the returned rest is empty or the ids.
-fn def_directive<'a>(content: &'a str, key: &str) -> Option<&'a str> {
+@
+`directive` reads the text after an `@ ` control keyword, or `None`. `%def` and
+`%def x` both match; the returned rest is empty or the ids.
+<<the directive helper>>=
+fn directive<'a>(content: &'a str, key: &str) -> Option<&'a str> {
     if content == key {
         return Some("");
     }
     content.strip_prefix(key).filter(|r| r.starts_with(' '))
-}
-
-/// True if a quote close `]]` starts at `i`, greedy: a `]]` whose next character
-/// is not `]`, so `[[v[[0]]]]` keeps its inner brackets.
-fn is_quote_close(chars: &[char], i: usize) -> bool {
-    chars[i] == ']' && chars.get(i + 1) == Some(&']') && chars.get(i + 2) != Some(&']')
-}
-
-/// The bracket char of an escape `@<<` or `@>>` at `i`, or `None`. The escape is
-/// a doubled bracket only: a single `@<` or `@>` is literal.
-fn escaped_bracket(chars: &[char], i: usize) -> Option<char> {
-    if chars[i] == '@' && i + 2 < chars.len() {
-        let b = chars[i + 1];
-        if (b == '<' || b == '>') && chars[i + 2] == b {
-            return Some(b);
-        }
-    }
-    None
-}
-
-/// The index of the closing `>>` of a chunk use that starts at `from`, or `None`.
-fn use_close(chars: &[char], from: usize) -> Option<usize> {
-    let mut i = from;
-    while i + 1 < chars.len() {
-        if chars[i] == '>' && chars[i + 1] == '>' {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
 }
 @
 The tests are the differential: this reader must make the same events as real
@@ -576,341 +577,5 @@ mod tests {
     fn matches_markup_for_quote() {
         same_as_oracle("fixtures/quote.nw", include_str!("../fixtures/quote.markup"));
     }
-}
-@
-## A second reader for the tests {#sec:peg-oracle}
-
-The reader above is hand-written: it walks each line with an index loop. A hand
-loop can hold a mistake that the loop and its own tests share. So the tests use a
-second reader that is built a different way, and check that the two agree with real
-`markup`. Two readers that agree with the oracle is the proof, the same idea as the
-two-tangler self-host check (§13).
-
-The second reader runs the grammar of §sec:read-grammar as code. The `peg` crate
-turns the grammar into a parser at compile time. `peg` is a test-only dependency,
-so it never links into the shipped binary. The grammar tokenizes one line into a
-list of `Seg` atoms — text, a chunk use, a quote open, or a quote close. The
-lowering then turns the atoms into events with the state rules of §sec:read-rules:
-the chunk counter, the open chunk, the `%def` wait, and the cross-line quote. So
-the grammar owns the shape and the lowering owns the state, the same split the hand
-reader makes, but the tokenizer is a declarative grammar, not a loop.
-
-The grammar resolves each escape (`@@<<` to the literal `@<<`) inside the text run, so
-an escaped bracket never becomes a use or a quote. It marks a text run at each use,
-each quote open, and each quote close. The lowering drops an empty run before a
-marker but always keeps the last run of a line, so the empty-text rule of
-§sec:read-rules holds. The `docs_out` rule scans a line that starts outside a quote;
-`docs_in` scans a line that starts inside one; each returns the atoms and whether the
-quote is still open, so the lowering carries the open state to the next line.
-<<the peg oracle>>=
-#[cfg(test)]
-mod oracle {
-    use super::*;
-    use crate::noweb::parse;
-
-    #[derive(Debug)]
-    enum Seg {
-        Text(String),
-        Use(String),
-        Open,
-        Close,
-    }
-
-    #[derive(Debug)]
-    enum Line {
-        Def(String),
-        Control(String),
-        Plain(String),
-    }
-
-    <<the peg grammar>>
-
-    <<the oracle lowering>>
-
-    <<the oracle tests>>
-}
-@
-The grammar is the runnable copy of §sec:read-grammar. Each rule returns the atoms
-of one line. A `pub rule` is one the lowering calls: `classify` sorts a line into
-its kind, `code_line` tokenizes a code line, and `docs_out`/`docs_in` tokenize a
-documentation line from each quote state.
-<<the peg grammar>>=
-peg::parser! {
-    grammar nw() for str {
-        pub rule classify() -> Line
-            = d:def_line() { Line::Def(d) }
-            / c:control_line() { c }
-            / p:$([_]*) { Line::Plain(p.to_string()) }
-
-        rule def_line() -> String
-            = "@<<" n:$((!"@>>=" [_])*) "@>>=" [' ' | '\t']* ![_] { n.to_string() }
-
-        rule control_line() -> Line
-            = "@" ![_] { Line::Control(String::new()) }
-            / "@" [' ' | '\t'] r:$([_]*) { Line::Control(r.to_string()) }
-
-        pub rule code_line() -> Vec<Seg>
-            = run:code_run() rest:code_after()* {
-                let mut v = vec![Seg::Text(run)];
-                for r in rest {
-                    v.extend(r);
-                }
-                v
-            }
-
-        rule code_after() -> Vec<Seg>
-            = u:use_tok() run:code_run() { vec![Seg::Use(u), Seg::Text(run)] }
-            / lone:$("@<<") run:code_run() { vec![Seg::Text(format!("{lone}{run}"))] }
-
-        rule use_tok() -> String
-            = "@<<" n:$((!"@>>" [_])*) "@>>" { n.to_string() }
-
-        rule code_run() -> String
-            = cs:code_run_ch()* { cs.concat() }
-
-        rule code_run_ch() -> String
-            = e:escape() { e }
-            / !"@<<" c:$([_]) { c.to_string() }
-
-        pub rule docs_out() -> (Vec<Seg>, bool)
-            = run:docs_run() rest:docs_block()* {
-                let mut v = vec![Seg::Text(run)];
-                let mut open = false;
-                for (segs, ended) in rest {
-                    v.extend(segs);
-                    open = ended;
-                }
-                (v, open)
-            }
-
-        pub rule docs_in() -> (Vec<Seg>, bool)
-            = content:docs_qrun() tail:docs_reopen()? {
-                match tail {
-                    Some((mut segs, ended)) => {
-                        let mut v = vec![Seg::Text(content), Seg::Close];
-                        v.append(&mut segs);
-                        (v, ended)
-                    }
-                    None => (vec![Seg::Text(content)], true),
-                }
-            }
-
-        rule docs_reopen() -> (Vec<Seg>, bool)
-            = docs_close() rest:docs_out() { rest }
-
-        rule docs_block() -> (Vec<Seg>, bool)
-            = "[[" content:docs_qrun() close:docs_close()? post:docs_run() {
-                let mut v = vec![Seg::Open, Seg::Text(content)];
-                match close {
-                    Some(()) => {
-                        v.push(Seg::Close);
-                        v.push(Seg::Text(post));
-                        (v, false)
-                    }
-                    None => (v, true),
-                }
-            }
-
-        rule docs_close() -> () = "]]" !"]" { () }
-
-        rule docs_run() -> String
-            = cs:docs_run_ch()* { cs.concat() }
-
-        rule docs_run_ch() -> String
-            = e:escape() { e }
-            / !"[[" c:$([_]) { c.to_string() }
-
-        rule docs_qrun() -> String
-            = cs:docs_qrun_ch()* { cs.concat() }
-
-        rule docs_qrun_ch() -> String
-            = e:escape() { e }
-            / !docs_close() c:$([_]) { c.to_string() }
-
-        rule escape() -> String
-            = "@@<<" { "@<<".to_string() }
-            / "@@>>" { "@>>".to_string() }
-    }
-}
-@
-The lowering holds the same state as the hand reader (the counter, the open chunk,
-the `%def` wait, the open quote) and turns the atoms of each line into events. It is
-a second copy of the state rules of §sec:read-rules, on purpose: an independent copy
-catches a mistake a shared one would hide.
-<<the oracle lowering>>=
-#[derive(Default)]
-struct Oracle {
-    out: Vec<Event>,
-    counter: u32,
-    open: Option<bool>,
-    cur: u32,
-    defs_pending: bool,
-    in_quote: bool,
-}
-
-impl Oracle {
-    fn open_docs(&mut self) {
-        let n = self.counter;
-        self.counter += 1;
-        self.cur = n;
-        self.open = Some(false);
-        self.out.push(Event::BeginDocs(n));
-    }
-
-    fn open_code(&mut self) {
-        let n = self.counter;
-        self.counter += 1;
-        self.cur = n;
-        self.open = Some(true);
-        self.out.push(Event::BeginCode(n));
-    }
-
-    fn close_current(&mut self) {
-        self.defs_pending = false;
-        if let Some(code) = self.open.take() {
-            let n = self.cur;
-            self.out.push(if code {
-                Event::EndCode(n)
-            } else {
-                Event::EndDocs(n)
-            });
-        }
-    }
-
-    fn emit_segs(&mut self, segs: Vec<Seg>) {
-        let n = segs.len();
-        for (i, seg) in segs.into_iter().enumerate() {
-            let last = i + 1 == n;
-            match seg {
-                Seg::Text(s) => {
-                    if last || !s.is_empty() {
-                        self.out.push(Event::Text(s));
-                    }
-                }
-                Seg::Use(u) => self.out.push(Event::Use(u)),
-                Seg::Open => self.out.push(Event::Quote),
-                Seg::Close => self.out.push(Event::EndQuote),
-            }
-        }
-        self.out.push(Event::Nl);
-    }
-
-    fn code_emit(&mut self, l: &str) {
-        let segs = nw::code_line(l).expect("a code line tokenizes");
-        self.emit_segs(segs);
-    }
-
-    fn docs_emit(&mut self, l: &str) {
-        let (segs, ended) = if self.in_quote {
-            nw::docs_in(l).expect("a docs line tokenizes")
-        } else {
-            nw::docs_out(l).expect("a docs line tokenizes")
-        };
-        self.in_quote = ended;
-        self.emit_segs(segs);
-    }
-
-    fn index(&mut self, ids: &str, defn: bool) {
-        if self.open != Some(true) {
-            self.close_current();
-            self.open_docs();
-            self.docs_emit(if defn { "%def" } else { "%use" });
-            return;
-        }
-        for id in ids.split_whitespace() {
-            self.out.push(if defn {
-                Event::IndexDefn(id.to_string())
-            } else {
-                Event::IndexUse(id.to_string())
-            });
-        }
-        self.out.push(Event::IndexNl);
-        self.defs_pending = true;
-    }
-
-    fn line(&mut self, l: &str) {
-        match nw::classify(l).expect("every line classifies") {
-            Line::Def(name) => {
-                self.close_current();
-                self.open_code();
-                self.out.push(Event::Defn(name));
-                self.out.push(Event::Nl);
-            }
-            Line::Control(content) => {
-                if let Some(rest) = directive(&content, "%def") {
-                    self.index(rest, true);
-                } else if let Some(rest) = directive(&content, "%use") {
-                    self.index(rest, false);
-                } else {
-                    self.close_current();
-                    self.open_docs();
-                    self.docs_emit(&content);
-                }
-            }
-            Line::Plain(l) => {
-                if self.defs_pending {
-                    self.close_current();
-                }
-                if self.open.is_none() {
-                    self.open_docs();
-                }
-                if self.open == Some(true) {
-                    self.code_emit(&l);
-                } else {
-                    self.docs_emit(&l);
-                }
-            }
-        }
-    }
-
-    fn file(&mut self, path: &str, text: &str) {
-        self.out.push(Event::File(path.to_string()));
-        self.open_docs();
-        for line in text.lines() {
-            self.line(line);
-        }
-        self.close_current();
-    }
-}
-
-fn directive<'a>(content: &'a str, key: &str) -> Option<&'a str> {
-    if content == key {
-        return Some("");
-    }
-    content.strip_prefix(key).filter(|r| r.starts_with(' '))
-}
-
-fn oracle_read(files: &[&str]) -> Vec<Event> {
-    let mut o = Oracle::default();
-    for f in files {
-        let text = std::fs::read_to_string(f).expect("the fixture reads");
-        o.file(f, &text);
-    }
-    o.out
-}
-@
-The oracle test mirrors the reader test: for each fixture it reads the `.nw` with the
-grammar path and compares to the pinned `markup` output. When both readers pass, the
-hand reader and the grammar reader agree with real `markup` for the whole corpus.
-<<the oracle tests>>=
-fn same_as_markup(nw: &str, markup: &str) {
-    let ours = oracle_read(&[nw]);
-    let oracle = parse(markup).expect("the oracle markup parses");
-    assert_eq!(ours, oracle, "peg oracle diverged from markup for {nw}");
-}
-
-#[test]
-fn oracle_matches_markup() {
-    same_as_markup("fixtures/hello.nw", include_str!("../fixtures/hello.markup"));
-    same_as_markup("fixtures/book.nw", include_str!("../fixtures/book.markup"));
-    same_as_markup("fixtures/md.nw", include_str!("../fixtures/md.markup"));
-    same_as_markup("fixtures/hl.nw", include_str!("../fixtures/hl.markup"));
-    same_as_markup(
-        "fixtures/sections.nw",
-        include_str!("../fixtures/sections.markup"),
-    );
-    same_as_markup("fixtures/tx.nw", include_str!("../fixtures/tx.markup"));
-    same_as_markup("fixtures/txf.nw", include_str!("../fixtures/txf.markup"));
-    same_as_markup("fixtures/quote.nw", include_str!("../fixtures/quote.markup"));
 }
 @
