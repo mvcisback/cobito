@@ -1,31 +1,26 @@
 # The prose layer (§6.1, §6.2)
 
-This module is the specification and the implementation of the first two steps
-of the prose pipeline. The prose is the specification. The chunks after it are
-the implementation.
+This module is the specification and the implementation of the shared ends of
+the prose pipeline. The prose is the specification. The chunks after it are the
+implementation.
 
 noweb does not solve the prose problem. Its `tohtml` passes prose through
 verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
 LaTeX subset, does not expand author macros, and shows math as italics. lit does
 its own prose layer instead.
 
-## Two prose dialects {#sec:iquM}
+## One prose dialect {#sec:iquM}
 
-An author writes a docs chunk in one of two dialects. The `dialect` key in
-`lit.toml` sets it per document (§5.2):
+An author writes a docs chunk in one dialect: command Markdown (§6.4). Prose is
+CommonMark plus lit's command markers and fenced-float directives. Paragraphs,
+emphasis, lists, links, and headings become HTML. The fenced directives for
+math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
+cross-reference.
 
-- `markdown` is the default. Prose is CommonMark. Paragraphs, emphasis, lists,
-  links, headings, and backtick code become HTML. The fenced directives for
-  math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
-  cross-reference. This is the ergonomic dialect (§6.4).
-- `html` is the escape hatch. Prose is raw HTML, which is what noweb's HTML path
-  expects. Any construct the Markdown directives do not cover, such as a sidenote
-  aside, falls back to a raw-HTML island (§6.4).
-
-Both dialects share one pipeline. Markdown is a post-`markup` transform on the
-reassembled prose. It slots in after math extraction and before the HTML
-rewrite. Everything after that step — numbering, references, math render,
-sidenote hoist, and `site.json` — is the same for both dialects, byte for byte.
+The Markdown render is a post-`markup` transform on the reassembled prose
+(§6.4). It slots in between reassembly and the HTML rewrite. Everything after
+that step — numbering, references, math render, sidenote hoist, and `site.json`
+— is the same for every document.
 
 ## The pipeline (the order is load-bearing) {#sec:O0Sz}
 
@@ -34,23 +29,17 @@ lit processes each docs chunk in this order:
 1. Reassemble. Join the `@text` and `@nl` spans. Turn each `@quote`…`@endquote`
    into a `<code>` element with its contents HTML-escaped. This escape comes
    first, so an inline quote of a tag such as `<div>` is safe.
-2. Extract math. Scan for `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, and replace each
-   run with an opaque placeholder. This must run before HTML parsing, so that
-   `$a < b$` is not read as a broken tag. lit does not scan inside a `<code>`
-   from step 1, or inside any `<pre>` or `<code>` the author wrote. A literal `$`
-   elsewhere is escaped as backslash-dollar, which is lit's convention, not
-   noweb's; `markup` passes it through and the extractor removes the backslash.
-3. Parse HTML. The input is now well-formed and free of math.
-4. Rewrite. Inject section ids, number the figures, tables, and equations,
+2. Render Markdown. The command-Markdown pass (§6.4) turns the prose into HTML.
+   It extracts each math run into an opaque placeholder as it goes, so a formula
+   like `$a < b$` is never read as a broken tag.
+3. Rewrite. Inject section ids, number the figures, tables, and equations,
    resolve each `data-ref`, and hoist each sidenote aside into the section's
    margin array.
-5. Serialize.
-6. Render math. Replace each placeholder with KaTeX output.
+4. Serialize.
+5. Render math. Replace each placeholder with KaTeX output.
 
-Steps 4 to 6 need document-global numbering, so lit runs the whole document
-through step 3 before any section reaches step 4. Weave cannot stream. In
-`markdown` mode the CommonMark render runs between steps 2 and 3; the detail is
-in §6.4.
+Steps 3 to 5 need document-global numbering, so lit runs the whole document
+through step 2 before any section reaches step 3. Weave cannot stream.
 
 lit does not sanitize prose. The author is the trusted party. A margin comment
 is the annotation layer's problem (`ANNOTATIONS.md`), never merged into lit's
@@ -58,10 +47,11 @@ output.
 
 ## How the code implements this {#sec:bz51}
 
-This module is steps 1 and 2. It holds the extracted-math type, the prose error,
-the escaper, step 1 (reassembly), the helpers that mark skip regions and find
-delimiters, step 2 (extraction), the step-6 substitution, and the tests. Steps 3
-to 5 are the rewrite module; step 6's KaTeX call is the math module.
+This module holds the shared ends of the pipeline: the extracted-math type, the
+HTML escaper, step 1 (reassembly), and the step-5 substitution that puts
+rendered math back. The Markdown render (step 2) is the markdown module; the
+rewrite (steps 3–4) is the rewrite module; step 5's KaTeX call is the math
+module.
 <<src/prose.rs>>=
 <<the module banner>>
 
@@ -69,41 +59,23 @@ to 5 are the rewrite module; step 6's KaTeX call is the math module.
 
 <<extracted math>>
 
-<<the prose error>>
-
 <<the html escaper>>
 
 <<step 1: reassemble>>
 
-<<the skip-region tags>>
-
-<<find a skip region>>
-
-<<case-insensitive search>>
-
-<<find an unescaped close>>
-
-<<a context snippet>>
-
-<<step 2: extract math>>
-
-<<step 6: substitute math>>
+<<step 5: substitute math>>
 
 <<the tests>>
 @
-The banner states the ordering and why it is load-bearing.
+The banner states the two shared ends of the pipeline this module owns.
 <<the module banner>>=
-//! Steps 1–2 of the prose pipeline (§6.2): reassemble docs spans, then
-//! lift math out into placeholders.
-//!
-//! The ordering is the whole point. Escaping `[[…]]` happens before anything
-//! else so `[[<div>]]` is inert, and math is extracted before any HTML parsing
-//! so `$a < b$` is never seen as a malformed tag.
+//! The shared ends of the prose pipeline (§6.2): reassemble docs spans into
+//! prose (step 1), and substitute rendered math back into the serialized HTML
+//! (step 5). The Markdown render in between, which extracts math, is the
+//! markdown module.
 @
-Formatting, and the `ProseSpan` the model hands us.
+The `ProseSpan` the model hands us.
 <<imports>>=
-use std::fmt;
-
 use crate::model::ProseSpan;
 @
 One extracted formula: its source and whether it renders in display mode.
@@ -113,27 +85,6 @@ pub struct Math {
     pub source: String,
     pub display: bool,
 }
-@
-An opened math delimiter that never closes. It reports the delimiter and a short
-context snippet.
-<<the prose error>>=
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProseError {
-    pub delim: String,
-    pub context: String,
-}
-
-impl fmt::Display for ProseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "unterminated math delimiter `{}` (started at {:?})",
-            self.delim, self.context
-        )
-    }
-}
-
-impl std::error::Error for ProseError {}
 @
 Escape for HTML text — four characters only. Prose is authored HTML by a trusted
 author (§6.2), so this exists to make quoted code inert, not to sanitize.
@@ -175,148 +126,11 @@ pub fn reassemble(spans: &[ProseSpan]) -> String {
     out
 }
 @
-The regions where math is not scanned: the `code` step 1 produced, plus any `pre`
-or `code` the author wrote.
-<<the skip-region tags>>=
-/// Regions where math is not scanned and `\$` is not unescaped: the `<code>`
-/// step 1 produced, plus any `<pre>`/`<code>` the author wrote.
-const SKIP_TAGS: [&str; 2] = ["code", "pre"];
-@
-If position `at` opens a skip region, return where it ends. The tag-name match is
-case-insensitive and demands a real boundary after it, so `codex` does not match
-`code`. Unclosed author markup is not this function's error to raise — it treats the
-remainder as skipped so the math scanner cannot misread it.
-<<find a skip region>>=
-fn skip_region(s: &str, at: usize) -> Option<usize> {
-    let rest = &s[at..];
-    if !rest.starts_with('<') {
-        return None;
-    }
-    for tag in SKIP_TAGS {
-        let open = &rest[1..];
-        let matches_name = open.len() > tag.len()
-            && open[..tag.len()].eq_ignore_ascii_case(tag)
-            && open[tag.len()..]
-                .chars()
-                .next()
-                .is_some_and(|c| c == '>' || c == ' ' || c == '\n' || c == '\t' || c == '/');
-        if !matches_name {
-            continue;
-        }
-        let close = format!("</{tag}>");
-        // Unclosed author markup is not our error to raise here; treat the
-        // remainder as skipped so the math scanner cannot misread it.
-        return Some(match find_ci(s, at, &close) {
-            Some(i) => i + close.len(),
-            None => s.len(),
-        });
-    }
-    None
-}
-@
-Case-insensitive substring search from an offset.
-<<case-insensitive search>>=
-fn find_ci(s: &str, from: usize, needle: &str) -> Option<usize> {
-    s[from..]
-        .to_ascii_lowercase()
-        .find(&needle.to_ascii_lowercase())
-        .map(|i| from + i)
-}
-@
-Find the closing delimiter at or after `from`, skipping any that a backslash
-escapes.
-<<find an unescaped close>>=
-/// Find `close` at or after `from`, ignoring backslash-escaped occurrences.
-fn find_close(s: &str, from: usize, close: &str) -> Option<usize> {
-    let bytes = s.as_bytes();
-    let mut i = from;
-    while i + close.len() <= s.len() {
-        if s.is_char_boundary(i) && s[i..].starts_with(close) {
-            let escaped = i > 0 && bytes[i - 1] == b'\\';
-            if !escaped {
-                return Some(i);
-            }
-        }
-        i += 1;
-    }
-    None
-}
-@
-A short snippet starting at a byte offset, for error messages — capped at 24
-characters and kept on char boundaries.
-<<a context snippet>>=
-fn context_at(s: &str, at: usize) -> String {
-    let end = s[at..]
-        .char_indices()
-        .nth(24)
-        .map(|(i, _)| at + i)
-        .unwrap_or(s.len());
-    s[at..end].to_string()
-}
-@
-Step 2. Walk the input once. Skip regions pass through untouched. A backslash-
-escaped dollar collapses to a literal. Otherwise the longest matching delimiter wins
-— the two-character forms are tried before the one-character form — and its body is
-replaced with an opaque, well-formed placeholder while the source is pushed onto
-`out`. A delimiter that never closes is an error.
-<<step 2: extract math>>=
-/// Step 2. Replace every math run with an opaque placeholder element and push
-/// its source onto `out`. The placeholder is well-formed HTML so it survives
-/// the parse/serialize round trip that M2 will add between steps 3 and 5.
-pub fn extract_math(input: &str, out: &mut Vec<Math>) -> Result<String, ProseError> {
-    // Longest delimiters first: `$$` must win over `$`.
-    const DELIMS: [(&str, &str, bool); 4] = [
-        ("$$", "$$", true),
-        ("\\[", "\\]", true),
-        ("\\(", "\\)", false),
-        ("$", "$", false),
-    ];
-
-    let mut html = String::with_capacity(input.len());
-    let mut i = 0;
-    'outer: while i < input.len() {
-        if let Some(end) = skip_region(input, i) {
-            html.push_str(&input[i..end]);
-            i = end;
-            continue;
-        }
-        // Our convention, not noweb's: `markup` passes `\$` through untouched.
-        if input[i..].starts_with("\\$") {
-            html.push('$');
-            i += 2;
-            continue;
-        }
-        for (open, close, display) in DELIMS {
-            if !input[i..].starts_with(open) {
-                continue;
-            }
-            let body = i + open.len();
-            let Some(end) = find_close(input, body, close) else {
-                return Err(ProseError {
-                    delim: open.to_string(),
-                    context: context_at(input, i),
-                });
-            };
-            html.push_str(&format!("<span data-lit-math=\"{}\"></span>", out.len()));
-            out.push(Math {
-                source: input[body..end].to_string(),
-                display,
-            });
-            i = end + close.len();
-            continue 'outer;
-        }
-        let ch = input[i..].chars().next().unwrap_or('\0');
-        html.push(ch);
-        i += ch.len_utf8();
-    }
-    Ok(html)
-}
-@
-Step 6. Walk the serialized HTML, replacing each numbered placeholder with its
+Step 5. Walk the serialized HTML, replacing each numbered placeholder with its
 rendered fragment. A placeholder whose number has no rendered entry, or a malformed
 one, is left as-is rather than dropped.
-<<step 6: substitute math>>=
-/// Step 6. Substitute rendered math back into the serialized HTML.
+<<step 5: substitute math>>=
+/// Step 5. Substitute rendered math back into the serialized HTML.
 pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     let mut out = String::with_capacity(html.len());
     let mut i = 0;
@@ -346,39 +160,16 @@ pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     out
 }
 @
-The tests walk each §6.2 behavior: escaping at reassembly, math extraction and its
-ordering, the skip regions, an error on an unterminated delimiter, document-global
-numbering, substitution, and the pinned fixture end to end.
+The tests walk this module's two behaviors: escaping at reassembly, and math
+substitution back into serialized HTML.
 <<the tests>>=
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn extract(s: &str) -> (String, Vec<Math>) {
-        let mut math = Vec::new();
-        let html = extract_math(s, &mut math).expect("extracts");
-        (html, math)
-    }
-
     <<quoted code is escaped at reassembly>>
 
-    <<angle-bracket math is not a tag>>
-
-    <<all four delimiter pairs>>
-
-    <<escaped dollar is literal>>
-
-    <<no math inside code or pre>>
-
-    <<escaped dollar inside code is verbatim>>
-
-    <<unterminated math is an error>>
-
-    <<placeholders are document-global>>
-
     <<substitution round-trips>>
-
-    <<fixture prose survives the pipeline>>
 }
 @
 Quoted code becomes an escaped `<code>` element at reassembly.
@@ -396,128 +187,13 @@ fn quoted_code_is_escaped_at_reassembly() {
     );
 }
 @
-The reason extraction runs before HTML parsing: a less-than sign inside a formula
-must not be read as a tag.
-<<angle-bracket math is not a tag>>=
-#[test]
-fn angle_bracket_math_is_not_a_tag() {
-    // The reason extraction precedes HTML parsing (§6.2 step 2).
-    let (html, math) = extract("bracket, $a < b$.");
-    assert_eq!(html, "bracket, <span data-lit-math=\"0\"></span>.");
-    assert_eq!(math[0].source, "a < b");
-    assert!(!math[0].display);
-}
-@
-All four delimiter pairs are recognized, and display versus inline is tracked.
-<<all four delimiter pairs>>=
-#[test]
-fn display_and_inline_delimiters() {
-    let (_, math) = extract(r"$x$ and $$y$$ and \(z\) and \[w\]");
-    assert_eq!(
-        math,
-        vec![
-            Math {
-                source: "x".into(),
-                display: false
-            },
-            Math {
-                source: "y".into(),
-                display: true
-            },
-            Math {
-                source: "z".into(),
-                display: false
-            },
-            Math {
-                source: "w".into(),
-                display: true
-            },
-        ]
-    );
-}
-@
-A backslash-escaped dollar sign is a literal, not the start of math.
-<<escaped dollar is literal>>=
-#[test]
-fn escaped_dollar_is_literal_and_not_math() {
-    let (html, math) = extract(r"cost is \$5 and \$6.");
-    assert_eq!(html, "cost is $5 and $6.");
-    assert!(math.is_empty());
-}
-@
-Math is not scanned inside a `code` or `pre` region.
-<<no math inside code or pre>>=
-#[test]
-fn math_is_not_scanned_inside_code_or_pre() {
-    let (html, math) = extract("<code>$not math$</code> but $yes$");
-    assert_eq!(
-        html,
-        "<code>$not math$</code> but <span data-lit-math=\"0\"></span>"
-    );
-    assert_eq!(math.len(), 1);
-    assert_eq!(math[0].source, "yes");
-
-    let (html, math) = extract("<pre class=\"chunk\">a $b$ c</pre>");
-    assert_eq!(html, "<pre class=\"chunk\">a $b$ c</pre>");
-    assert!(math.is_empty());
-}
-@
-Inside a code region, even a backslash-escaped dollar stays verbatim — the region
-is skipped whole.
-<<escaped dollar inside code is verbatim>>=
-#[test]
-fn backslash_dollar_inside_code_stays_verbatim() {
-    let (html, _) = extract(r"<code>\$5</code>");
-    assert_eq!(html, r"<code>\$5</code>");
-}
-@
-An opened delimiter that never closes is a ProseError.
-<<unterminated math is an error>>=
-#[test]
-fn unterminated_math_is_an_error() {
-    let mut math = Vec::new();
-    let err = extract_math("open $a + b", &mut math).unwrap_err();
-    assert_eq!(err.delim, "$");
-    assert!(err.to_string().contains("unterminated"));
-}
-@
-Placeholders are numbered across the whole document, not per call, so `out`
-accumulates.
-<<placeholders are document-global>>=
-#[test]
-fn placeholders_are_numbered_document_globally() {
-    let mut math = Vec::new();
-    let a = extract_math("$p$", &mut math).unwrap();
-    let b = extract_math("$q$", &mut math).unwrap();
-    assert_eq!(a, "<span data-lit-math=\"0\"></span>");
-    assert_eq!(b, "<span data-lit-math=\"1\"></span>");
-    assert_eq!(math.len(), 2);
-}
-@
-Rendered fragments substitute back into their placeholders in order.
+Rendered fragments substitute back into their placeholders by index; a
+placeholder with no rendered entry is left as-is.
 <<substitution round-trips>>=
 #[test]
 fn substitution_round_trips() {
-    let mut math = Vec::new();
-    let html = extract_math("a $x$ b $$y$$", &mut math).unwrap();
-    let out = substitute_math(&html, &["<X/>".to_string(), "<Y/>".to_string()]);
+    let html = "a <span data-lit-math=\"0\"></span> b <span data-lit-math=\"1\"></span>";
+    let out = substitute_math(html, &["<X/>".to_string(), "<Y/>".to_string()]);
     assert_eq!(out, "a <X/> b <Y/>");
-}
-@
-The pinned fixture's prose runs the whole reassemble-then-extract path and yields
-the expected sources.
-<<fixture prose survives the pipeline>>=
-#[test]
-fn fixture_prose_survives_the_pipeline() {
-    let ir = include_str!("../fixtures/hello.markup");
-    let doc = crate::model::build(&crate::noweb::parse(ir).unwrap()).unwrap();
-    let mut math = Vec::new();
-    for section in &doc.sections {
-        if let crate::model::SectionKind::Docs { spans } = &section.kind {
-            extract_math(&reassemble(spans), &mut math).expect("fixture prose extracts");
-        }
-    }
-    let sources: Vec<&str> = math.iter().map(|m| m.source.as_str()).collect();
-    assert_eq!(sources, vec![r"O(n \log n)", "a < b"]);
 }
 @

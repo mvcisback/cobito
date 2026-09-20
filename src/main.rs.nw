@@ -14,8 +14,8 @@ work failed".
 
 The front half of `weave`, `lock`, `language`, `tangle`, and both dump commands is
 the same: read the `.nw` files, fold the events into the document model. That shared
-front half is factored into `build_doc` where the command needs the resolved prose
-dialect, and inlined where it does not.
+front half is factored into `build_doc` where a command needs it, and inlined where
+it does not.
 <<src/main.rs>>=
 <<the module tree>>
 
@@ -237,7 +237,6 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     } else {
         doc_cfg.files.clone()
     };
-    let dialect = doc_cfg.dialect;
     let meta = site::Meta {
         id: doc_cfg.id,
         title: doc_cfg.title,
@@ -264,7 +263,6 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         Path::new(".lit-cache"),
         Path::new("lit.lock"),
         meta,
-        dialect,
         &lang_cfg,
         archive,
         mode,
@@ -295,31 +293,22 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     }
 }
 @
-`build_doc` is the shared front half of `lock`. It reads the files, builds the
-model, loads config, and returns the model with the resolved prose dialect. It
-prints its own diagnostics and carries the exit code in the `Err`, so the caller
-returns that code directly.
+`build_doc` is the shared front half of `lock`. It reads the files and builds the
+model. It prints its own diagnostics and carries the exit code in the `Err`, so the
+caller returns that code directly.
 <<build the document once>>=
-/// Read the `.nw` files + fold the IR into the model + resolve the prose dialect —
-/// the front half shared by `weave` and `lock`. Diagnostics are printed here; the
-/// `Err` carries the process exit code.
-fn build_doc(files: &[String]) -> Result<(model::DocModel, config::Dialect), ExitCode> {
+/// Read the `.nw` files + fold the IR into the model — the front half shared by
+/// `weave` and `lock`. Diagnostics are printed here; the `Err` carries the process
+/// exit code.
+fn build_doc(files: &[String]) -> Result<model::DocModel, ExitCode> {
     let events = markup::read(files).map_err(|e| {
         eprintln!("lit: {e}");
         ExitCode::FAILURE
     })?;
-    let doc = model::build(&events).map_err(|e| {
+    model::build(&events).map_err(|e| {
         eprintln!("{e}");
         ExitCode::FAILURE
-    })?;
-    let cfg = config::Config::load(Path::new("."))
-        .map_err(|e| {
-            eprintln!("{e}");
-            ExitCode::FAILURE
-        })?
-        .unwrap_or_default();
-    let dialect = cfg.document().map(|d| d.dialect).unwrap_or_default();
-    Ok((doc, dialect))
+    })
 }
 @
 The lock command mints a frozen id for every label without rendering. It loads the
@@ -335,8 +324,8 @@ The report shows how many were newly minted.
 /// `.nw` source. Ids already present are left untouched; new ones are written back
 /// so a later `--locked` weave finds them.
 fn lock_cmd(files: &[String]) -> ExitCode {
-    let (doc, dialect) = match build_doc(files) {
-        Ok(pair) => pair,
+    let doc = match build_doc(files) {
+        Ok(doc) => doc,
         Err(code) => return code,
     };
     let path = Path::new("lit.lock");
@@ -350,13 +339,13 @@ fn lock_cmd(files: &[String]) -> ExitCode {
     let before = lock.count();
     let mut minter = lock::Minter::from_entropy();
     // Mint floats and author-labelled sections against the source as it is.
-    if let Err(e) = weave::mint_lock(&doc, dialect, &mut lock, &mut minter) {
+    if let Err(e) = weave::mint_lock(&doc, &mut lock, &mut minter) {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
     // §7.1: give every unlabelled h2/h3 heading a frozen id, anchored in its source.
     let mut edits: BTreeMap<String, Vec<(u32, String)>> = BTreeMap::new();
-    for site in section::headings(&doc, dialect) {
+    for site in section::headings(&doc) {
         if site.anchored || site.level < 2 {
             continue;
         }
@@ -364,7 +353,7 @@ fn lock_cmd(files: &[String]) -> ExitCode {
         edits.entry(site.file).or_default().push((site.line, id));
     }
     for (file, list) in &edits {
-        if let Err(e) = section::apply_anchors(Path::new(file), list, dialect) {
+        if let Err(e) = section::apply_anchors(Path::new(file), list) {
             eprintln!("lit: error[E032]: could not anchor {file}: {e}");
             return ExitCode::FAILURE;
         }
@@ -403,14 +392,6 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
         eprintln!("lit: error: `{name}` is not a valid name (letters, digits, - or _)");
         return ExitCode::FAILURE;
     }
-    let cfg = match config::Config::load(Path::new(".")) {
-        Ok(c) => c.unwrap_or_default(),
-        Err(e) => {
-            eprintln!("{e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let dialect = cfg.document().map(|d| d.dialect).unwrap_or_default();
     let path = Path::new("lit.lock");
     let mut lock = match lock::LockFile::load(path) {
         Ok(lock) => lock,
@@ -436,7 +417,7 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let old_name = old_label.strip_prefix("sec:").unwrap_or(&old_label);
-    match section::rename_anchor(Path::new(&file), old_name, name, dialect) {
+    match section::rename_anchor(Path::new(&file), old_name, name) {
         Ok(true) => {}
         Ok(false) => {
             eprintln!("lit: error: no `{old_label}` anchor found in {file}");

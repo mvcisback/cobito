@@ -120,36 +120,30 @@ so a later milestone can insert a real HTML parse without reordering anything.
 //! them without reordering anything.
 @
 The weaver pulls a name from nearly every other module, because it is the stage
-that ties them together: config for the dialect, highlight for the colors, lock
-for the frozen ids, the prose and markdown dialects, the math renderer, the model,
+that ties them together: config for the manifest, highlight for the colors, lock
+for the frozen ids, the prose and markdown pipeline, the math renderer, the model,
 the resolver, the rewriter, and the site JSON shape.
 <<imports>>=
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::config::Dialect;
 use crate::highlight::{self, Lang, LangConfig};
 use crate::lock::{LockError, LockFile, LockMode, Minter};
 use crate::markdown;
 use crate::math::{MathError, Renderer};
 use crate::model::{CodeSpan, DocModel, Lint, SectionKind};
-use crate::prose::{self, Math, ProseError};
+use crate::prose::{self, Math};
 use crate::resolve::{self, LabelIds, NavNode, PageMeta, ResolveError};
 use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
 use crate::transclude;
 @
-The error type collects a failure from every stage the weaver drives. The prose
-and markdown variants carry the source coordinate so a diagnostic points at the
-offending line; the rest wrap another module's error or a message.
+The error type collects a failure from every stage the weaver drives. The markdown
+variant carries the source coordinate so a diagnostic points at the offending line;
+the rest wrap another module's error or a message.
 <<the weave error>>=
 #[derive(Debug)]
 pub enum WeaveError {
-    Prose {
-        file: String,
-        line: u32,
-        err: ProseError,
-    },
     Markdown {
         file: String,
         line: u32,
@@ -164,16 +158,13 @@ pub enum WeaveError {
     Template(String),
 }
 @
-Display assigns each variant its §12 error code. The prose and markdown variants
-append the source coordinate; the wrapped variants defer to the inner error, which
-already carries its own code.
+Display assigns each variant its §12 error code. The markdown variant appends the
+source coordinate; the wrapped variants defer to the inner error, which already
+carries its own code.
 <<display a weave error>>=
 impl fmt::Display for WeaveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WeaveError::Prose { file, line, err } => {
-                write!(f, "error[E022]: {err}\n  --> {file}:{line}")
-            }
             WeaveError::Markdown { file, line, err } => {
                 write!(f, "{err}\n  --> {file}:{line}")
             }
@@ -405,20 +396,19 @@ enum Frag {
 }
 @
 The first pass renders every section into a fragment. A docs body is reassembled
-and lowered through its dialect — Markdown to CommonMark, or raw HTML — which also
-extracts its math. A code body is rendered straight, after resolving its
-highlighting language out of band: the config default, else the chunk's own or its
-root's file extension. A chunk with real code but no known language is rendered as
-plain text and earns one warning, never an error. This pass is shared with the
-mint-only lock path so both see labels the same way.
+and lowered through the Markdown dialect, which also extracts its math. A code body
+is rendered straight, after resolving its highlighting language out of band: the
+config default, else the chunk's own or its root's file extension. A chunk with real
+code but no known language is rendered as plain text and earns one warning, never an
+error. This pass is shared with the mint-only lock path so both see labels the same
+way.
 <<render every fragment>>=
-/// Steps 1–2 (§6.2) per section: reassemble each docs body and lower it through
-/// the dialect (Markdown → CommonMark, which also extracts math; HTML → math
-/// extraction as-is), and render each code body straight. Shared by `render` and
-/// the mint-only `lit lock` path so both see labels the same way.
+/// Steps 1–2 (§6.2) per section: reassemble each docs body and lower it through the
+/// Markdown dialect (which also extracts math), and render each code body straight.
+/// Shared by `render` and the mint-only `lit lock` path so both see labels the same
+/// way.
 fn render_frags(
     doc: &DocModel,
-    dialect: Dialect,
     lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
     lints: &mut Vec<Lint>,
@@ -428,22 +418,12 @@ fn render_frags(
         match &section.kind {
             SectionKind::Docs { spans } => {
                 let reassembled = prose::reassemble(spans);
-                let body = match dialect {
-                    Dialect::Markdown => markdown::render(&reassembled, math).map_err(|err| {
-                        WeaveError::Markdown {
-                            file: section.file.clone(),
-                            line: section.line,
-                            err,
-                        }
-                    })?,
-                    Dialect::Html => {
-                        prose::extract_math(&reassembled, math).map_err(|err| WeaveError::Prose {
-                            file: section.file.clone(),
-                            line: section.line,
-                            err,
-                        })?
-                    }
-                };
+                let body =
+                    markdown::render(&reassembled, math).map_err(|err| WeaveError::Markdown {
+                        file: section.file.clone(),
+                        line: section.line,
+                        err,
+                    })?;
                 frags.push(Frag::Docs(body));
             }
             SectionKind::Code {
@@ -513,7 +493,6 @@ minting needs labels and floats, not colors.
 /// caller can persist it; it never renders math or writes HTML.
 pub fn mint_lock(
     doc: &DocModel,
-    dialect: Dialect,
     lock: &mut LockFile,
     minter: &mut Minter,
 ) -> Result<(), WeaveError> {
@@ -521,7 +500,7 @@ pub fn mint_lock(
     let mut lints: Vec<Lint> = Vec::new();
     // Minting only needs labels/floats, not colors, so the language config is empty.
     let lang_cfg = LangConfig::default();
-    let frags = render_frags(doc, dialect, &lang_cfg, &mut math, &mut lints)?;
+    let frags = render_frags(doc, &lang_cfg, &mut math, &mut lints)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -568,7 +547,6 @@ page from the template, threading the previous and next links and the nav tree.
 pub fn render(
     doc: &DocModel,
     cache_root: &Path,
-    dialect: Dialect,
     lang_cfg: &LangConfig,
     embed: &str,
     lock: &mut LockFile,
@@ -577,7 +555,7 @@ pub fn render(
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, dialect, lang_cfg, &mut math, &mut hl_lints)?;
+    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut hl_lints)?;
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -902,14 +880,13 @@ pub fn write_site(
     cache_root: &Path,
     lock_path: &Path,
     meta: site::Meta,
-    dialect: Dialect,
     lang_cfg: &LangConfig,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, dialect, lang_cfg, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, lang_cfg, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -1059,18 +1036,17 @@ fn cache() -> PathBuf {
 /// A dev-time render with an in-memory lock and a fixed-seed minter, so float
 /// ids are deterministic within a test run (their exact value is arbitrary —
 /// `lock.rs` owns the minting contract).
-fn dev_render(doc: &DocModel, dialect: Dialect, embed: &str) -> Site {
-    dev_render_lang(doc, dialect, None, embed)
+fn dev_render(doc: &DocModel, embed: &str) -> Site {
+    dev_render_lang(doc, None, embed)
 }
 
-fn dev_render_lang(doc: &DocModel, dialect: Dialect, lang: Option<Lang>, embed: &str) -> Site {
+fn dev_render_lang(doc: &DocModel, lang: Option<Lang>, embed: &str) -> Site {
     let mut lock = LockFile::default();
     let mut minter = Minter::seeded(1);
     let lang_cfg = LangConfig::with_default(lang);
     render(
         doc,
         &cache(),
-        dialect,
         &lang_cfg,
         embed,
         &mut lock,
@@ -1093,7 +1069,6 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
     let err = match render(
         &book(),
         &cache(),
-        Dialect::Markdown,
         &lang_cfg,
         "",
         &mut lock,
@@ -1122,7 +1097,7 @@ fn id_at(html: &str, anchor: &str) -> String {
 
 /// The hello fixture opens with a single `<h1>`, so it is one `index` page.
 fn hello_html() -> String {
-    dev_render(&fixture(), Dialect::Markdown, "").all_html()
+    dev_render(&fixture(), "").all_html()
 }
 
 /// Drop only the `tok-*` highlight wrappers, keeping `.line`/`.chunk-name`
@@ -1198,7 +1173,7 @@ angle-bracket case survives as an entity rather than becoming a tag.
 <<math is rendered not left as a placeholder>>=
 #[test]
 fn math_is_rendered_not_left_as_placeholder() {
-    let site = dev_render(&fixture(), Dialect::Markdown, "");
+    let site = dev_render(&fixture(), "");
     let html = site.all_html();
     assert_eq!(site.math_count, 2);
     assert!(!html.contains("data-lit-math"));
@@ -1292,11 +1267,11 @@ fn a_no_language_chunk_falls_back_to_plain_text_with_one_warning() {
     // its body is emitted as plain escaped text and earns exactly one W104.
     let doc = model_of(
         "@file plain.nw\n\
-         @begin docs 0\n@text <h1>Plain</h1>\n@nl\n@end docs 0\n\
+         @begin docs 0\n@text # Plain\n@nl\n@end docs 0\n\
          @begin code 1\n@defn notes.txt\n@nl\n\
          @text let x = 1;\n@nl\n@end code 1\n",
     );
-    let site = dev_render(&doc, Dialect::Html, "");
+    let site = dev_render(&doc, "");
     let html = site.all_html();
     assert!(html.contains("<span class=\"line\" data-line=\"3\">let x = 1;</span>"));
     assert!(!html.contains("tok-"));
@@ -1319,7 +1294,7 @@ The embed snippet passed to the render is injected into the page verbatim.
 <<an embed snippet is injected>>=
 #[test]
 fn embed_snippet_is_injected() {
-    let site = dev_render(&fixture(), Dialect::Markdown, "<script src=\"x.js\"></script>");
+    let site = dev_render(&fixture(), "<script src=\"x.js\"></script>");
     assert!(site.all_html().contains("<script src=\"x.js\"></script>"));
 }
 @
@@ -1327,8 +1302,8 @@ Two renders of the same input produce byte-identical HTML.
 <<output is byte deterministic>>=
 #[test]
 fn output_is_byte_deterministic() {
-    let a = dev_render(&book(), Dialect::Markdown, "");
-    let b = dev_render(&book(), Dialect::Markdown, "");
+    let a = dev_render(&book(), "");
+    let b = dev_render(&book(), "");
     assert_eq!(a.all_html(), b.all_html());
 }
 @
@@ -1337,7 +1312,7 @@ under one heading lands on that heading's page.
 <<the book splits into three pages>>=
 #[test]
 fn book_splits_into_three_pages_at_h1() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     let files: Vec<&str> = site.pages.iter().map(|p| p.meta.filename.as_str()).collect();
     assert_eq!(files, vec!["index.html", "parsing.html", "codegen.html"]);
     // The `lex a token` chunk was defined under Parsing, so it lands there.
@@ -1349,7 +1324,7 @@ A page-boundary heading becomes the page id and is stamped on the heading anchor
 <<a page-boundary heading becomes the page id>>=
 #[test]
 fn page_boundary_h1_becomes_the_page_id() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     assert!(site.pages[1].html.contains("<h1 id=\"parsing\">Parsing</h1>"));
     assert!(site.pages[0].html.contains("<h1 id=\"index\">Front matter</h1>"));
 }
@@ -1359,7 +1334,7 @@ the caption, with no sequential number anywhere; an opted-out equation keeps no 
 <<floats are identified by opaque id only>>=
 #[test]
 fn floats_are_identified_by_opaque_id_in_attributes_only() {
-    let html = dev_render(&book(), Dialect::Markdown, "").all_html();
+    let html = dev_render(&book(), "").all_html();
     // Each labeled float carries its frozen opaque id (§7.1) as data-id, and
     // its caption repeats the same id so CSS can draw "Figure <id>" once.
     let fig = id_at(&html, "fig-pipeline");
@@ -1391,7 +1366,7 @@ built from the target's opaque id, keeping author-supplied link text when presen
 <<cross-page refs are page qualified>>=
 #[test]
 fn cross_page_refs_are_page_qualified_and_get_generated_text() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     let fig = id_at(&site.pages[1].html, "fig-pipeline");
     // Front matter (index) refers forward to a figure and equation on later
     // pages; both hrefs must name the target page, and the generated text is
@@ -1416,7 +1391,7 @@ attribute, and a cross-page reference back to it reuses the very same id.
 <<a labelled section carries a clickable uid>>=
 #[test]
 fn labelled_section_carries_a_clickable_opaque_uid() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     let parsing = &site.pages[1].html;
     // The `sec:lexing` heading leads with an empty <a> permalink whose opaque
     // id (§7.1) lives in data-id — drawn by CSS, never a text node.
@@ -1445,7 +1420,7 @@ definition is on the same page.
 <<a chunk ref links into code>>=
 #[test]
 fn chunk_ref_links_into_code() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     // `<a data-ref="chunk:lex a token">` on the Parsing page points at the
     // chunk's defining section (same page → a fragment link).
     assert!(site.pages[1]
@@ -1458,7 +1433,7 @@ its label anchor rather than its text slug.
 <<the nav tree is on every page>>=
 #[test]
 fn nav_tree_is_emitted_on_every_page() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     for page in &site.pages {
         assert!(page.html.contains("<nav"));
         // The author labelled this heading `sec:lexing`, so its anchor is the
@@ -1484,7 +1459,7 @@ nav tree uses.
 <<the sitemap lists every page>>=
 #[test]
 fn sitemap_lists_every_page() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     assert!(site.sitemap.contains("<h1>Sitemap</h1>"));
     // Every top-level page and a labelled child section both appear, through the
     // same hrefs the nav tree builds.
@@ -1500,7 +1475,7 @@ inline in the woven HTML.
 <<site json is current schema and hoists sidenotes>>=
 #[test]
 fn site_json_is_current_schema_and_hoists_sidenotes() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     let json = &site.json;
     assert_eq!(json.schema, site::SCHEMA);
     // The whole-doc JSON is serialized and re-round-trips through the
@@ -1526,7 +1501,7 @@ has no previous, and the last has no next.
 <<footer pagination links neighbours>>=
 #[test]
 fn footer_pagination_links_neighbours() {
-    let site = dev_render(&book(), Dialect::Markdown, "");
+    let site = dev_render(&book(), "");
     // Middle page has both neighbours.
     assert!(site.pages[1].html.contains("href=\"index.html\""));
     assert!(site.pages[1].html.contains("href=\"codegen.html\""));
@@ -1540,7 +1515,7 @@ markup — and renders every math run, whether a fenced block or an inline run.
 <<the markdown dialect renders prose and fenced math>>=
 #[test]
 fn markdown_dialect_renders_prose_and_fenced_math() {
-    let site = dev_render(&md(), Dialect::Markdown, "");
+    let site = dev_render(&md(), "");
     let html = site.all_html();
     // Prose became HTML: a paragraph with emphasis, not literal asterisks.
     assert!(html.contains("<p>"));
@@ -1561,7 +1536,7 @@ identified; and every inline reference resolves to its float's anchor.
 <<markdown fenced floats are labelled and referenced>>=
 #[test]
 fn markdown_fenced_floats_are_labeled_and_referenced() {
-    let site = dev_render(&md(), Dialect::Markdown, "");
+    let site = dev_render(&md(), "");
     let html = site.all_html();
     // A `figure` fence became a real <figure> with an anchored id, an opaque
     // id on its caption, and its raw-HTML body passed through.
@@ -1588,7 +1563,7 @@ carries scoped ids so it cannot collide with the canonical node.
 <<transclusion cuts a heading node and scopes the copy>>=
 #[test]
 fn transclusion_cuts_a_heading_node_and_scopes_the_copy() {
-    let site = dev_render(&tx(), Dialect::Markdown, "");
+    let site = dev_render(&tx(), "");
     let html = site.all_html();
     // The node is spliced as a `transclusion` section whose chrome links back to
     // the canonical anchor with the heading text (§10).
@@ -1614,7 +1589,7 @@ has no uid, so it earns no page.
 <<every node gets a standalone page with context and backlinks>>=
 #[test]
 fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
-    let site = dev_render(&tx(), Dialect::Markdown, "");
+    let site = dev_render(&tx(), "");
     // The two h2 nodes each get a page; the h1 (no uid) does not.
     assert_eq!(site.node_pages.len(), 2);
     for (path, html) in &site.node_pages {
@@ -1654,7 +1629,7 @@ node-page link in context.
 <<a float is a node with its own page and can be transcluded>>=
 #[test]
 fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
-    let site = dev_render(&txf(), Dialect::Markdown, "");
+    let site = dev_render(&txf(), "");
     let idx = &site.pages[0].html;
     // \transclude{fig:demo} lifts the one figure out and inlines it with a
     // scoped id, its chrome naming the caption text.

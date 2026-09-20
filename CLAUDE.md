@@ -113,13 +113,14 @@ or they silently won't exist. Do not commit unless asked.
   Markdown heading attributes are enabled (`ENABLE_HEADING_ATTRIBUTES`) so
   `{#sec:name}` parses. An h1 is its page and is never minted. Anchoring happens
   only in the dev-time `lit lock` pass; `weave --locked` never edits source.
-- Docs-chunk prose has two dialects, set by `dialect` in `lit.toml`
-  (`src/config.rs.nw` §6.1, `src/markdown.rs.nw` §6.4): `markdown` (default —
-  CommonMark plus fenced-float directives) and
-  `html` (the raw-HTML escape hatch). A fence's info line is grammar-owned: a
-  **kind** from a closed set (`math`, `figure`, `table`, `html-escape`,
-  `verbatim`) then optional modifiers the peg grammar parses. A bare fence (no
-  kind) or an unknown kind is **E034** — a typo is an error, not a wrong render.
+- Docs-chunk prose has one dialect: command Markdown (`src/config.rs.nw` §6.1,
+  `src/markdown.rs.nw` §6.4) — CommonMark plus lit's command markers and
+  fenced-float directives. There is no `dialect` key; the old raw-HTML dialect is
+  retired, and the one raw-HTML door is the `html-escape` fence. A fence's info
+  line is grammar-owned: a **kind** from a closed set (`math`, `figure`, `table`,
+  `html-escape`, `verbatim`) then optional modifiers the peg grammar parses. A
+  bare fence (no kind) or an unknown kind is **E034** — a typo is an error, not a
+  wrong render.
   `math`/`figure`/`table` take an optional `\label{ns:name}` (`eq:`/`fig:`/`tbl:`;
   a mismatched namespace or a modifier a kind does not accept is E030) and —
   figure/table — a leading brace-balanced `\caption{…}`. `verbatim` is
@@ -128,11 +129,11 @@ or they silently won't exist. Do not commit unless asked.
   one raw-HTML door and takes no modifiers. GFM pipe tables parse *only* inside a
   `table` fence. Inline
   `\ref{ns:name}` lowers to the same `<a data-ref>` the resolver already handles
-  (a `\ref` inside a backtick span is a documented no-op). Sidenote `<aside>`s
-  stay raw-HTML islands. Markdown is a post-`markup` transform
+  (a `\ref` inside a backtick span is a documented no-op). Raw HTML has one door,
+  the `html-escape` fence — a sidenote `<aside>` is an `html-escape` fence.
+  Markdown is a post-`markup` transform
   (`src/markdown.rs`), so it is *not* noweb-boundary behavior — no §4.2 change.
-  `hello`/`book` fixtures are pinned in `html` mode; `md.nw` is the Markdown
-  end-to-end pair.
+  `hello`/`book`/`md.nw` fixtures are all command Markdown.
 
 ## Conventions
 

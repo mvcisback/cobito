@@ -6,17 +6,16 @@ or empty file is valid — the CLI then falls back to its argument-derived defau
 
 ## What the manifest declares {#sec:TLsr}
 
-A `[[document]]` table names the document: its id, title, authors, the `.nw` files
-in order, and the prose dialect. A `[tangle]` table sets the default output
-directory, and a `[[tangle.root]]` table per root sets that root's line-pragma
-format. A `[weave]` table holds the highlight language keys (§5.5).
+A `[[document]]` table names the document: its id, title, authors, and the `.nw`
+files in order. A `[tangle]` table sets the default output directory, and a
+`[[tangle.root]]` table per root sets that root's line-pragma format. A `[weave]`
+table holds the highlight language keys (§5.5).
 
 ```toml
 [[document]]
 id = "lit"
 title = "lit: a literate programming system"
 files = ["intro.nw", "parser.nw", "weave.nw"]
-dialect = "markdown"   # or "html"; default "markdown" (§6.1)
 
 [tangle]
 outdir = "."
@@ -40,19 +39,18 @@ onto separate lines with column-preserving padding. So pragma'd output is a
 different shape, not just annotated text. This is acceptable for generated code,
 and it is why the default is off.
 
-## Two prose dialects {#sec:ZZAp}
+## One prose dialect {#sec:ZZAp}
 
-A docs chunk is authored in one of two dialects, set per document by `dialect`.
-The `markdown` dialect (the default) is CommonMark: paragraphs, emphasis, lists,
-links, headings, and backtick code all become HTML, and the fenced float
-directives are numbered floats (§6.4). The `html` dialect is raw HTML — the escape
-hatch, and what any construct the Markdown directives do not cover (for example a
-`<aside class="sidenote">`) falls back to as a raw-HTML island.
+A docs chunk is authored in one dialect (§6.4): the command Markdown. Paragraphs,
+emphasis, lists, links, and headings become HTML; a `\code{…}`/`\emph{…}`/`\strong{…}`
+command marks an inline span; and a fenced block is a grammar-owned kind — `math`,
+`figure`, `table`, `verbatim`, or `html-escape`. The escape hatch is per fence, not
+per document: an `html-escape` fence is the one door for raw HTML — a sidenote aside,
+for example, is an `html-escape` fence. So the manifest needs no dialect key.
 
-Both dialects share one pipeline (§6.2). Markdown is a post-`markup` transform on
-the already-reassembled prose. Everything downstream — the numbering, the refs,
-the math render, the sidenote hoist, `site.json` — is dialect-agnostic and
-byte-identical.
+The dialect is a post-`markup` transform (§6.2) on the already-reassembled prose.
+Everything downstream — the numbering, the refs, the math render, the sidenote hoist,
+`site.json` — reads the same rendered HTML.
 
 ## How the code implements this {#sec:Er9s}
 
@@ -74,8 +72,6 @@ then the tests.
 <<the weave table>>
 
 <<a declared document>>
-
-<<the prose dialect>>
 
 <<the tangle table>>
 
@@ -176,8 +172,7 @@ pub struct Weave {
 }
 @
 A `[[document]]` is one document's identity and its file set. A project may
-declare several; the single-document CLI uses the first. `dialect` selects how
-this document's prose is authored.
+declare several; the single-document CLI uses the first.
 <<a declared document>>=
 /// One document's identity and file set (§5.2). A project may declare several;
 /// M4's single-document CLI uses the first.
@@ -191,25 +186,6 @@ pub struct Document {
     pub authors: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
-    /// The prose dialect of this document's docs chunks (§6.1). Markdown is the
-    /// default; `html` selects the original raw-HTML escape-hatch behavior.
-    #[serde(default)]
-    pub dialect: Dialect,
-}
-@
-Two prose dialects (§6.1): Markdown is the default, and `html` is the raw escape
-hatch that passes through untouched. `#[serde(rename_all = "lowercase")]` is what
-lets the manifest write `dialect = "html"` in lower case.
-<<the prose dialect>>=
-/// How docs-chunk prose is authored (§6.1). Markdown is the ergonomic default
-/// (SPEC §6.4); `html` is the raw-HTML escape hatch that still passes through
-/// untouched, which is also what labeled/numbered islands rely on.
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Dialect {
-    #[default]
-    Markdown,
-    Html,
 }
 @
 `[tangle]` sets the output directory and the per-root overrides.
@@ -311,8 +287,8 @@ impl Config {
 }
 @
 The tests pin the contract: absence is not an error, document metadata
-round-trips, a line-pragma is off unless a format string is given, the dialect
-defaults to Markdown, and both `[weave]` keys are read.
+round-trips, a line-pragma is off unless a format string is given, and both
+`[weave]` keys are read.
 <<the tests>>=
 #[cfg(test)]
 mod tests {
@@ -372,14 +348,6 @@ mod tests {
             pragmas.get("server/app.py").map(String::as_str),
             Some("# %L \"%F\"%N")
         );
-    }
-
-    #[test]
-    fn dialect_defaults_to_markdown_and_parses_html() {
-        let c = parse("[[document]]\nid = \"a\"\n");
-        assert_eq!(c.document().unwrap().dialect, Dialect::Markdown);
-        let c = parse("[[document]]\nid = \"a\"\ndialect = \"html\"\n");
-        assert_eq!(c.document().unwrap().dialect, Dialect::Html);
     }
 
     #[test]

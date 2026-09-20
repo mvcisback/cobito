@@ -110,8 +110,8 @@ Each module carries the specification for its own job. This is the reading order
 |---|---|
 | The noweb boundary: the IR, verified noweb behavior, \code{markup} | \code{src/noweb.rs.nw} |
 | The document model: chunk continuation, roots, line counting | \code{src/model.rs.nw} |
-| The project manifest, prose dialects, config keys | \code{src/config.rs.nw} |
-| The prose pipeline: reassembly, math extraction, ordering | \code{src/prose.rs.nw} |
+| The project manifest, the prose dialect, config keys | \code{src/config.rs.nw} |
+| The prose pipeline: reassembly, math substitution, ordering | \code{src/prose.rs.nw} |
 | The Markdown dialect and fenced-float directives | \code{src/markdown.rs.nw} |
 | Math rendering: KaTeX at weave time, the cache | \code{src/math.rs.nw} |
 | Labels, numbering, cross-references, the resolver | \code{src/resolve.rs.nw} |
@@ -249,7 +249,7 @@ Replacing \code{notangle} too stays a contingency with explicit triggers, record
 - Should lit watch and rebuild for a local authoring loop? The feedback loop is poor
   without it.
 
-Resolved questions are recorded where they were settled: the two prose dialects live
+Resolved questions are recorded where they were settled: the one prose dialect lives
 in \code{config.rs.nw}, the two-pass rewriter in \code{rewrite.rs.nw}, and the choice to skip
 \code{noweave} in this document's architecture section.
 

@@ -147,14 +147,14 @@ use std::fmt;
 
 use crate::prose::{self, Math};
 @
-Two failure classes. A dialect or math syntax fault is `Syntax` (E022, shared
-with the HTML dialect's math extractor). A fence fault is `Fence`, which carries
-its code: a bad `\label`/`\caption`/`\lang` modifier is E030 (`fence_err`); a bare
-or unknown fence kind is E034 (`kind_err`).
+Two failure classes. A prose or math syntax fault is `Syntax` (E022). A fence
+fault is `Fence`, which carries its code: a bad `\label`/`\caption`/`\lang`
+modifier is E030 (`fence_err`); a bare or unknown fence kind is E034
+(`kind_err`).
 <<the markdown error>>=
-/// A prose dialect fault. `Syntax` is a parse or math fault (E022, shared with
-/// the HTML dialect); `Fence` is a fence fault carrying its own code — a bad
-/// modifier (E030) or a bare/unknown kind (E034).
+/// A prose dialect fault. `Syntax` is a parse or math fault (E022); `Fence` is a
+/// fence fault carrying its own code — a bad modifier (E030) or a bare/unknown
+/// kind (E034).
 #[derive(Debug)]
 pub enum MarkdownError {
     Syntax(String),
