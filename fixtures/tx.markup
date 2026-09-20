@@ -6,13 +6,13 @@
 @nl
 @text 
 @nl
-@text A tiny document in the *Markdown* dialect that exercises transclusion (§10). The
+@text A tiny document in the \emph{Markdown} dialect that exercises transclusion (§10). The
 @nl
-@text title, an intro, and the source section all live in one `@` chunk, so the node
+@text title, an intro, and the source section all live in one \code{@} chunk, so the node
 @nl
 @text boundary is the markdown heading, not the chunk. A later section pulls the source
 @nl
-@text in with `\transclude`, so the weave must cut the node at the heading, splice it in
+@text in with \code{\transclude}, so the weave must cut the node at the heading, splice it in
 @nl
 @text place, scope its ids, and link back to it.
 @nl
@@ -24,7 +24,7 @@
 @nl
 @text This section is the transclusion target. The title above it belongs to a
 @nl
-@text shallower node, so the copy must start here and leave the `h1` out. It owns a
+@text shallower node, so the copy must start here and leave the \code{h1} out. It owns a
 @nl
 @text small code chunk, so the transcluded copy must scope a code section's id too.
 @nl

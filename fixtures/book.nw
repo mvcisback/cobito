@@ -1,48 +1,56 @@
-@ <h1>Front matter</h1>
-<p>Everything before the first boundary is the index page, so this chunk
-lands on <code>index.html</code>. It refers forward to
-<a data-ref="fig:pipeline"></a> and to <a data-ref="eq:cost">the cost
-bound</a>, both of which live on a later page.</p>
+@ # Front matter
 
-@ <h1>Parsing</h1>
-<p>This chunk opens with an <code>h1</code>, so it starts a new page.
+Everything before the first boundary is the index page, so this chunk
+lands on \code{index.html}. It refers forward to \ref{fig:pipeline} and to
+the cost bound in \ref{eq:cost}, both of which live on a later page.
+
+@ # Parsing
+
+This chunk opens with an \code{h1}, so it starts a new page.
+
+```html-escape
 <aside class="sidenote">Sidenotes stay where the author put them; CSS
 floats them into the margin.</aside>
-The lexer is <a data-ref="chunk:lex a token"></a>.</p>
+```
 
-<h2 id="sec:lexing">Lexing</h2>
-<p>A second-level heading, which the nav tree picks up, and which the author
-labelled so it can be linked with a stable id.</p>
+The lexer is \ref{chunk:lex a token}.
 
-<figure id="fig:pipeline">
+## Lexing {#sec:lexing}
+
+A second-level heading, which the nav tree picks up, and which the author
+labelled so it can be linked with a stable id.
+
+```figure \label{fig:pipeline}
+\caption{The weave pipeline.}
 <img src="pipeline.svg" alt="the weave pipeline">
-<figcaption>The weave pipeline.</figcaption>
-</figure>
+```
 
 <<lex a token>>=
 tokens.push(next());
-@
+@ ### Cost
 
-@ <h3>Cost</h3>
-<p>A third-level heading. The bound is $O(n \log n)$.</p>
+A third-level heading. The bound is $O(n \log n)$.
 
-<div class="equation" id="eq:cost">
-\[ T(n) = 2T(n/2) + O(n) \]
-</div>
+```math \label{eq:cost}
+T(n) = 2T(n/2) + O(n)
+```
 
-<div class="equation" data-nonumber>
-\[ \text{this one opts out of numbering} \]
-</div>
+```math
+\text{this one opts out of numbering}
+```
 
-@ <h1>Codegen</h1>
-<p>A third page, so pagination has a middle with both neighbours.
-See also <a data-ref="fig:pipeline"></a>, referenced twice, and
-<a data-ref="sec:lexing"></a> back on the second page.</p>
+@ # Codegen
 
-<table id="tbl:opcodes">
-<caption>Opcodes.</caption>
-<tr><td>nop</td></tr>
-</table>
+A third page, so pagination has a middle with both neighbours.
+See also \ref{fig:pipeline}, referenced twice, and
+\ref{sec:lexing} back on the second page.
+
+```table \label{tbl:opcodes}
+\caption{Opcodes.}
+| Opcode |
+|--------|
+| nop |
+```
 
 <<src/main.rs>>=
 fn main() {

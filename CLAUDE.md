@@ -116,11 +116,17 @@ or they silently won't exist. Do not commit unless asked.
 - Docs-chunk prose has two dialects, set by `dialect` in `lit.toml`
   (`src/config.rs.nw` §6.1, `src/markdown.rs.nw` §6.4): `markdown` (default —
   CommonMark plus fenced-float directives) and
-  `html` (the raw-HTML escape hatch). The float directives are ```` ```math ````,
-  ```` ```figure ````, and ```` ```table ````, each taking an optional
-  `\label{ns:name}` on the fence line (`eq:`/`fig:`/`tbl:`; a mismatched
-  namespace is E030) and — for figure/table — a leading brace-balanced
-  `\caption{…}`. GFM pipe tables parse *only* inside a `table` fence. Inline
+  `html` (the raw-HTML escape hatch). A fence's info line is grammar-owned: a
+  **kind** from a closed set (`math`, `figure`, `table`, `html-escape`,
+  `verbatim`) then optional modifiers the peg grammar parses. A bare fence (no
+  kind) or an unknown kind is **E034** — a typo is an error, not a wrong render.
+  `math`/`figure`/`table` take an optional `\label{ns:name}` (`eq:`/`fig:`/`tbl:`;
+  a mismatched namespace or a modifier a kind does not accept is E030) and —
+  figure/table — a leading brace-balanced `\caption{…}`. `verbatim` is
+  preformatted text (`<pre><code>`, escaped body) with an optional `\lang{name}`
+  that adds a `language-name` class; `html-escape` passes its body through as the
+  one raw-HTML door and takes no modifiers. GFM pipe tables parse *only* inside a
+  `table` fence. Inline
   `\ref{ns:name}` lowers to the same `<a data-ref>` the resolver already handles
   (a `\ref` inside a backtick span is a documented no-op). Sidenote `<aside>`s
   stay raw-HTML islands. Markdown is a post-`markup` transform

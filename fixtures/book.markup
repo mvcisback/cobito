@@ -2,47 +2,59 @@
 @begin docs 0
 @end docs 0
 @begin docs 1
-@text <h1>Front matter</h1>
+@text # Front matter
 @nl
-@text <p>Everything before the first boundary is the index page, so this chunk
+@text 
 @nl
-@text lands on <code>index.html</code>. It refers forward to
+@text Everything before the first boundary is the index page, so this chunk
 @nl
-@text <a data-ref="fig:pipeline"></a> and to <a data-ref="eq:cost">the cost
+@text lands on \code{index.html}. It refers forward to \ref{fig:pipeline} and to
 @nl
-@text bound</a>, both of which live on a later page.</p>
+@text the cost bound in \ref{eq:cost}, both of which live on a later page.
 @nl
 @text 
 @nl
 @end docs 1
 @begin docs 2
-@text <h1>Parsing</h1>
+@text # Parsing
 @nl
-@text <p>This chunk opens with an <code>h1</code>, so it starts a new page.
+@text 
+@nl
+@text This chunk opens with an \code{h1}, so it starts a new page.
+@nl
+@text 
+@nl
+@text ```html-escape
 @nl
 @text <aside class="sidenote">Sidenotes stay where the author put them; CSS
 @nl
 @text floats them into the margin.</aside>
 @nl
-@text The lexer is <a data-ref="chunk:lex a token"></a>.</p>
+@text ```
 @nl
 @text 
 @nl
-@text <h2 id="sec:lexing">Lexing</h2>
-@nl
-@text <p>A second-level heading, which the nav tree picks up, and which the author
-@nl
-@text labelled so it can be linked with a stable id.</p>
+@text The lexer is \ref{chunk:lex a token}.
 @nl
 @text 
 @nl
-@text <figure id="fig:pipeline">
+@text ## Lexing {#sec:lexing}
+@nl
+@text 
+@nl
+@text A second-level heading, which the nav tree picks up, and which the author
+@nl
+@text labelled so it can be linked with a stable id.
+@nl
+@text 
+@nl
+@text ```figure \label{fig:pipeline}
+@nl
+@text \caption{The weave pipeline.}
 @nl
 @text <img src="pipeline.svg" alt="the weave pipeline">
 @nl
-@text <figcaption>The weave pipeline.</figcaption>
-@nl
-@text </figure>
+@text ```
 @nl
 @text 
 @nl
@@ -54,58 +66,60 @@
 @nl
 @end code 3
 @begin docs 4
+@text ### Cost
+@nl
 @text 
+@nl
+@text A third-level heading. The bound is $O(n \log n)$.
+@nl
+@text 
+@nl
+@text ```math \label{eq:cost}
+@nl
+@text T(n) = 2T(n/2) + O(n)
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ```math
+@nl
+@text \text{this one opts out of numbering}
+@nl
+@text ```
 @nl
 @text 
 @nl
 @end docs 4
 @begin docs 5
-@text <h3>Cost</h3>
-@nl
-@text <p>A third-level heading. The bound is $O(n \log n)$.</p>
+@text # Codegen
 @nl
 @text 
 @nl
-@text <div class="equation" id="eq:cost">
+@text A third page, so pagination has a middle with both neighbours.
 @nl
-@text \[ T(n) = 2T(n/2) + O(n) \]
+@text See also \ref{fig:pipeline}, referenced twice, and
 @nl
-@text </div>
+@text \ref{sec:lexing} back on the second page.
 @nl
 @text 
 @nl
-@text <div class="equation" data-nonumber>
+@text ```table \label{tbl:opcodes}
 @nl
-@text \[ \text{this one opts out of numbering} \]
+@text \caption{Opcodes.}
 @nl
-@text </div>
+@text | Opcode |
+@nl
+@text |--------|
+@nl
+@text | nop |
+@nl
+@text ```
 @nl
 @text 
 @nl
 @end docs 5
-@begin docs 6
-@text <h1>Codegen</h1>
-@nl
-@text <p>A third page, so pagination has a middle with both neighbours.
-@nl
-@text See also <a data-ref="fig:pipeline"></a>, referenced twice, and
-@nl
-@text <a data-ref="sec:lexing"></a> back on the second page.</p>
-@nl
-@text 
-@nl
-@text <table id="tbl:opcodes">
-@nl
-@text <caption>Opcodes.</caption>
-@nl
-@text <tr><td>nop</td></tr>
-@nl
-@text </table>
-@nl
-@text 
-@nl
-@end docs 6
-@begin code 7
+@begin code 6
 @defn src/main.rs
 @nl
 @text fn main() {
@@ -116,8 +130,8 @@
 @nl
 @text }
 @nl
-@end code 7
-@begin docs 8
+@end code 6
+@begin docs 7
 @text 
 @nl
-@end docs 8
+@end docs 7

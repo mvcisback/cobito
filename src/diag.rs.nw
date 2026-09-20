@@ -1,6 +1,6 @@
 # Diagnostics (§12)
 
-This module is the text behind `lit --explain <CODE>`. The prose is the
+This module is the text behind \code{lit --explain <CODE>}. The prose is the
 specification. The chunks after it are the implementation.
 
 ## One format for every error {#sec:9zhc}
@@ -8,7 +8,7 @@ specification. The chunks after it are the implementation.
 lit reports one diagnostic format from every stage. The format leads with a stable
 code and a one-line message, then points at the source, then adds any notes:
 
-```
+```verbatim
 error[E014]: duplicate label `fig:pipeline`
   --> parser.nw:118:6
    |
@@ -17,16 +17,16 @@ error[E014]: duplicate label `fig:pipeline`
 
 Four rules hold this together. Every error carries a stable code, so a test or a
 suppression can name one error and no other. Every source location comes from the
-IR's `@file` and `@line` tags — which is *why* lit consumes those tags even though
+IR's \code{@file} and \code{@line} tags — which is \emph{why} lit consumes those tags even though
 tangle handles the pragmas itself. A lint (a missing caption label, a chunk
 defined but never used, an empty docs chunk, a code chunk that resolves to no
-known language — W104, §5.5) is a warning, and `--deny-warnings` promotes every
-warning to an error for CI. And `lit --explain <CODE>` prints the long form, which
+known language — W104, §5.5) is a warning, and \code{--deny-warnings} promotes every
+warning to an error for CI. And \code{lit --explain <CODE>} prints the long form, which
 is the text this module holds.
 
 ## How the code implements this {#sec:ZCuq}
 
-The module is one function and its tests. `explain` is a single `match` over the
+The module is one function and its tests. \code{explain} is a single \code{match} over the
 code. The arms must stay in the order of the §12 registry, so this page groups
 them by theme without moving any arm out of registry order. Each group has prose
 that says what the codes in it share.
@@ -39,9 +39,9 @@ that says what the codes in it share.
 
 <<the explain tests>>
 @
-The function upper-cases the code first, so `e014` and `E014` reach the same arm.
-An unknown code returns `None`, which the caller turns into a "no such code"
-message. Every arm returns a `&'static str`, so the table costs nothing at run
+The function upper-cases the code first, so \code{e014} and \code{E014} reach the same arm.
+An unknown code returns \code{None}, which the caller turns into a "no such code"
+message. Every arm returns a \code{&'static str}, so the table costs nothing at run
 time.
 <<the explain function>>=
 /// The long form for a stable error code, or `None` if the code is unknown.
@@ -63,9 +63,9 @@ pub fn explain(code: &str) -> Option<&'static str> {
 }
 @
 These three codes are about the noweb boundary. E001 and E002 are the two ways
-`markup` itself can go wrong: a shape lit does not expect, or a failure to run.
+\code{markup} itself can go wrong: a shape lit does not expect, or a failure to run.
 E010 is a chunk use whose name has no matching definition — lit catches it
-before it shells out to `notangle`, which would fail on the same input.
+before it shells out to \code{notangle}, which would fail on the same input.
 <<markup and missing-chunk diagnostics>>=
 "E001" => "The `markup` IR contained a line lit could not parse. This means \
            the noweb version on PATH emits an IR shape lit was not built \
@@ -78,7 +78,7 @@ before it shells out to `notangle`, which would fail on the same input.
            the same input, so lit reports it before shelling out.",
 @
 These two codes guard the cross-reference system. Labels must be unique because
-references and `site.json` key on them (E014). A reference must point at a label
+references and \code{site.json} key on them (E014). A reference must point at a label
 that exists (E015).
 <<label and reference diagnostics>>=
 "E014" => "Two labels share one name (e.g. two `id=\"fig:x\"`). Labels must \
@@ -116,7 +116,7 @@ authored HTML.
            names the offending construct.",
 @
 These two codes come from the tangle path. E027 is a failed or missing
-`notangle`. E028 is a disk failure while writing a tangled root.
+\code{notangle}. E028 is a disk failure while writing a tangled root.
 <<tangle diagnostics>>=
 "E027" => "`notangle` could not be run or exited nonzero. It ships with \
            noweb — run inside the dev shell or wrapped package. A nonzero \
@@ -125,25 +125,33 @@ These two codes come from the tangle path. E027 is a failed or missing
            or an unwritable parent directory. The path and OS error are \
            included.",
 @
-This code is the manifest failure. `lit.toml` was present but could not be read
+This code is the manifest failure. \code{lit.toml} was present but could not be read
 or parsed. Removing it falls back to CLI-derived defaults.
 <<manifest diagnostics>>=
 "E029" => "`lit.toml` was present but could not be read or parsed. The \
            message carries the TOML parser's reason and location; fix the \
            manifest, or remove it to fall back to CLI-derived defaults.",
 @
-This code guards the fenced float directives (§6.4). A malformed `\label{…}` or
-`\caption{…}`, or a label namespace that does not match its fence, trips it. The
-namespace must match so the cross-reference machinery can find the label.
+These two codes guard the fenced blocks (§6.4). E030 is a malformed modifier on a
+known fence: a bad \code{\label{…}}, a bad \code{\caption{…}}, a label namespace that
+does not match its fence, or a \code{\lang}/\code{\label} on a fence that does not take
+it. The namespace must match so the cross-reference machinery can find the label.
+E034 is a fence whose kind is missing or unknown; the kind set is closed, so a typo
+is an error, not a wrong render.
 <<float-directive diagnostics>>=
-"E030" => "A `figure`/`table`/`math` fence had a malformed directive: an \
-           unterminated or mis-namespaced `\\label{…}`, an unterminated \
-           `\\caption{…}`, or unexpected text after the directive. The label \
-           namespace must match the fence (`fig:`/`tbl:`/`eq:`) so the \
+"E030" => "A fence had a malformed modifier: an unterminated or mis-namespaced \
+           `\\label{…}`, an unterminated `\\caption{…}`, a `\\lang{…}` on a fence \
+           that is not `verbatim`, or a `\\label` on a `verbatim` fence. A float \
+           label's namespace must match the fence (`fig:`/`tbl:`/`eq:`) so the \
            cross-reference machinery can find it.",
+"E034" => "A fenced block had no kind (a bare ```` ``` ````) or an unknown kind. \
+           The kinds are closed: `math`, `figure`, `table`, `html-escape`, or \
+           `verbatim`. Use `verbatim` (with an optional `\\lang{…}`) for plain \
+           preformatted text; a missing or misspelt kind is an error, not a \
+           silent fallback.",
 @
 These two codes come from the frozen-id lock (§7.1). E031 is a label with no
-frozen id during a `--locked` weave, which never mints. E032 is a lock file that
+frozen id during a \code{--locked} weave, which never mints. E032 is a lock file that
 could not be read, parsed, or written.
 <<lock diagnostics>>=
 "E031" => "A label carried by a float was not found in `lit.lock` while \
@@ -157,7 +165,7 @@ could not be read, parsed, or written.
            a way that corrupts its structure.",
 @
 The tests pin two properties: a few known codes explain and are case-insensitive,
-and an unknown code is `None`.
+and an unknown code is \code{None}.
 <<the explain tests>>=
 #[cfg(test)]
 mod tests {
@@ -169,6 +177,7 @@ mod tests {
         assert_eq!(explain("e014"), explain("E014"));
         assert!(explain("E029").unwrap().contains("lit.toml"));
         assert!(explain("E030").unwrap().contains("namespace"));
+        assert!(explain("E034").unwrap().contains("verbatim"));
         assert!(explain("E031").unwrap().contains("lit.lock"));
         assert!(explain("E032").unwrap().contains("lit.lock"));
     }

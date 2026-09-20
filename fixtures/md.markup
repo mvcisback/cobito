@@ -6,9 +6,9 @@
 @nl
 @text 
 @nl
-@text A tiny document authored in the *Markdown* dialect. It exercises the
+@text A tiny document authored in the \emph{Markdown} dialect. It exercises the
 @nl
-@text post-`markup` prose transform: paragraphs and **emphasis** become HTML, and the
+@text post-\code{markup} prose transform: paragraphs and \strong{emphasis} become HTML, and the
 @nl
 @text fenced float directives produce numbered, labelled equations, figures, and
 @nl
@@ -28,7 +28,7 @@
 @nl
 @text ```figure \label{fig:diagram}
 @nl
-@text \caption{A *schematic* of $E = mc^2$.}
+@text \caption{A \emph{schematic} of $E = mc^2$.}
 @nl
 @text <img src="diagram.svg" alt="mass to energy">
 @nl
@@ -44,9 +44,9 @@
 @nl
 @text |--------|------|
 @nl
-@text | `E`    | J    |
+@text | \code{E} | J  |
 @nl
-@text | `m`    | kg   |
+@text | \code{m} | kg |
 @nl
 @text ```
 @nl

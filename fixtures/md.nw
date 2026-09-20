@@ -1,7 +1,7 @@
 @ # Markdown fixture
 
-A tiny document authored in the *Markdown* dialect. It exercises the
-post-`markup` prose transform: paragraphs and **emphasis** become HTML, and the
+A tiny document authored in the \emph{Markdown} dialect. It exercises the
+post-\code{markup} prose transform: paragraphs and \strong{emphasis} become HTML, and the
 fenced float directives produce numbered, labelled equations, figures, and
 tables. The mass–energy relation is \ref{eq:mass}, sketched in
 \ref{fig:diagram} and tabulated in \ref{tbl:units}.
@@ -11,7 +11,7 @@ E = mc^2
 ```
 
 ```figure \label{fig:diagram}
-\caption{A *schematic* of $E = mc^2$.}
+\caption{A \emph{schematic} of $E = mc^2$.}
 <img src="diagram.svg" alt="mass to energy">
 ```
 
@@ -19,8 +19,8 @@ E = mc^2
 \caption{Symbols and their units.}
 | Symbol | Unit |
 |--------|------|
-| `E`    | J    |
-| `m`    | kg   |
+| \code{E} | J  |
+| \code{m} | kg |
 ```
 
 The inline tail $O(1)$ still renders. The code lives in

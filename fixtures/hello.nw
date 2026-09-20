@@ -1,29 +1,29 @@
-@ <h1>A tiny literate program</h1>
-<p>This fixture exercises the noweb constructs we care about.
-We call [[lex()]] in a loop, which runs in $O(n \log n)$ time.
-Note a tricky case: math with an angle bracket, $a < b$.</p>
+@ # A tiny literate program
+This fixture exercises the noweb constructs we care about.
+We call \code{lex()} in a loop, which runs in $O(n \log n)$ time.
+Note a tricky case: math with an angle bracket, $a < b$.
 
 <<lex a token>>=
 let c = <<next char>>;
 tokens.push(c);
 @ %def c
 
-@ <p>Chunk continuation: we append to the same chunk later.
-Also a quoted double-bracket case: [[v[[0]]]] and a literal
-dollar in prose: cost is \$5.</p>
+@ Chunk continuation: we append to the same chunk later.
+Also an inline code example: \code{tokens[0]} and a literal
+dollar in prose: cost is \$5.
 
 <<lex a token>>=
 count += 1;
 @
 
-@ <h2>The next char helper</h2>
-<p>A second-level heading, for the nav tree.</p>
+@ ## The next char helper
+A second-level heading, for the nav tree.
 
 <<next char>>=
 input.next().unwrap()
 @
 
-@ <p>Finally the root chunk, path-shaped.</p>
+@ Finally the root chunk, path-shaped.
 
 <<src/main.rs>>=
 fn main() {

@@ -1093,7 +1093,7 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
     let err = match render(
         &book(),
         &cache(),
-        Dialect::Html,
+        Dialect::Markdown,
         &lang_cfg,
         "",
         &mut lock,
@@ -1122,7 +1122,7 @@ fn id_at(html: &str, anchor: &str) -> String {
 
 /// The hello fixture opens with a single `<h1>`, so it is one `index` page.
 fn hello_html() -> String {
-    dev_render(&fixture(), Dialect::Html, "").all_html()
+    dev_render(&fixture(), Dialect::Markdown, "").all_html()
 }
 
 /// Drop only the `tok-*` highlight wrappers, keeping `.line`/`.chunk-name`
@@ -1198,7 +1198,7 @@ angle-bracket case survives as an entity rather than becoming a tag.
 <<math is rendered not left as a placeholder>>=
 #[test]
 fn math_is_rendered_not_left_as_placeholder() {
-    let site = dev_render(&fixture(), Dialect::Html, "");
+    let site = dev_render(&fixture(), Dialect::Markdown, "");
     let html = site.all_html();
     assert_eq!(site.math_count, 2);
     assert!(!html.contains("data-lit-math"));
@@ -1207,14 +1207,13 @@ fn math_is_rendered_not_left_as_placeholder() {
     assert!(!html.contains("<span>a < b</span>"));
 }
 @
-A quoted-code span in prose renders as an escaped inline code element, including
-the doubled-bracket case.
+A `\code{…}` span in prose renders as an escaped inline code element.
 <<quoted code renders as escaped code>>=
 #[test]
 fn quoted_code_renders_as_escaped_code() {
     let html = hello_html();
     assert!(html.contains("<code>lex()</code>"));
-    assert!(html.contains("<code>v[[0]]</code>"));
+    assert!(html.contains("<code>tokens[0]</code>"));
 }
 @
 An escaped dollar in prose survives to the output as a literal dollar sign, not the
@@ -1320,7 +1319,7 @@ The embed snippet passed to the render is injected into the page verbatim.
 <<an embed snippet is injected>>=
 #[test]
 fn embed_snippet_is_injected() {
-    let site = dev_render(&fixture(), Dialect::Html, "<script src=\"x.js\"></script>");
+    let site = dev_render(&fixture(), Dialect::Markdown, "<script src=\"x.js\"></script>");
     assert!(site.all_html().contains("<script src=\"x.js\"></script>"));
 }
 @
@@ -1328,8 +1327,8 @@ Two renders of the same input produce byte-identical HTML.
 <<output is byte deterministic>>=
 #[test]
 fn output_is_byte_deterministic() {
-    let a = dev_render(&book(), Dialect::Html, "");
-    let b = dev_render(&book(), Dialect::Html, "");
+    let a = dev_render(&book(), Dialect::Markdown, "");
+    let b = dev_render(&book(), Dialect::Markdown, "");
     assert_eq!(a.all_html(), b.all_html());
 }
 @
@@ -1338,7 +1337,7 @@ under one heading lands on that heading's page.
 <<the book splits into three pages>>=
 #[test]
 fn book_splits_into_three_pages_at_h1() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     let files: Vec<&str> = site.pages.iter().map(|p| p.meta.filename.as_str()).collect();
     assert_eq!(files, vec!["index.html", "parsing.html", "codegen.html"]);
     // The `lex a token` chunk was defined under Parsing, so it lands there.
@@ -1350,7 +1349,7 @@ A page-boundary heading becomes the page id and is stamped on the heading anchor
 <<a page-boundary heading becomes the page id>>=
 #[test]
 fn page_boundary_h1_becomes_the_page_id() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     assert!(site.pages[1].html.contains("<h1 id=\"parsing\">Parsing</h1>"));
     assert!(site.pages[0].html.contains("<h1 id=\"index\">Front matter</h1>"));
 }
@@ -1360,7 +1359,7 @@ the caption, with no sequential number anywhere; an opted-out equation keeps no 
 <<floats are identified by opaque id only>>=
 #[test]
 fn floats_are_identified_by_opaque_id_in_attributes_only() {
-    let html = dev_render(&book(), Dialect::Html, "").all_html();
+    let html = dev_render(&book(), Dialect::Markdown, "").all_html();
     // Each labeled float carries its frozen opaque id (§7.1) as data-id, and
     // its caption repeats the same id so CSS can draw "Figure <id>" once.
     let fig = id_at(&html, "fig-pipeline");
@@ -1392,7 +1391,7 @@ built from the target's opaque id, keeping author-supplied link text when presen
 <<cross-page refs are page qualified>>=
 #[test]
 fn cross_page_refs_are_page_qualified_and_get_generated_text() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     let fig = id_at(&site.pages[1].html, "fig-pipeline");
     // Front matter (index) refers forward to a figure and equation on later
     // pages; both hrefs must name the target page, and the generated text is
@@ -1400,9 +1399,12 @@ fn cross_page_refs_are_page_qualified_and_get_generated_text() {
     assert!(site.pages[0].html.contains(&format!(
         "<a data-ref=\"fig:pipeline\" href=\"parsing.html#fig-pipeline\">Figure {fig}</a>"
     )));
-    // The author supplied link text for the equation ref; keep it.
-    assert!(site.pages[0].html.contains(">the cost\nbound</a>")
-        || site.pages[0].html.contains("the cost"));
+    // The equation ref uses generated text ("Equation <id>"); the prose names
+    // the cost bound around it.
+    assert!(site.pages[0].html.contains("the cost"));
+    assert!(site.pages[0]
+        .html
+        .contains("<a data-ref=\"eq:cost\" href=\"parsing.html#eq-cost\">"));
     // Codegen refers back to the same figure on the Parsing page.
     assert!(site.pages[2]
         .html
@@ -1414,7 +1416,7 @@ attribute, and a cross-page reference back to it reuses the very same id.
 <<a labelled section carries a clickable uid>>=
 #[test]
 fn labelled_section_carries_a_clickable_opaque_uid() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     let parsing = &site.pages[1].html;
     // The `sec:lexing` heading leads with an empty <a> permalink whose opaque
     // id (§7.1) lives in data-id — drawn by CSS, never a text node.
@@ -1443,7 +1445,7 @@ definition is on the same page.
 <<a chunk ref links into code>>=
 #[test]
 fn chunk_ref_links_into_code() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     // `<a data-ref="chunk:lex a token">` on the Parsing page points at the
     // chunk's defining section (same page → a fragment link).
     assert!(site.pages[1]
@@ -1456,7 +1458,7 @@ its label anchor rather than its text slug.
 <<the nav tree is on every page>>=
 #[test]
 fn nav_tree_is_emitted_on_every_page() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     for page in &site.pages {
         assert!(page.html.contains("<nav"));
         // The author labelled this heading `sec:lexing`, so its anchor is the
@@ -1482,7 +1484,7 @@ nav tree uses.
 <<the sitemap lists every page>>=
 #[test]
 fn sitemap_lists_every_page() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     assert!(site.sitemap.contains("<h1>Sitemap</h1>"));
     // Every top-level page and a labelled child section both appear, through the
     // same hrefs the nav tree builds.
@@ -1498,7 +1500,7 @@ inline in the woven HTML.
 <<site json is current schema and hoists sidenotes>>=
 #[test]
 fn site_json_is_current_schema_and_hoists_sidenotes() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     let json = &site.json;
     assert_eq!(json.schema, site::SCHEMA);
     // The whole-doc JSON is serialized and re-round-trips through the
@@ -1524,7 +1526,7 @@ has no previous, and the last has no next.
 <<footer pagination links neighbours>>=
 #[test]
 fn footer_pagination_links_neighbours() {
-    let site = dev_render(&book(), Dialect::Html, "");
+    let site = dev_render(&book(), Dialect::Markdown, "");
     // Middle page has both neighbours.
     assert!(site.pages[1].html.contains("href=\"index.html\""));
     assert!(site.pages[1].html.contains("href=\"codegen.html\""));

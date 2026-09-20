@@ -15,7 +15,7 @@ E = mc^2
 ```
 
 ```figure \label{fig:demo}
-\caption{A *tiny* schematic.}
+\caption{A \emph{tiny} schematic.}
 <img src="demo.svg" alt="a demo">
 ```
 

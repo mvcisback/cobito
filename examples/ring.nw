@@ -12,11 +12,11 @@ index in \ref{eq:wrap}; the public surface is summarised in \ref{tbl:api}.
 
 @ ## State
 
-A ring buffer is a fixed array plus two cursors. We keep an explicit `len`
+A ring buffer is a fixed array plus two cursors. We keep an explicit \code{len}
 rather than only a head and tail, because with just two cursors a completely
 full buffer and a completely empty one look identical.<aside class="sidenote">The
 head/tail-only trick is to keep one slot permanently empty, trading a byte of
-capacity for the ability to tell full from empty. Carrying `len` is simpler to
+capacity for the ability to tell full from empty. Carrying \code{len} is simpler to
 read, which is what matters here.</aside>
 
 The capacity is a power of two so the wrap in \ref{eq:wrap} could
@@ -34,7 +34,7 @@ pub struct Ring {
 
 @ ## Indexing
 
-Logical position `i` counts from the oldest byte still in the buffer. It maps
+Logical position \code{i} counts from the oldest byte still in the buffer. It maps
 to a physical slot by adding the head and wrapping:
 
 ```math \label{eq:wrap}
@@ -51,17 +51,17 @@ The buffer exposes the four methods in \ref{tbl:api}. Reads and
 writes are $O(1)$; there is no allocation after construction.
 
 ```table \label{tbl:api}
-\caption{The public API of `Ring`.}
+\caption{The public API of \code{Ring}.}
 | Method    | Meaning                     |
 |-----------|-----------------------------|
-| `push`    | append a byte, if room      |
-| `pop`     | remove the oldest byte      |
-| `len`     | bytes currently held        |
-| `is_full` | whether `push` would fail   |
+| \code{push}    | append a byte, if room      |
+| \code{pop}     | remove the oldest byte      |
+| \code{len}     | bytes currently held        |
+| \code{is_full} | whether \code{push} would fail   |
 ```
 
 \ref{chunk:push a byte} writes into the tail slot and grows the
-length. It refuses to overwrite unread data, returning `false` when the buffer
+length. It refuses to overwrite unread data, returning \code{false} when the buffer
 is full.
 
 <<push a byte>>=
@@ -94,7 +94,7 @@ pub fn pop(&mut self) -> Option<u8> {
 @ ## Assembling the module
 
 Finally we compose the pieces into one file. The state defines the type; the
-operations and the two small predicates hang off it in a single `impl` block.
+operations and the two small predicates hang off it in a single \code{impl} block.
 
 <<src/ring.rs>>=
 <<buffer state>>

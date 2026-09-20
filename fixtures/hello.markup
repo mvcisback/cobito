@@ -2,17 +2,13 @@
 @begin docs 0
 @end docs 0
 @begin docs 1
-@text <h1>A tiny literate program</h1>
+@text # A tiny literate program
 @nl
-@text <p>This fixture exercises the noweb constructs we care about.
+@text This fixture exercises the noweb constructs we care about.
 @nl
-@text We call 
-@quote
-@text lex()
-@endquote
-@text  in a loop, which runs in $O(n \log n)$ time.
+@text We call \code{lex()} in a loop, which runs in $O(n \log n)$ time.
 @nl
-@text Note a tricky case: math with an angle bracket, $a < b$.</p>
+@text Note a tricky case: math with an angle bracket, $a < b$.
 @nl
 @text 
 @nl
@@ -34,15 +30,11 @@
 @nl
 @end docs 3
 @begin docs 4
-@text <p>Chunk continuation: we append to the same chunk later.
+@text Chunk continuation: we append to the same chunk later.
 @nl
-@text Also a quoted double-bracket case: 
-@quote
-@text v[[0]]
-@endquote
-@text  and a literal
+@text Also an inline code example: \code{tokens[0]} and a literal
 @nl
-@text dollar in prose: cost is \$5.</p>
+@text dollar in prose: cost is \$5.
 @nl
 @text 
 @nl
@@ -60,9 +52,9 @@
 @nl
 @end docs 6
 @begin docs 7
-@text <h2>The next char helper</h2>
+@text ## The next char helper
 @nl
-@text <p>A second-level heading, for the nav tree.</p>
+@text A second-level heading, for the nav tree.
 @nl
 @text 
 @nl
@@ -80,7 +72,7 @@
 @nl
 @end docs 9
 @begin docs 10
-@text <p>Finally the root chunk, path-shaped.</p>
+@text Finally the root chunk, path-shaped.
 @nl
 @text 
 @nl

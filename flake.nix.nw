@@ -1,7 +1,7 @@
 # The lit flake, as a literate program
 
 This page is the build file for lit. It is a literate program. lit tangles this
-page to make the `flake.nix` file in the root of the repository. The two files
+page to make the \code{flake.nix} file in the root of the repository. The two files
 are the same, byte for byte. A CI check tangles the page again on each run and
 compares the result. This makes sure that the two files stay the same.
 
@@ -11,14 +11,14 @@ highlighting (§5.5). The grammar gives color to this page.
 
 The checks below are long shell scripts. This page tells each one as its own set
 of chunks. The prose explains why each step exists. A shell script is not Nix, so
-a `[weave.chunk-lang]` map in `lit.toml` marks each script chunk as `bash` (§5.5,
+a \code{[weave.chunk-lang]} map in \code{lit.toml} marks each script chunk as \code{bash} (§5.5,
 tier 1). lit then gives the script chunks Bash color, and the Nix wrapper around
 them keeps Nix color. This is the reason the Bash grammar exists.
 
 A flake is one attribute set. This flake is one root chunk. The root chunk has a
-`description` and a pinned `nixpkgs` input. It also has an `outputs` function.
-The `outputs` function starts with a `let` block of two shared helpers. Then it
-gives the `packages`, `devShells`, and `checks`.
+\code{description} and a pinned \code{nixpkgs} input. It also has an \code{outputs} function.
+The \code{outputs} function starts with a \code{let} block of two shared helpers. Then it
+gives the \code{packages}, \code{devShells}, and \code{checks}.
 <<flake.nix>>=
 {
   description = "lit — a web-first literate programming system built on noweb";
@@ -52,9 +52,9 @@ gives the `packages`, `devShells`, and `checks`.
 @
 ## System iteration {#sec:kHIL}
 
-lit builds each output for the four systems in the list. `eachSystem` is the
-helper for this. It maps a function of `system` and `pkgs` across the list with
-`genAttrs`. You write `packages`, `devShells`, and `checks` one time. lit then
+lit builds each output for the four systems in the list. \code{eachSystem} is the
+helper for this. It maps a function of \code{system} and \code{pkgs} across the list with
+\code{genAttrs}. You write \code{packages}, \code{devShells}, and \code{checks} one time. lit then
 makes one instance for each system.
 <<system iteration>>=
 systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
@@ -64,8 +64,8 @@ eachSystem = f: nixpkgs.lib.genAttrs systems (system:
 ## The KaTeX pin {#sec:hwLv}
 
 lit renders math at weave time. The HTML from KaTeX is coupled to its own CSS
-and font metrics. The assets must match the version of KaTeX that the `katex`
-crate contains. The `katex` package in nixpkgs is a different version. A wrong
+and font metrics. The assets must match the version of KaTeX that the \code{katex}
+crate contains. The \code{katex} package in nixpkgs is a different version. A wrong
 version makes each equation show two times. The flake pins the version and the
 asset bundle together, by hash (§6.3).
 <<pinned katex assets>>=
@@ -81,13 +81,13 @@ katexAssets = pkgs: pkgs.fetchzip {
 @
 ## The builder {#sec:Mh65}
 
-One function builds a `lit` from a source tree. It is a `buildRustPackage` with
-one special step. The pipeline stages of noweb (`markup`, `nt`, and more) are in
-`lib/noweb`, not in `bin`. The `lit` binary needs these stages and the KaTeX
-assets at run time. `postFixup` wraps the binary. The wrap puts noweb on `PATH`
-and sets `LIT_KATEX_ASSETS` to the assets. The build of the package also runs the
+One function builds a \code{lit} from a source tree. It is a \code{buildRustPackage} with
+one special step. The pipeline stages of noweb (\code{markup}, \code{nt}, and more) are in
+\code{lib/noweb}, not in \code{bin}. The \code{lit} binary needs these stages and the KaTeX
+assets at run time. \code{postFixup} wraps the binary. The wrap puts noweb on \code{PATH}
+and sets \code{LIT_KATEX_ASSETS} to the assets. The build of the package also runs the
 hermetic cargo tests. The function takes the source tree, so the flake can build
-the same crate from the committed seed and from the tangled `.nw` sources.
+the same crate from the committed seed and from the tangled \code{.nw} sources.
 <<the lit builder>>=
 # One buildRustPackage, applied to two source trees (the bootstrap seed and
 # the tangled .nw). noweb's pipeline stages (markup, nt, ...) live in
@@ -107,19 +107,19 @@ mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
 @
 ## The package: two stages {#sec:UIDl}
 
-lit builds in two stages, so the literate `.nw` sources are the only source of
-lit (§13). The `.nw` files are the one authority. No `.rs` or `.css` file is
-committed; each one comes from a `.nw`.
+lit builds in two stages, so the literate \code{.nw} sources are the only source of
+lit (§13). The \code{.nw} files are the one authority. No \code{.rs} or \code{.css} file is
+committed; each one comes from a \code{.nw}.
 
-Stage 0 is `litBootstrap`. A tangler must exist before anything can be tangled,
-so stage 0 uses `notangle`, noweb's own tangler. `notangle` needs no `lit`, and
-it makes the same bytes `lit tangle` makes — the tangle differential check
-proves this (§15). `bootstrapSource` tangles every `.nw` with `notangle` into a
-tree that `cargo` can build. `litBootstrap` builds from that tree.
+Stage 0 is \code{litBootstrap}. A tangler must exist before anything can be tangled,
+so stage 0 uses \code{notangle}, noweb's own tangler. \code{notangle} needs no \code{lit}, and
+it makes the same bytes \code{lit tangle} makes — the tangle differential check
+proves this (§15). \code{bootstrapSource} tangles every \code{.nw} with \code{notangle} into a
+tree that \code{cargo} can build. \code{litBootstrap} builds from that tree.
 
-Stage 1 is `lit`, the default package. `litBootstrap` tangles every `.nw` again,
-this time with `lit` itself, into `litSource`. `lit` builds from `litSource`. The
-`selfhost` check proves `notangle` and `lit tangle` agree, byte for byte, so the
+Stage 1 is \code{lit}, the default package. \code{litBootstrap} tangles every \code{.nw} again,
+this time with \code{lit} itself, into \code{litSource}. \code{lit} builds from \code{litSource}. The
+\code{selfhost} check proves \code{notangle} and \code{lit tangle} agree, byte for byte, so the
 two tanglers make the same source and the loop is sound.
 <<the lit package>>=
 <<the bootstrap source tree>>
@@ -129,11 +129,11 @@ litBootstrap = mkLit pkgs bootstrapSource;
 # Stage 1: the default package, compiled from the lit-tangled .nw sources.
 lit = mkLit pkgs litSource;
 @
-`notangle` is the bootstrap tangler. It reads a `.nw` file and writes one root
-chunk to standard output. Each `src/*.rs.nw` holds one root named for its target
-(`src/main.rs`). `templates/lit.css.nw` holds two roots — the sheet and its
-imported palette — so both are listed. `notangle` cannot list a file's roots, so
-the flake names them; `lit tangle`, which can, takes over in stage 1.
+\code{notangle} is the bootstrap tangler. It reads a \code{.nw} file and writes one root
+chunk to standard output. Each \code{src/*.rs.nw} holds one root named for its target
+(\code{src/main.rs}). \code{templates/lit.css.nw} holds two roots — the sheet and its
+imported palette — so both are listed. \code{notangle} cannot list a file's roots, so
+the flake names them; \code{lit tangle}, which can, takes over in stage 1.
 <<the bootstrap source tree>>=
 # Stage 0 source: notangle every .nw into the .rs/.css cargo needs, with no
 # lit binary. notangle ships with noweb and makes the same bytes lit tangle
@@ -150,10 +150,10 @@ bootstrapSource = pkgs.runCommand "lit-bootstrap-src" { } ''
   notangle -R'templates/lit-syntax.css' templates/lit.css.nw > templates/lit-syntax.css
 '';
 @
-Stage 1 tangles each literate source again with `lit` itself. Each root chunk
-names its target file (`src/main.rs`, `templates/lit.css`), so `--out .` writes
-each tangled file into place. `lit tangle` enumerates every root of a file, so
-`templates/lit.css.nw` yields both the sheet and its palette from one call.
+Stage 1 tangles each literate source again with \code{lit} itself. Each root chunk
+names its target file (\code{src/main.rs}, \code{templates/lit.css}), so \code{--out .} writes
+each tangled file into place. \code{lit tangle} enumerates every root of a file, so
+\code{templates/lit.css.nw} yields both the sheet and its palette from one call.
 <<the tangled source tree>>=
 # Stage 1 tangles every .nw with lit, so the shipped binary compiles from a
 # tree lit itself made (§13). templates/lit.css is include_str!'d into the
@@ -169,11 +169,11 @@ litSource = pkgs.runCommand "lit-src" { } ''
 @
 ## The tangled flake, as an output {#sec:3OSt}
 
-This output makes the dogfood loop a file that you can build. `nix build .#flake`
-tangles `flake.nix.nw` with the new `lit` binary. It makes the same `flake.nix`
-that built this output. The loop is not circular. The build needs `lit`, and
-`lit` needs the committed `flake.nix` as its permanent bootstrap (§13).
-`checks.dogfood` compares the committed file with this output.
+This output makes the dogfood loop a file that you can build. \code{nix build .#flake}
+tangles \code{flake.nix.nw} with the new \code{lit} binary. It makes the same \code{flake.nix}
+that built this output. The loop is not circular. The build needs \code{lit}, and
+\code{lit} needs the committed \code{flake.nix} as its permanent bootstrap (§13).
+\code{checks.dogfood} compares the committed file with this output.
 
 <<the tangled flake output>>=
 # `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
@@ -188,13 +188,13 @@ flake = pkgs.runCommand "flake.nix" { } ''
 ## The dev shell {#sec:zQ5K}
 
 The dev shell has the Rust toolchain and noweb. It makes the same two changes to
-the environment that the wrapper makes in the package. With these changes, `cargo
-run` in `nix develop` behaves the same as the installed binary.
+the environment that the wrapper makes in the package. With these changes, \code{cargo
+run} in \code{nix develop} behaves the same as the installed binary.
 
-No `.rs` or `.css` is committed, so a fresh checkout has nothing for `cargo` to
+No \code{.rs} or \code{.css} is committed, so a fresh checkout has nothing for \code{cargo} to
 build. The shell hook bootstraps the tree the same way stage 0 does: if
-`src/main.rs` is absent, `notangle` tangles every module first. After that, edit
-the `.nw` and re-tangle with `lit tangle` as usual.
+\code{src/main.rs} is absent, \code{notangle} tangles every module first. After that, edit
+the \code{.nw} and re-tangle with \code{lit tangle} as usual.
 <<the dev shell>>=
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer noweb ];
@@ -215,7 +215,7 @@ default = pkgs.mkShell {
 @
 ## The checks {#sec:P3N3}
 
-`nix flake check` runs the full test set of lit. Each check is an independent
+\code{nix flake check} runs the full test set of lit. Each check is an independent
 derivation. Together the checks guard the build, byte-determinism, the frozen
 label lock, the tangle differential, and the noweb output.
 <<the checks>>=
@@ -239,7 +239,7 @@ label lock, the tangle differential, and the noweb output.
 @
 ### build {#sec:9hJs}
 
-This is the cheapest check. It builds the package. `buildRustPackage` also runs
+This is the cheapest check. It builds the package. \code{buildRustPackage} also runs
 the cargo tests. A green build shows that the unit tests passed. This check is
 one Nix expression, not a shell script, so it stays Nix.
 <<the build check>>=
@@ -250,7 +250,7 @@ build = self.packages.${system}.lit;
 
 This is the most important check. It weaves several documents two times each and
 compares the bytes. The JSON contract of §8 and the archival goal both need this
-property. The read-only Nix sandbox makes each weave use `--locked`. This also
+property. The read-only Nix sandbox makes each weave use \code{--locked}. This also
 shows that the frozen float ids stay the same across runs.
 
 The Nix wrapper is short. It names the derivation and hands the whole test to one
@@ -264,8 +264,8 @@ determinism = pkgs.runCommand "lit-determinism" { } ''
   <<determinism script>>
 '';
 @
-The script sets the `lit` path once and then runs each assertion group in order.
-A `touch` of the output at the end tells Nix that the check passed.
+The script sets the \code{lit} path once and then runs each assertion group in order.
+A \code{touch} of the output at the end tells Nix that the check passed.
 <<determinism script>>=
 cd ${self}
 lit=${self.packages.${system}.lit}/bin/lit
@@ -279,7 +279,7 @@ lit=${self.packages.${system}.lit}/bin/lit
 touch $out
 @
 This group is the core determinism act. It weaves the book fixture two times with
-`--archive` and diffs the two trees. `--archive` brings `site.json` and the
+\code{--archive} and diffs the two trees. \code{--archive} brings \code{site.json} and the
 per-page JSON into the diff. The group also confirms that the KaTeX assets are
 present.
 <<weave the book fixture, twice>>=
@@ -320,11 +320,11 @@ if grep -q 'data-number' $TMPDIR/a/parsing.html; then
   exit 1
 fi
 @
-This group checks the archival contract. The *content* must need no JavaScript
-(§6.3): a page may carry only the inline `nav-spy` navigation aid, no other script
-and no external `src`. Every content page carries that one aid. The `site.json`
+This group checks the archival contract. The \emph{content} must need no JavaScript
+(§6.3): a page may carry only the inline \code{nav-spy} navigation aid, no other script
+and no external \code{src}. Every content page carries that one aid. The \code{site.json}
 must use the frozen schema, give one file per page, and hoist sidenotes out of the
-prose into the margin (§8). The weaver must also emit one standalone `sitemap.html`
+prose into the margin (§8). The weaver must also emit one standalone \code{sitemap.html}
 that lists the whole nav tree, and every page footer must link to it.
 <<assert the archival contract>>=
 # §6.3 the content needs no JavaScript: the only script a page may carry is
@@ -395,7 +395,7 @@ diff -r $TMPDIR/mdfx-a $TMPDIR/mdfx-b
 grep -qE '<figure id="fig-diagram" data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
 grep -qE '<figcaption data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
 @
-This group checks syntax highlighting (§5.5). The `hl.nw` fixture has a Rust root
+This group checks syntax highlighting (§5.5). The \code{hl.nw} fixture has a Rust root
 and a Nix root. Each root pulls an abstract chunk in through a hole. The group
 confirms that both grammars ran, that the chunk-use hole stays outside any color
 span, and that the page carries no script but the nav-spy aid.
@@ -424,10 +424,10 @@ if grep '<script' $TMPDIR/hl-a/index.html | grep -qv '<script id="nav-spy">'; th
   exit 1
 fi
 @
-This group checks transclusion and the node model (§10). The `tx.nw` fixture puts
-a title, an intro, and the source heading in one `@` chunk, then transcludes the
+This group checks transclusion and the node model (§10). The \code{tx.nw} fixture puts
+a title, an intro, and the source heading in one \code{@} chunk, then transcludes the
 source into a later section. The group confirms that the copy is cut at the
-markdown heading — so the shallower `h1` stays out and the page keeps one `h1` —
+markdown heading — so the shallower \code{h1} stays out and the page keeps one \code{h1} —
 that the copy scopes its ids and links back to the canonical node, that the node
 runs across the following code chunk, and that nothing but the nav-spy aid is a
 script.
@@ -474,10 +474,10 @@ if grep -q '<script' $TMPDIR/tx-a/n/*.html; then
   exit 1
 fi
 @
-A float is a node too (§10). The `txf.nw` fixture labels an equation and a figure,
+A float is a node too (§10). The \code{txf.nw} fixture labels an equation and a figure,
 then transcludes each into a later section. This group confirms that a labelled
 float is cut from its section body by balancing its tag, gets its own page under
-`n/`, links to that page in context, and can be transcluded on its own.
+\code{n/}, links to that page in context, and can be transcluded on its own.
 <<assert float nodes>>=
 # §10 floats are nodes: txf.nw labels an equation and a figure, then
 # transcludes each into a later section. Weave twice, byte-diff, and
@@ -513,7 +513,7 @@ fi
 @
 ### lock {#sec:Vv1B}
 
-The committed `lit.lock` is the source of truth for the frozen id of each label.
+The committed \code{lit.lock} is the source of truth for the frozen id of each label.
 This check tests the read-only CLI on top of the lock. The Nix wrapper hands the
 work to one Bash chunk, which runs two assertion groups.
 <<the lock check>>=
@@ -526,7 +526,7 @@ lock = pkgs.runCommand "lit-lock" { } ''
   <<lock check script>>
 '';
 @
-The script sets the `lit` path and runs the two groups.
+The script sets the \code{lit} path and runs the two groups.
 <<lock check script>>=
 cd ${self}
 lit=${self.packages.${system}.lit}/bin/lit
@@ -534,8 +534,8 @@ lit=${self.packages.${system}.lit}/bin/lit
 <<assert the language resolver>>
 touch $out
 @
-This group tests the label side of the lock. `lit id` returns a four-character
-id. `lit labels` lists each label with its kind. A `sec:`-labelled heading is a
+This group tests the label side of the lock. \code{lit id} returns a four-character
+id. \code{lit labels} lists each label with its kind. A \code{sec:}-labelled heading is a
 first-class label. An unknown label gives a nonzero exit.
 <<assert the frozen label lock>>=
 $lit id fixtures/book.nw fig:pipeline | grep -qE '^[0-9A-Za-z]{4}$'
@@ -550,7 +550,7 @@ if $lit id fixtures/book.nw fig:nope; then
   exit 1
 fi
 @
-This group tests the highlighting resolver. `lit language` is the shared resolver
+This group tests the highlighting resolver. \code{lit language} is the shared resolver
 that the weaver and any editor plugin agree on (§5.5). A root resolves from its
 own extension. An abstract chunk resolves from the root that reaches it. An
 unknown chunk gives a nonzero exit, so a build can gate on it.
@@ -569,21 +569,21 @@ fi
 @
 ### section anchors {#sec:FT5y}
 
-Every section earns an opaque id (§7.1). `lit lock` auto-anchors an unlabelled
-`h2`/`h3`: it mints an id and writes a `{#sec:<id>}` anchor into the `.nw` source,
-in place, so the id survives a later reword. `lit lock` writes to the source, so
+Every section earns an opaque id (§7.1). \code{lit lock} auto-anchors an unlabelled
+\code{h2}/\code{h3}: it mints an id and writes a \code{{#sec:<id>}} anchor into the \code{.nw} source,
+in place, so the id survives a later reword. \code{lit lock} writes to the source, so
 this check first copies the fixture to a writable place — the Nix store is
 read-only. It then proves the round trip: the source gets the anchor, the lock
-gets a `Section` entry, the weave draws a permalink prefix, `lit rename-label`
-gives the id a human name without changing the id, and a second `lit lock` mints
+gets a \code{Section} entry, the weave draws a permalink prefix, \code{lit rename-label}
+gives the id a human name without changing the id, and a second \code{lit lock} mints
 nothing.
 <<the section-anchor check>>=
 section-anchors = pkgs.runCommand "lit-section-anchors" { } ''
   <<section-anchor check script>>
 '';
 @
-The script works on a writable copy of `sections.nw`, a Markdown-dialect fixture
-with three unlabelled headings (two `h2`, one `h3`).
+The script works on a writable copy of \code{sections.nw}, a Markdown-dialect fixture
+with three unlabelled headings (two \code{h2}, one \code{h3}).
 <<section-anchor check script>>=
 lit=${self.packages.${system}.lit}/bin/lit
 # `lit lock` edits the source in place, so work on a writable copy; the
@@ -632,8 +632,8 @@ touch $out
 @
 ### tangle differential {#sec:ATUX}
 
-`lit tangle` must make the same bytes as `notangle`. `--check` must be clean just
-after a tangle. `--check` must report drift after an edit. This check is also the
+\code{lit tangle} must make the same bytes as \code{notangle}. \code{--check} must be clean just
+after a tangle. \code{--check} must report drift after an edit. This check is also the
 acceptance test for the future Rust version of tangle (§11/§15). The Nix
 wrapper hands the work to one Bash chunk.
 <<the tangle check>>=
@@ -645,8 +645,8 @@ tangle = pkgs.runCommand "lit-tangle" { } ''
   <<tangle check script>>
 '';
 @
-The script tangles a fixture, diffs it against the `notangle` oracle, and then
-edits the output to confirm that `--check` reports the drift.
+The script tangles a fixture, diffs it against the \code{notangle} oracle, and then
+edits the output to confirm that \code{--check} reports the drift.
 <<tangle check script>>=
 lit=${self.packages.${system}.lit}/bin/lit
 nw=${self}/fixtures/hello.nw
@@ -666,9 +666,9 @@ touch $out
 @
 ### noweb drift guard {#sec:ETOA}
 
-This is a golden guard. The output of `markup` for the fixtures must not change
+This is a golden guard. The output of \code{markup} for the fixtures must not change
 across noweb or nixpkgs updates. If it changes, this diff shows the change. To
-correct it, make the affected `.markup` file again. The Nix wrapper hands the
+correct it, make the affected \code{.markup} file again. The Nix wrapper hands the
 work to one Bash chunk.
 <<the noweb-drift check>>=
 # Golden guard: `markup` output for the fixture corpus must not drift
@@ -678,8 +678,8 @@ noweb-drift = pkgs.runCommand "noweb-drift" { } ''
   <<noweb-drift script>>
 '';
 @
-The script walks every fixture and diffs its live `markup` output against the
-committed `.markup` file.
+The script walks every fixture and diffs its live \code{markup} output against the
+committed \code{.markup} file.
 <<noweb-drift script>>=
 cd ${self}
 for f in fixtures/*.nw; do
@@ -690,12 +690,12 @@ touch $out
 @
 ### reader {#sec:c8DE}
 
-This check guards the native reader (§4.1). The reader makes the `markup` event
+This check guards the native reader (§4.1). The reader makes the \code{markup} event
 stream in Rust, so lit reads its own source with no noweb process. The check runs
-both paths over every tracked `.nw` file — `lit dump-ir` uses the native reader,
-`lit dump-ir --oracle` runs noweb `markup` — and diffs the two event streams. They
+both paths over every tracked \code{.nw} file — \code{lit dump-ir} uses the native reader,
+\code{lit dump-ir --oracle} runs noweb \code{markup} — and diffs the two event streams. They
 must be identical. This is the full-corpus differential: the cargo tests pin only
-the fixtures, so this check covers `lit.nw`, the crate, and the flake itself, the
+the fixtures, so this check covers \code{lit.nw}, the crate, and the flake itself, the
 files that carry the single-bracket and cross-line-quote edge cases.
 <<the reader check>>=
 # Full-corpus differential (§4.1): the native reader (`lit dump-ir`) must
@@ -705,7 +705,7 @@ reader = pkgs.runCommand "lit-reader" { } ''
   <<reader script>>
 '';
 @
-The script walks every `.nw` file and diffs the native reader against the oracle.
+The script walks every \code{.nw} file and diffs the native reader against the oracle.
 <<reader script>>=
 lit=${self.packages.${system}.lit}/bin/lit
 cd ${self}
@@ -721,8 +721,8 @@ touch $out
 @
 ### dogfood {#sec:NJXp}
 
-This check closes the loop. `flake.nix.nw`, this page, is the flake as a literate
-program. `packages.flake` is the tangled output of this page. The Nix wrapper
+This check closes the loop. \code{flake.nix.nw}, this page, is the flake as a literate
+program. \code{packages.flake} is the tangled output of this page. The Nix wrapper
 hands the work to one Bash chunk, which runs two groups.
 <<the dogfood check>>=
 # Dogfood (§13): flake.nix.nw is this flake told as a literate program, and
@@ -732,7 +732,7 @@ dogfood = pkgs.runCommand "lit-dogfood" { } ''
   <<dogfood script>>
 '';
 @
-The script sets the `lit` path and runs the two groups.
+The script sets the \code{lit} path and runs the two groups.
 <<dogfood script>>=
 cd ${self}
 lit=${self.packages.${system}.lit}/bin/lit
@@ -740,7 +740,7 @@ lit=${self.packages.${system}.lit}/bin/lit
 <<assert lit highlights its own nix>>
 touch $out
 @
-This group closes the tangle loop. The committed `flake.nix` must equal the
+This group closes the tangle loop. The committed \code{flake.nix} must equal the
 tangled output. It then weaves this page two times and diffs the result, so the
 page is deterministic.
 <<assert the flake round-trips>>=
@@ -752,8 +752,8 @@ $lit weave --locked flake.nix.nw --out $TMPDIR/df-b
 diff -r $TMPDIR/df-a $TMPDIR/df-b
 @
 This group confirms that lit gives color to its own Nix. The Nix grammar colors
-an attribute path as a property and `let` as a keyword. A chunk-use hole stays
-inside its `.line` and never gets a color span. The page carries no script but the nav-spy aid.
+an attribute path as a property and \code{let} as a keyword. A chunk-use hole stays
+inside its \code{.line} and never gets a color span. The page carries no script but the nav-spy aid.
 <<assert lit highlights its own nix>>=
 # The Nix grammar coloured the page — an attribute path is a property and
 # `let` is a keyword — so lit self-hosts its own highlighter (§5.5).
@@ -773,13 +773,13 @@ fi
 @
 ### self-host {#sec:mxHP}
 
-This check closes the self-host loop for the crate (§13). Each `src/*.rs.nw` is
-one module of lit, and `templates/lit.css.nw` is its stylesheet, each told as a
-literate program. No `.rs` or `.css` file is committed, so there is nothing to
+This check closes the self-host loop for the crate (§13). Each \code{src/*.rs.nw} is
+one module of lit, and \code{templates/lit.css.nw} is its stylesheet, each told as a
+literate program. No \code{.rs} or \code{.css} file is committed, so there is nothing to
 diff a tangle against — except a second, independent tangler. This check tangles
-every module two ways, with `notangle` and with `lit` itself, and proves the two
+every module two ways, with \code{notangle} and with \code{lit} itself, and proves the two
 make the same bytes. That agreement is the whole safety of the bootstrap:
-`notangle` builds stage 0, `lit` builds stage 1, and because the two tanglers
+\code{notangle} builds stage 0, \code{lit} builds stage 1, and because the two tanglers
 agree the shipped binary compiles from the same source either way. The Nix
 wrapper hands the work to one Bash chunk.
 <<the selfhost check>>=

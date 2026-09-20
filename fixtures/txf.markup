@@ -36,7 +36,7 @@
 @nl
 @text ```figure \label{fig:demo}
 @nl
-@text \caption{A *tiny* schematic.}
+@text \caption{A \emph{tiny} schematic.}
 @nl
 @text <img src="demo.svg" alt="a demo">
 @nl

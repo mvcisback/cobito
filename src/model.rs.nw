@@ -541,9 +541,14 @@ mod tests {
     use crate::noweb::parse;
 
     const HELLO: &str = include_str!("../fixtures/hello.markup");
+    const QUOTE: &str = include_str!("../fixtures/quote.markup");
 
     fn hello() -> DocModel {
         build(&parse(HELLO).expect("fixture parses")).expect("fixture folds")
+    }
+
+    fn quote_doc() -> DocModel {
+        build(&parse(QUOTE).expect("fixture parses")).expect("fixture folds")
     }
 
     <<blank docs chunks are dropped>>
@@ -694,7 +699,7 @@ Quoted runs in prose become `Quote` spans, verbatim.
 <<quotes become prose spans>>=
 #[test]
 fn quotes_become_prose_spans() {
-    let m = hello();
+    let m = quote_doc();
     let quoted: Vec<&str> = m
         .sections
         .iter()
@@ -708,7 +713,10 @@ fn quotes_become_prose_spans() {
             _ => None,
         })
         .collect();
-    assert_eq!(quoted, vec!["lex()", "v[[0]]"]);
+    // The greedy match keeps inner brackets to the last `]]`.
+    assert!(quoted.contains(&"v[[0]]"));
+    // An empty quote makes an empty span.
+    assert!(quoted.iter().any(|q| q.is_empty()));
 }
 @
 A use with no matching definition is E010, located at the use site.

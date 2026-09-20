@@ -6,13 +6,13 @@
 @nl
 @text 
 @nl
-@text A small document in the *Markdown* dialect. It has unlabelled `h2` and `h3`
+@text A small document in the \emph{Markdown} dialect. It has unlabelled \code{h2} and
 @nl
-@text headings. `lit lock` auto-anchors each one: it mints an opaque id and writes a
+@text \code{h3} headings. \code{lit lock} auto-anchors each one: it mints an opaque id
 @nl
-@text `{#sec:<id>}` anchor into this source, in place. The weave then draws a clickable
+@text and writes a \code{{#sec:<id>}} anchor into this source, in place. The weave then
 @nl
-@text permalink prefix for the heading (§7.1).
+@text draws a clickable permalink prefix for the heading (§7.1).
 @nl
 @text 
 @nl
@@ -22,7 +22,7 @@
 @nl
 @text The lexer reads bytes and gives tokens. This heading has no author label, so
 @nl
-@text `lit lock` gives it one.
+@text \code{lit lock} gives it one.
 @nl
 @text 
 @nl
