@@ -4,21 +4,21 @@ This module is steps 3 through 5 of the prose pipeline (§6.2). It parses the
 now math-free prose, rewrites it, and serializes it. The prose after this is the
 specification. The chunks after the prose are the implementation.
 
-## Why lit needs an HTML parser {#sec:9k7W}
+## Why cob needs an HTML parser {#sec:9k7W}
 
-An early draft claimed the pipeline format lets lit avoid a parser. That claim
+An early draft claimed the pipeline format lets cob avoid a parser. That claim
 was wrong. This phase must find the `h1` boundaries for page splitting, add `id`
 attributes, number the figures and tables, rewrite the `data-ref` placeholders,
 and hoist the aside margin content. Each of these operations is tree surgery on
-the prose. Prose is HTML by this point, so lit must read HTML as a tree.
+the prose. Prose is HTML by this point, so cob must read HTML as a tree.
 
-lit uses `lol_html`, a streaming rewriter with CSS-selector handlers. The numbers
+cob uses `lol_html`, a streaming rewriter with CSS-selector handlers. The numbers
 are document-global, but each single rewrite is node-local. So two passes are
-enough: one pass collects the answers, the second pass stamps them in. lit never
+enough: one pass collects the answers, the second pass stamps them in. cob never
 builds a full DOM. This keeps the pass light.
 
 One wrinkle drives the shape of the code. `lol_html` fires a handler on the
-*start* tag. So lit computes a figure's number when the figure opens, then hands
+*start* tag. So cob computes a figure's number when the figure opens, then hands
 that number to the caption handler through a one-slot cell. The number must land
 on the caption element, because CSS `attr()` cannot read an ancestor's attribute
 (§7).
@@ -51,16 +51,16 @@ still holds.
 
 ## The annotation contract (§9) {#sec:9p9p}
 
-Commenting is not lit's job. It belongs to a separate tool, specced in
-`ANNOTATIONS.md`. What lit owes that tool is HTML it can anchor to, plus room in
-the layout to render. lit meets three obligations.
+Commenting is not cob's job. It belongs to a separate tool, specced in
+`ANNOTATIONS.md`. What cob owes that tool is HTML it can anchor to, plus room in
+the layout to render. cob meets three obligations.
 
 First, provenance. Every rendered section element carries its identity and its
-source coordinates, so an annotation on the woven page maps back to the `.nw`
+source coordinates, so an annotation on the woven page maps back to the `.cob`
 source that a review agent must patch:
 
 ```html
-<section class="code" id="sec-4" data-nw-file="parser.nw" data-nw-line="47"
+<section class="code" id="sec-4" data-nw-file="parser.cob" data-nw-line="47"
          data-chunk="lex a token">…</section>
 ```
 
@@ -70,7 +70,7 @@ survive a re-weave. KaTeX renders server-side (§6.3), so the text a selector se
 is final at page load.
 
 Third, margin room. Every section renders an empty margin slot that an annotation
-overlay may mount into. `lit.toml` can also inject an embed snippet into every
+overlay may mount into. `cob.toml` can also inject an embed snippet into every
 page, so a hosted annotator needs no code change. The archival site stays fully
 readable with the overlay absent — annotation is progressive enhancement by
 construction.
@@ -871,7 +871,7 @@ fn author_markup_outside_handlers_is_untouched() {
     let refs: Vec<ResolvedRef> = vec![];
     let label_ids = BTreeMap::new();
     let mut plan = Plan::new(&anchors, &[], &refs, &label_ids);
-    let src = "<p class='x'>a &amp; b <br> <span data-lit-math=\"0\"></span></p>";
+    let src = "<p class='x'>a &amp; b <br> <span data-cob-math=\"0\"></span></p>";
     assert_eq!(apply(src, &mut plan).unwrap(), src);
 }
 @

@@ -1,8 +1,8 @@
 # The stylesheet
 
-This is lit's stylesheet, told as a literate program (§13, §16). It
-tangles byte-identically to \code{templates/lit.css}, which the weaver embeds into
-every page. Weaving this file back shows lit highlighting its own CSS — the fourth
+This is cob's stylesheet, told as a literate program (§13, §16). It
+tangles byte-identically to \code{templates/cob.css}, which the weaver embeds into
+every page. Weaving this file back shows cob highlighting its own CSS — the fourth
 grammar, and the reason the CSS grammar exists.
 
 The design is Tufte-flavoured: a centred reading column with a wide right margin
@@ -20,11 +20,11 @@ specificity. The chunks below fill those layers in turn: the page frame and toke
 the grid layout and margin column, the components (numbering, cross-references,
 navigation, code chunks, inline code, tables), the highlight palette, and a last
 block of phone refinements. The palette lives
-in its own file, \code{lit-syntax.css}, which the main sheet imports with a CSS
+in its own file, \code{cob-syntax.css}, which the main sheet imports with a CSS
 \code{@import} at the top. The CSS spec permits a \code{@layer} ordering statement before
 \code{@import}, so the layer order is declared first; the import comes second, before any
 style rule with a block.
-<<templates/lit.css>>=
+<<templates/cob.css>>=
 <<the layer order and design tokens>>
 
 <<the grid page frame>>
@@ -61,7 +61,7 @@ two themes stay in one place. \code{color-scheme} tells the browser to match its
 — the scrollbar and the form controls — to the page.
 <<the layer order and design tokens>>=
 @layer base, layout, components, syntax;
-@import url('lit-syntax.css') layer(syntax);
+@import url('cob-syntax.css') layer(syntax);
 
 @layer base {
   /* Tufte-flavoured tokens (§16). A float's identity is drawn from its data-id
@@ -691,16 +691,16 @@ of copies and quote selectors.
   }
 }
 @
-The highlight palette lives in \code{lit-syntax.css} and is composed into the \code{syntax}
+The highlight palette lives in \code{cob-syntax.css} and is composed into the \code{syntax}
 layer by the \code{@import} above. Splitting it out lets authors swap the whole palette
 without touching the page chrome, and it shows how one CSS document can import
 another. The palette is pure classes over the existing bytes: no injected text, no
 script, so the copy-paste payload, the line numbers, and the quote selectors all
 survive. A chunk-use hole is never wrapped in one of these. Each class draws its
 colour from a \code{--tok-*} variable, so the light and the dark theme both set the palette
-in the base block of \code{lit.css}; a plain identifier keeps the default ink so it reads
+in the base block of \code{cob.css}; a plain identifier keeps the default ink so it reads
 as prose, not decoration.
-<<templates/lit-syntax.css>>=
+<<templates/cob-syntax.css>>=
 @layer syntax {
   /* --- Syntax highlighting (§5.5) --------------------------------------- *
    * Pure classes over the existing bytes: no injected text, no <script>, so the

@@ -1,20 +1,20 @@
-# The lit flake, as a literate program
+# The cob flake, as a literate program
 
-This page is the build file for lit. It is a literate program. lit tangles this
+This page is the build file for cob. It is a literate program. cob tangles this
 page to make two flakes: \code{flake.nix}, the \code{main}-branch build, and
 \code{flake.dist.nix}, which the release step writes as the \code{flake.nix} of the
 \code{tangled} snapshot. The committed \code{flake.nix} on \code{main} must match the tangled
 \code{flake.nix} root byte for byte; a CI check (\code{dogfood}) tangles the page again on
 each run and compares. This makes sure the two stay the same.
 
-This page is the first step in the self-host path of lit (§13). The Nix
-part of the toolchain is now a lit document. lit has a Nix grammar for syntax
+This page is the first step in the self-host path of cob (§13). The Nix
+part of the toolchain is now a cob document. cob has a Nix grammar for syntax
 highlighting (§5.5). The grammar gives color to this page.
 
 The checks below are long shell scripts. This page tells each one as its own set
 of chunks. The prose explains why each step exists. A shell script is not Nix, so
-a \code{[weave.chunk-lang]} map in \code{lit.toml} marks each script chunk as \code{bash} (§5.5,
-tier 1). lit then gives the script chunks Bash color, and the Nix wrapper around
+a \code{[weave.chunk-lang]} map in \code{cob.toml} marks each script chunk as \code{bash} (§5.5,
+tier 1). cob then gives the script chunks Bash color, and the Nix wrapper around
 them keeps Nix color. This is the reason the Bash grammar exists.
 
 This document tangles to **two** flakes, one per branch, from shared chunks. The
@@ -30,17 +30,21 @@ truth for the parts that do not differ.
 The \code{main} flake is one attribute set. It has a \code{description} and two inputs.
 \code{nixpkgs} is pinned. \code{seed} is the \code{tangled} release branch, pinned by tag: it
 holds the committed \code{.rs}/\code{.css} that a build on \code{main} compiles first, before
-\code{lit} tangles the \code{.nw} again (§13). \code{seed} is \code{flake = false} — lit reads its
+\code{cob} tangles the \code{.cob} again (§13). \code{seed} is \code{flake = false} — cob reads its
 tree, not its outputs. The \code{outputs} function starts with a \code{let} block of shared
 helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
 <<flake.nix>>=
 {
-  description = "lit — a web-first literate programming system";
+  description = "cobito — a web-first literate programming system";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  # The `tangled` release branch, pinned by tag: the committed .rs/.css seed a
-  # build on `main` (§13). A release retags `tangled` and bumps this ref.
-  inputs.seed = { url = "git+file:.?ref=refs/tags/v0.1.0"; flake = false; };
+  # The `tangled` release branch on the forge, pinned by tag: the committed
+  # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
+  # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
+  inputs.seed = {
+    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.0";
+    flake = false;
+  };
 
   outputs = { self, nixpkgs, seed }:
     let
@@ -48,13 +52,13 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
 
       <<pinned katex assets>>
 
-      <<the lit builder>>
+      <<the cob builder>>
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        <<the lit package>>
+        <<the cob package>>
         <<the tangled flake output>>
-        default = lit;
+        default = cob;
       });
 
       devShells = eachSystem (system: pkgs: {
@@ -71,14 +75,14 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
 
 The \code{dist} flake is what the \code{tangled} branch carries as its \code{flake.nix}. On
 \code{tangled} the \code{.rs}/\code{.css} are tracked, so this flake has no \code{seed} input and no
-tangle step: it just builds the committed tree with \code{mkLit self}. That keeps
+tangle step: it just builds the committed tree with \code{mkCob self}. That keeps
 \code{tangled} cleanly buildable on its own, with a \code{flake.lock} that pins only
 \code{nixpkgs} — no self-reference. It reuses the same shared helpers as the \code{main}
 flake. The build check compiles the crate and runs the hermetic tests, which is
 the whole point of a release snapshot: proof that these committed bytes build.
 <<flake.dist.nix>>=
 {
-  description = "lit — buildable release snapshot (the tangled branch)";
+  description = "cobito — buildable release snapshot (the tangled branch)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -88,13 +92,13 @@ the whole point of a release snapshot: proof that these committed bytes build.
 
       <<pinned katex assets>>
 
-      <<the lit builder>>
+      <<the cob builder>>
     in
     {
       packages = eachSystem (system: pkgs: rec {
         # The tree is already tangled: compile the committed .rs directly.
-        lit = mkLit pkgs self;
-        default = lit;
+        cob = mkCob pkgs self ./Cargo.lock;
+        default = cob;
       });
 
       devShells = eachSystem (system: pkgs: {
@@ -103,16 +107,16 @@ the whole point of a release snapshot: proof that these committed bytes build.
 
       checks = eachSystem (system: pkgs: {
         # Building the package also runs the hermetic cargo tests.
-        build = self.packages.${system}.lit;
+        build = self.packages.${system}.cob;
       });
     };
 }
 @
 ## System iteration {#sec:kHIL}
 
-lit builds each output for the four systems in the list. \code{eachSystem} is the
+cob builds each output for the four systems in the list. \code{eachSystem} is the
 helper for this. It maps a function of \code{system} and \code{pkgs} across the list with
-\code{genAttrs}. You write \code{packages}, \code{devShells}, and \code{checks} one time. lit then
+\code{genAttrs}. You write \code{packages}, \code{devShells}, and \code{checks} one time. cob then
 makes one instance for each system.
 <<system iteration>>=
 systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
@@ -121,7 +125,7 @@ eachSystem = f: nixpkgs.lib.genAttrs systems (system:
 @
 ## The KaTeX pin {#sec:hwLv}
 
-lit renders math at weave time. The HTML from KaTeX is coupled to its own CSS
+cob renders math at weave time. The HTML from KaTeX is coupled to its own CSS
 and font metrics. The assets must match the version of KaTeX that the \code{katex}
 crate contains. The \code{katex} package in nixpkgs is a different version. A wrong
 version makes each equation show two times. The flake pins the version and the
@@ -139,109 +143,135 @@ katexAssets = pkgs: pkgs.fetchzip {
 @
 ## The builder {#sec:Mh65}
 
-One function builds a \code{lit} from a source tree. It is a \code{buildRustPackage} with
-one special step. The \code{lit} binary reads and tangles \code{.nw} files natively (§4.1,
-§11), so it needs no noweb at run time — only the KaTeX assets for weave.
-\code{postFixup} wraps the binary to set \code{LIT_KATEX_ASSETS}. The build of the package
-also runs the hermetic cargo tests. The function takes the source tree, so the
-flake can build the same crate from the committed seed and from the tangled
-\code{.nw} sources.
-<<the lit builder>>=
+Two builders, for the two deployment shapes (§6.3). \code{mkCob} is the Nix build:
+a \code{buildRustPackage} whose \code{postFixup} wraps the binary to set
+\code{COB_KATEX_ASSETS} at the pinned store path, so the small binary reads the dist
+from the store at run time. The \code{cob} binary reads and tangles \code{.cob} files
+natively (§4.1, §11), so it needs no noweb — only the KaTeX assets for weave. The
+build also runs the hermetic cargo tests. It takes the source tree, so the flake
+builds the same crate from the committed seed and from the tangled \code{.cob}.
+<<the cob builder>>=
 # One buildRustPackage, applied to two source trees (the committed seed and
-# the freshly tangled .nw). lit reads and tangles .nw natively, so the binary
-# needs no noweb — only the KaTeX assets for weave.
-mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
-  pname = "lit";
+# the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
+# needs no noweb — only the KaTeX assets for weave, read from the store at run
+# time via the wrapper.
+mkCob = pkgs: src: lock: pkgs.rustPlatform.buildRustPackage {
+  pname = "cob";
   version = "0.1.0";
   inherit src;
-  cargoLock.lockFile = ./Cargo.lock;
+  # Each source tree carries its own lock, so a dependency change on `main` does
+  # not force a seed refresh — stage 0 builds the seed with the seed's lock.
+  cargoLock.lockFile = lock;
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postFixup = ''
-    wrapProgram $out/bin/lit \
-      --set LIT_KATEX_ASSETS ${katexAssets pkgs}
+    wrapProgram $out/bin/cob \
+      --set COB_KATEX_ASSETS ${katexAssets pkgs}
   '';
+};
+@
+\code{mkCobStatic} is the standalone build: a fully static musl binary
+(\code{pkgsStatic}) with the KaTeX dist baked in (feature \code{embed-assets}, from
+\code{COB_KATEX_ASSETS} at build time). It carries no wrapper and no store references,
+so the one file runs on any Linux box — this is the distribution artifact for
+non-Nix users. It skips the cargo tests; the Nix \code{build} check already runs them.
+<<the cob builder>>=
+# The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
+# dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
+# time). No wrapper, no store paths — one file that runs anywhere.
+mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+  pname = "cob";
+  version = "0.1.0";
+  inherit src;
+  cargoLock.lockFile = lock;
+  buildFeatures = [ "embed-assets" ];
+  # include_bytes! reads this at build time; the pin lives in the flake (§6.3).
+  COB_KATEX_ASSETS = katexAssets pkgs;
+  # Tests are covered by the Nix `build` check; keep the static build lean.
+  doCheck = false;
 };
 @
 ## The package: two stages {#sec:UIDl}
 
-lit builds in two stages, so the literate \code{.nw} sources stay the one authority
+cob builds in two stages, so the literate \code{.cob} sources stay the one authority
 on \code{main} (§13). On \code{main} no \code{.rs} or \code{.css} is committed; each comes from a
-\code{.nw}. But a tangler must exist before anything can be tangled, and lit's tangler
+\code{.cob}. But a tangler must exist before anything can be tangled, and cob's tangler
 is now native (§11) — there is no noweb to seed with. The \code{seed} input closes
 that gap: it is the \code{tangled} release branch, which does commit the \code{.rs}/\code{.css}.
 
-Stage 0 is \code{litBootstrap}, built straight from the \code{seed} — the committed \code{.rs}
-of the pinned \code{tangled} snapshot. Stage 1 is \code{lit}, the default package:
-\code{litBootstrap} tangles every \code{.nw} with lit itself into \code{litSource}, and \code{lit}
-builds from that. The \code{selfhost} check proves \code{lit tangle} reproduces \code{litSource}
-byte for byte, so lit is a fixed point of its own tangler and the loop is sound.
-<<the lit package>>=
-# Stage 0: build lit from the seed — the committed .rs of the pinned tangled
+Stage 0 is \code{cobBootstrap}, built straight from the \code{seed} — the committed \code{.rs}
+of the pinned \code{tangled} snapshot. Stage 1 is \code{cob}, the default package:
+\code{cobBootstrap} tangles every \code{.cob} with cob itself into \code{cobSource}, and \code{cob}
+builds from that. The \code{selfhost} check proves \code{cob tangle} reproduces \code{cobSource}
+byte for byte, so cob is a fixed point of its own tangler and the loop is sound.
+<<the cob package>>=
+# Stage 0: build cob from the seed — the committed .rs of the pinned tangled
 # snapshot. This is why `main` needs no tangler of its own to start.
-litBootstrap = mkLit pkgs seed;
+cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock");
 <<the tangled source tree>>
-# Stage 1: the default package, compiled from the lit-tangled .nw sources.
-lit = mkLit pkgs litSource;
+# Stage 1: the default package, compiled from the cob-tangled .cob sources.
+cob = mkCob pkgs cobSource ./Cargo.lock;
+# The standalone single static binary (embedded KaTeX), from the same tree.
+static = mkCobStatic pkgs cobSource ./Cargo.lock;
 @
-Stage 1 tangles each literate source again with \code{lit} itself. Each root chunk
-names its target file (\code{src/main.rs}, \code{templates/lit.css}), so \code{--out .} writes
-each tangled file into place. \code{lit tangle} enumerates every root of a file, so
-\code{templates/lit.css.nw} yields both the sheet and its palette from one call. This
-runs no noweb — lit's tangler is native (§11).
+Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
+names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
+each tangled file into place. \code{cob tangle} enumerates every root of a file, so
+\code{templates/cob.css.cob} yields both the sheet and its palette from one call. This
+runs no noweb — cob's tangler is native (§11).
 <<the tangled source tree>>=
-# Stage 1 tangles every .nw with lit (natively, no noweb), so the shipped
-# binary compiles from a tree lit itself made (§13). templates/lit.css is
+# Stage 1 tangles every .cob with cob (natively, no noweb), so the shipped
+# binary compiles from a tree cob itself made (§13). templates/cob.css is
 # include_str!'d into the weaver, so it and its palette are tangled here too.
-litSource = pkgs.runCommand "lit-src" { } ''
+cobSource = pkgs.runCommand "cob-src" { } ''
   cp -r ${self} $out
   chmod -R +w $out
   cd $out
-  for nw in src/*.rs.nw templates/lit.css.nw; do
-    ${litBootstrap}/bin/lit tangle "$nw" --out .
+  for nw in src/*.rs.cob templates/cob.css.cob; do
+    ${cobBootstrap}/bin/cob tangle "$nw" --out .
   done
 '';
 @
 ## The tangled flake, as an output {#sec:3OSt}
 
 This output makes the dogfood loop a file that you can build. \code{nix build .#flake}
-tangles \code{flake.nix.nw} with the new \code{lit} binary. It makes the same \code{flake.nix}
-that built this output. The loop is not circular. The build needs \code{lit}, and
-\code{lit} needs the committed \code{flake.nix} as its permanent bootstrap (§13).
+tangles \code{flake.nix.cob} with the new \code{cob} binary. It makes the same \code{flake.nix}
+that built this output. The loop is not circular. The build needs \code{cob}, and
+\code{cob} needs the committed \code{flake.nix} as its permanent bootstrap (§13).
 \code{checks.dogfood} compares the committed file with this output.
 
 <<the tangled flake output>>=
-# `nix build .#flake` re-tangles flake.nix.nw and emits the flake.nix this
+# `nix build .#flake` re-tangles flake.nix.cob and emits the flake.nix this
 # very output was built from — the dogfood loop as a buildable artifact
 # (§13). checks.dogfood diffs the committed file against this.
 flake = pkgs.runCommand "flake.nix" { } ''
   cd ${self}
-  ${lit}/bin/lit tangle flake.nix.nw --out $TMPDIR
+  ${cob}/bin/cob tangle flake.nix.cob --out $TMPDIR
   cp $TMPDIR/flake.nix $out
 '';
 @
 ## The dev shell {#sec:zQ5K}
 
-The dev shell has the Rust toolchain, and no noweb — lit needs none. It sets
-\code{LIT_KATEX_ASSETS} the same as the package wrapper, so \code{cargo run} in \code{nix
+The dev shell has the Rust toolchain, and no noweb — cob needs none. It sets
+\code{COB_KATEX_ASSETS} the same as the package wrapper, so \code{cargo run} in \code{nix
 develop} behaves like the installed binary.
 
 On \code{main} no \code{.rs} or \code{.css} is committed, so a fresh checkout has nothing for
 \code{cargo} to build. The shell hook seeds the generated tree from the pinned
 \code{tangled} snapshot (\code{seed}) once, if \code{src/main.rs} is absent. That is enough to
-build \code{lit}; after that, edit the \code{.nw} and re-tangle with \code{lit tangle} to refresh
+build \code{cob}; after that, edit the \code{.cob} and re-tangle with \code{cob tangle} to refresh
 from the current sources.
 <<the dev shell>>=
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
-    export LIT_KATEX_ASSETS="${katexAssets pkgs}"
+    export COB_KATEX_ASSETS="${katexAssets pkgs}"
     # On `main` the .rs/.css are generated and gitignored (§13). Seed them from
     # the pinned tangled snapshot so cargo has something to build; then
-    # `lit tangle` refreshes from the current .nw.
+    # `cob tangle` refreshes from the current .cob.
     if [ ! -f src/main.rs ]; then
-      echo "lit: seeding generated .rs/.css from the tangled snapshot; run 'lit tangle' to refresh"
+      echo "cob: seeding generated .rs/.css from the tangled snapshot; run 'cob tangle' to refresh"
       cp ${seed}/src/*.rs src/
-      cp ${seed}/templates/lit.css ${seed}/templates/lit-syntax.css templates/
+      cp ${seed}/templates/cob.css ${seed}/templates/cob-syntax.css templates/
     fi
   '';
 };
@@ -253,13 +283,13 @@ for anyone who wants to build or hack the snapshot directly.
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
-    export LIT_KATEX_ASSETS="${katexAssets pkgs}"
+    export COB_KATEX_ASSETS="${katexAssets pkgs}"
   '';
 };
 @
 ## The checks {#sec:P3N3}
 
-\code{nix flake check} runs the full test set of lit. Each check is an independent
+\code{nix flake check} runs the full test set of cob. Each check is an independent
 derivation. Together the checks guard the build, byte-determinism, the frozen
 label lock, the tangle goldens, and the native reader against its frozen
 \code{markup} goldens. No check runs noweb — the goldens are the oracle now.
@@ -287,7 +317,7 @@ the cargo tests. A green build shows that the unit tests passed. This check is
 one Nix expression, not a shell script, so it stays Nix.
 <<the build check>>=
 # Building the package also runs the (hermetic) cargo tests.
-build = self.packages.${system}.lit;
+build = self.packages.${system}.cob;
 @
 ### determinism {#sec:dNbo}
 
@@ -303,15 +333,15 @@ group of assertions. Each group has its own prose below.
 # Weave twice, compare bytes. Determinism is the property §8's JSON
 # contract and the archival goal both rest on. The book fixture also
 # exercises M2: page splitting, cross-page refs, and numbering.
-determinism = pkgs.runCommand "lit-determinism" { } ''
+determinism = pkgs.runCommand "cob-determinism" { } ''
   <<determinism script>>
 '';
 @
-The script sets the \code{lit} path once and then runs each assertion group in order.
+The script sets the \code{cob} path once and then runs each assertion group in order.
 A \code{touch} of the output at the end tells Nix that the check passed.
 <<determinism script>>=
 cd ${self}
-lit=${self.packages.${system}.lit}/bin/lit
+cob=${self.packages.${system}.cob}/bin/cob
 <<weave the book fixture, twice>>
 <<assert the opaque-id scheme>>
 <<assert the archival contract>>
@@ -327,12 +357,12 @@ per-page JSON into the diff. The group also confirms that the KaTeX assets are
 present.
 <<weave the book fixture, twice>>=
 # The Nix sandbox is read-only, so every weave runs `--locked`: it reads
-# the committed lit.lock and never mints (§7.1). This also proves the
+# the committed cob.lock and never mints (§7.1). This also proves the
 # frozen ids are stable across runs — the whole point of the lock.
 # --archive brings site.json + per-page JSON under the byte-diff too,
 # which is the whole point of §8's determinism requirement.
-$lit weave --locked --archive fixtures/book.nw --out $TMPDIR/a
-$lit weave --locked --archive fixtures/book.nw --out $TMPDIR/b
+$cob weave --locked --archive fixtures/book.cob --out $TMPDIR/a
+$cob weave --locked --archive fixtures/book.cob --out $TMPDIR/b
 diff -r $TMPDIR/a $TMPDIR/b
 test -s $TMPDIR/a/katex/katex.min.css
 grep -q 'katex-mathml' $TMPDIR/a/parsing.html
@@ -401,19 +431,19 @@ fi
 test -f $TMPDIR/a/sitemap.html
 grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
 grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
-# The syntax palette is imported by lit.css; both files must be in the output.
-test -f $TMPDIR/a/lit-syntax.css
+# The syntax palette is imported by cob.css; both files must be in the output.
+test -f $TMPDIR/a/cob-syntax.css
 @
 This group checks the Markdown dialect (§6.4). It weaves two Markdown documents
 two times each and diffs them. It confirms that prose became HTML and that the
 fenced float directives made a table, an equation, and a figure, each with its
 own opaque id.
 <<assert the markdown dialect>>=
-# §6.4 Markdown dialect: ring.nw is authored in CommonMark (the default
-# dialect, so no lit.toml needed). Weave twice, byte-diff, and confirm
+# §6.4 Markdown dialect: ring.cob is authored in CommonMark (the default
+# dialect, so no cob.toml needed). Weave twice, byte-diff, and confirm
 # prose actually became HTML rather than passing through literally.
-$lit weave --locked examples/ring.nw --out $TMPDIR/md-a
-$lit weave --locked examples/ring.nw --out $TMPDIR/md-b
+$cob weave --locked examples/ring.cob --out $TMPDIR/md-a
+$cob weave --locked examples/ring.cob --out $TMPDIR/md-b
 diff -r $TMPDIR/md-a $TMPDIR/md-b
 grep -q '<p>' $TMPDIR/md-a/index.html
 grep -q 'class="equation"' $TMPDIR/md-a/index.html
@@ -429,25 +459,25 @@ if grep '<script' $TMPDIR/md-a/index.html | grep -qv '<script id="nav-spy">'; th
   echo "Markdown weave emitted a script other than the nav-spy aid; math must render at weave time" >&2
   exit 1
 fi
-# The md.nw fixture additionally exercises the ```figure``` fence: a real
+# The md.cob fixture additionally exercises the ```figure``` fence: a real
 # <figure> carrying its opaque id and its raw-HTML body passed through,
 # deterministically.
-$lit weave --locked fixtures/md.nw --out $TMPDIR/mdfx-a
-$lit weave --locked fixtures/md.nw --out $TMPDIR/mdfx-b
+$cob weave --locked fixtures/md.cob --out $TMPDIR/mdfx-a
+$cob weave --locked fixtures/md.cob --out $TMPDIR/mdfx-b
 diff -r $TMPDIR/mdfx-a $TMPDIR/mdfx-b
 grep -qE '<figure id="fig-diagram" data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
 grep -qE '<figcaption data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
 @
-This group checks syntax highlighting (§5.5). The \code{hl.nw} fixture has a Rust root
+This group checks syntax highlighting (§5.5). The \code{hl.cob} fixture has a Rust root
 and a Nix root. Each root pulls an abstract chunk in through a hole. The group
 confirms that both grammars ran, that the chunk-use hole stays outside any color
 span, and that the page carries no script but the nav-spy aid.
 <<assert syntax highlighting>>=
-# §5.5 syntax highlighting: hl.nw has a Rust root and a Nix root, each
+# §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
 # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
 # and confirm the coloring is deterministic and structurally sound.
-$lit weave --locked fixtures/hl.nw --out $TMPDIR/hl-a
-$lit weave --locked fixtures/hl.nw --out $TMPDIR/hl-b
+$cob weave --locked fixtures/hl.cob --out $TMPDIR/hl-a
+$cob weave --locked fixtures/hl.cob --out $TMPDIR/hl-b
 diff -r $TMPDIR/hl-a $TMPDIR/hl-b
 # Both grammars ran: `fn`/`let` are Rust keywords; a Nix attribute path
 # is a property. A string token proves literals color in either.
@@ -467,7 +497,7 @@ if grep '<script' $TMPDIR/hl-a/index.html | grep -qv '<script id="nav-spy">'; th
   exit 1
 fi
 @
-This group checks transclusion and the node model (§10). The \code{tx.nw} fixture puts
+This group checks transclusion and the node model (§10). The \code{tx.cob} fixture puts
 a title, an intro, and the source heading in one \code{@} chunk, then transcludes the
 source into a later section. The group confirms that the copy is cut at the
 markdown heading — so the shallower \code{h1} stays out and the page keeps one \code{h1} —
@@ -475,11 +505,11 @@ that the copy scopes its ids and links back to the canonical node, that the node
 runs across the following code chunk, and that nothing but the nav-spy aid is a
 script.
 <<assert transclusion>>=
-# §10 transclusion: tx.nw puts a title, an intro, and the source heading
+# §10 transclusion: tx.cob puts a title, an intro, and the source heading
 # in one @ chunk, then transcludes the source into a later section. Weave
 # twice, byte-diff, and confirm the node model and scoping are sound.
-$lit weave --locked fixtures/tx.nw --out $TMPDIR/tx-a
-$lit weave --locked fixtures/tx.nw --out $TMPDIR/tx-b
+$cob weave --locked fixtures/tx.cob --out $TMPDIR/tx-a
+$cob weave --locked fixtures/tx.cob --out $TMPDIR/tx-b
 diff -r $TMPDIR/tx-a $TMPDIR/tx-b
 # The node is spliced as a transclusion section whose chrome links back to
 # the canonical anchor with the heading text.
@@ -517,16 +547,16 @@ if grep -q '<script' $TMPDIR/tx-a/n/*.html; then
   exit 1
 fi
 @
-A float is a node too (§10). The \code{txf.nw} fixture labels an equation and a figure,
+A float is a node too (§10). The \code{txf.cob} fixture labels an equation and a figure,
 then transcludes each into a later section. This group confirms that a labelled
 float is cut from its section body by balancing its tag, gets its own page under
 \code{n/}, links to that page in context, and can be transcluded on its own.
 <<assert float nodes>>=
-# §10 floats are nodes: txf.nw labels an equation and a figure, then
+# §10 floats are nodes: txf.cob labels an equation and a figure, then
 # transcludes each into a later section. Weave twice, byte-diff, and
 # confirm a float is cut, paged, linked, and transcludable.
-$lit weave --locked fixtures/txf.nw --out $TMPDIR/txf-a
-$lit weave --locked fixtures/txf.nw --out $TMPDIR/txf-b
+$cob weave --locked fixtures/txf.cob --out $TMPDIR/txf-a
+$cob weave --locked fixtures/txf.cob --out $TMPDIR/txf-b
 diff -r $TMPDIR/txf-a $TMPDIR/txf-b
 # Two heading nodes and two float nodes each earn a standalone page under n/.
 test "$(ls $TMPDIR/txf-a/n/*.html | wc -l)" -eq 4
@@ -556,100 +586,100 @@ fi
 @
 ### lock {#sec:Vv1B}
 
-The committed \code{lit.lock} is the source of truth for the frozen id of each label.
+The committed \code{cob.lock} is the source of truth for the frozen id of each label.
 This check tests the read-only CLI on top of the lock. The Nix wrapper hands the
 work to one Bash chunk, which runs two assertion groups.
 <<the lock check>>=
-# §7.1 the committed lit.lock is the source of truth. If a float were
-# added without running `lit lock` and committing the grown lock, a
+# §7.1 the committed cob.lock is the source of truth. If a float were
+# added without running `cob lock` and committing the grown lock, a
 # `--locked` weave would trip E031 — so a green `determinism` check above
 # already proves the lock is complete. Here we exercise the read-only CLI
-# surface: `lit id` returns a four-char base62 id, `lit labels` lists them.
-lock = pkgs.runCommand "lit-lock" { } ''
+# surface: `cob id` returns a four-char base62 id, `cob labels` lists them.
+lock = pkgs.runCommand "cob-lock" { } ''
   <<lock check script>>
 '';
 @
-The script sets the \code{lit} path and runs the two groups.
+The script sets the \code{cob} path and runs the two groups.
 <<lock check script>>=
 cd ${self}
-lit=${self.packages.${system}.lit}/bin/lit
+cob=${self.packages.${system}.cob}/bin/cob
 <<assert the frozen label lock>>
 <<assert the language resolver>>
 touch $out
 @
-This group tests the label side of the lock. \code{lit id} returns a four-character
-id. \code{lit labels} lists each label with its kind. A \code{sec:}-labelled heading is a
+This group tests the label side of the lock. \code{cob id} returns a four-character
+id. \code{cob labels} lists each label with its kind. A \code{sec:}-labelled heading is a
 first-class label. An unknown label gives a nonzero exit.
 <<assert the frozen label lock>>=
-$lit id fixtures/book.nw fig:pipeline | grep -qE '^[0-9A-Za-z]{4}$'
-$lit labels examples/ring.nw | grep -qE '^eq:wrap\s+[0-9A-Za-z]{4}\s+Equation$'
+$cob id fixtures/book.cob fig:pipeline | grep -qE '^[0-9A-Za-z]{4}$'
+$cob labels examples/ring.cob | grep -qE '^eq:wrap\s+[0-9A-Za-z]{4}\s+Equation$'
 # §7.1 a `sec:`-labelled heading is a first-class label: it has an id
 # and lists with kind Section, exactly like a float.
-$lit id fixtures/book.nw sec:lexing | grep -qE '^[0-9A-Za-z]{4}$'
-$lit labels fixtures/book.nw | grep -qE '^sec:lexing\s+[0-9A-Za-z]{4}\s+Section$'
+$cob id fixtures/book.cob sec:lexing | grep -qE '^[0-9A-Za-z]{4}$'
+$cob labels fixtures/book.cob | grep -qE '^sec:lexing\s+[0-9A-Za-z]{4}\s+Section$'
 # An unknown label is a nonzero exit, not a silent empty line.
-if $lit id fixtures/book.nw fig:nope; then
-  echo "lit id returned success for a label not in the lock" >&2
+if $cob id fixtures/book.cob fig:nope; then
+  echo "cob id returned success for a label not in the lock" >&2
   exit 1
 fi
 @
-This group tests the highlighting resolver. \code{lit language} is the shared resolver
+This group tests the highlighting resolver. \code{cob language} is the shared resolver
 that the weaver and any editor plugin agree on (§5.5). A root resolves from its
 own extension. An abstract chunk resolves from the root that reaches it. An
 unknown chunk gives a nonzero exit, so a build can gate on it.
 <<assert the language resolver>>=
-# §5.5 `lit language` is the shared resolver: a root resolves from its
+# §5.5 `cob language` is the shared resolver: a root resolves from its
 # own extension, an abstract chunk from the root that reaches it, and an
 # unknown chunk is a nonzero exit (so a build can gate on it).
-test "$($lit language fixtures/hl.nw src/demo.rs)" = rust
-test "$($lit language fixtures/hl.nw flake.nix)" = nix
-test "$($lit language fixtures/hl.nw greeting)" = rust
-test "$($lit language fixtures/hl.nw packages)" = nix
-if $lit language fixtures/hl.nw nope; then
-  echo "lit language returned success for a chunk with no known language" >&2
+test "$($cob language fixtures/hl.cob src/demo.rs)" = rust
+test "$($cob language fixtures/hl.cob flake.nix)" = nix
+test "$($cob language fixtures/hl.cob greeting)" = rust
+test "$($cob language fixtures/hl.cob packages)" = nix
+if $cob language fixtures/hl.cob nope; then
+  echo "cob language returned success for a chunk with no known language" >&2
   exit 1
 fi
 @
 ### section anchors {#sec:FT5y}
 
-Every section earns an opaque id (§7.1). \code{lit lock} auto-anchors an unlabelled
-\code{h2}/\code{h3}: it mints an id and writes a \code{{#sec:<id>}} anchor into the \code{.nw} source,
-in place, so the id survives a later reword. \code{lit lock} writes to the source, so
+Every section earns an opaque id (§7.1). \code{cob lock} auto-anchors an unlabelled
+\code{h2}/\code{h3}: it mints an id and writes a \code{{#sec:<id>}} anchor into the \code{.cob} source,
+in place, so the id survives a later reword. \code{cob lock} writes to the source, so
 this check first copies the fixture to a writable place — the Nix store is
 read-only. It then proves the round trip: the source gets the anchor, the lock
-gets a \code{Section} entry, the weave draws a permalink prefix, \code{lit rename-label}
-gives the id a human name without changing the id, and a second \code{lit lock} mints
+gets a \code{Section} entry, the weave draws a permalink prefix, \code{cob rename-label}
+gives the id a human name without changing the id, and a second \code{cob lock} mints
 nothing.
 <<the section-anchor check>>=
-section-anchors = pkgs.runCommand "lit-section-anchors" { } ''
+section-anchors = pkgs.runCommand "cob-section-anchors" { } ''
   <<section-anchor check script>>
 '';
 @
-The script works on a writable copy of \code{sections.nw}, a Markdown-dialect fixture
+The script works on a writable copy of \code{sections.cob}, a Markdown-dialect fixture
 with three unlabelled headings (two \code{h2}, one \code{h3}).
 <<section-anchor check script>>=
-lit=${self.packages.${system}.lit}/bin/lit
-# `lit lock` edits the source in place, so work on a writable copy; the
+cob=${self.packages.${system}.cob}/bin/cob
+# `cob lock` edits the source in place, so work on a writable copy; the
 # store path is read-only.
 work=$TMPDIR/sec
 mkdir -p $work
-cp ${self}/fixtures/sections.nw $work/sections.nw
-chmod u+w $work/sections.nw
+cp ${self}/fixtures/sections.cob $work/sections.cob
+chmod u+w $work/sections.cob
 cd $work
 
-# The three headings start unlabelled. `lit lock` mints an id for each.
-grep -qE '^## Lexing$' sections.nw
-$lit lock sections.nw | grep -q '3 newly minted'
+# The three headings start unlabelled. `cob lock` mints an id for each.
+grep -qE '^## Lexing$' sections.cob
+$cob lock sections.cob | grep -q '3 newly minted'
 
-# §7.1 lit lock writes a {#sec:<id>} anchor into the source, in place …
-grep -qE '^## Lexing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
-grep -qE '^### Cost \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
-grep -qE '^## Parsing \{#sec:[0-9A-Za-z]{4}\}$' sections.nw
+# §7.1 cob lock writes a {#sec:<id>} anchor into the source, in place …
+grep -qE '^## Lexing \{#sec:[0-9A-Za-z]{4}\}$' sections.cob
+grep -qE '^### Cost \{#sec:[0-9A-Za-z]{4}\}$' sections.cob
+grep -qE '^## Parsing \{#sec:[0-9A-Za-z]{4}\}$' sections.cob
 # … and a matching Section entry into the lock.
-$lit labels sections.nw | grep -qE '^sec:[0-9A-Za-z]{4}\s+[0-9A-Za-z]{4}\s+Section$'
+$cob labels sections.cob | grep -qE '^sec:[0-9A-Za-z]{4}\s+[0-9A-Za-z]{4}\s+Section$'
 
 # The weave draws a clickable permalink prefix and a stable heading id.
-$lit weave --locked sections.nw --out out
+$cob weave --locked sections.cob --out out
 grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
 # The only script the archival page carries is the nav-spy aid (§6.3).
 if grep '<script' out/index.html | grep -qv '<script id="nav-spy">'; then
@@ -657,35 +687,35 @@ if grep '<script' out/index.html | grep -qv '<script id="nav-spy">'; then
   exit 1
 fi
 
-# §7.1 lit rename-label gives an auto id a human name; the id never changes.
-label=$(grep -oE 'sec:[0-9A-Za-z]{4}' sections.nw | head -1)
+# §7.1 cob rename-label gives an auto id a human name; the id never changes.
+label=$(grep -oE 'sec:[0-9A-Za-z]{4}' sections.cob | head -1)
 id=$(printf '%s' "$label" | cut -c5-)
-$lit rename-label $id lexing
-grep -qE '^## Lexing \{#sec:lexing\}$' sections.nw
-test "$($lit id sections.nw sec:lexing)" = "$id"
+$cob rename-label $id lexing
+grep -qE '^## Lexing \{#sec:lexing\}$' sections.cob
+test "$($cob id sections.cob sec:lexing)" = "$id"
 # The old auto label is gone: a rename moves the name, not the id.
-if $lit id sections.nw $label; then
+if $cob id sections.cob $label; then
   echo "the old auto label survived a rename" >&2
   exit 1
 fi
 
 # A second lock is idempotent: an already-anchored heading is left alone.
-$lit lock sections.nw | grep -q '0 newly minted'
+$cob lock sections.cob | grep -q '0 newly minted'
 touch $out
 @
 ### tangle goldens {#sec:ATUX}
 
-\code{lit tangle} must make the same bytes as the frozen \code{notangle} goldens in
+\code{cob tangle} must make the same bytes as the frozen \code{notangle} goldens in
 \code{fixtures/tangled/} (§11). \code{--check} must be clean just after a tangle, and must
 report drift after an edit. The goldens were made once by \code{notangle} and record
 its behavior with no live noweb — the hermetic half of the two-tangler agreement
-that seeded lit's own tangler. The Nix wrapper hands the work to one Bash chunk.
+that seeded cob's own tangler. The Nix wrapper hands the work to one Bash chunk.
 <<the tangle check>>=
-# Tangle goldens (§11): `lit tangle` must byte-match the frozen notangle
+# Tangle goldens (§11): `cob tangle` must byte-match the frozen notangle
 # goldens in fixtures/tangled/, and `--check` must be clean after a tangle
 # and flag drift after an edit. The goldens are the oracle now — no live
 # noweb runs.
-tangle = pkgs.runCommand "lit-tangle" { } ''
+tangle = pkgs.runCommand "cob-tangle" { } ''
   <<tangle check script>>
 '';
 @
@@ -693,19 +723,19 @@ The script tangles every fixture that has goldens, diffs the output tree against
 the committed goldens, and then edits an output to confirm that \code{--check}
 reports the drift.
 <<tangle check script>>=
-lit=${self.packages.${system}.lit}/bin/lit
+cob=${self.packages.${system}.cob}/bin/cob
 cd ${self}
-# `lit tangle --out DIR` writes each root under DIR; fixtures/tangled/<stem>
+# `cob tangle --out DIR` writes each root under DIR; fixtures/tangled/<stem>
 # holds the frozen notangle output for the same roots. Diff the trees.
 for stem in hello book hl md sections tx; do
-  $lit tangle "fixtures/$stem.nw" --out "$TMPDIR/$stem"
+  $cob tangle "fixtures/$stem.cob" --out "$TMPDIR/$stem"
   diff -r "$TMPDIR/$stem" "fixtures/tangled/$stem"
 done
 # Clean immediately after a tangle.
-$lit tangle --check fixtures/hello.nw --out $TMPDIR/hello
+$cob tangle --check fixtures/hello.cob --out $TMPDIR/hello
 # An edited root must be reported as drift (nonzero exit).
 echo '// drift' >> $TMPDIR/hello/src/main.rs
-if $lit tangle --check fixtures/hello.nw --out $TMPDIR/hello; then
+if $cob tangle --check fixtures/hello.cob --out $TMPDIR/hello; then
   echo "--check passed despite an edited root" >&2
   exit 1
 fi
@@ -714,29 +744,29 @@ touch $out
 ### reader {#sec:c8DE}
 
 This check guards the native reader (§4.1). The reader makes the \code{markup} event
-stream in Rust, so lit reads its own source with no noweb process. The check runs
+stream in Rust, so cob reads its own source with no noweb process. The check runs
 the native reader over each fixture and diffs its events against the frozen
-\code{markup} golden for that fixture — \code{lit dump-ir <file>.nw} against \code{lit dump-ir
+\code{markup} golden for that fixture — \code{cob dump-ir <file>.cob} against \code{cob dump-ir
 --from-markup <file>.markup}, which parses the committed IR. The two must be
 identical. The fixtures carry the edge cases (the cross-line quote and doubled
-brackets of \code{quote.nw}); the crate, \code{lit.nw}, and the flake are read by the
+brackets of \code{quote.cob}); the crate, \code{cobito.cob}, and the flake are read by the
 \code{selfhost} and \code{dogfood} checks, so a reader break there fails those too.
 <<the reader check>>=
-# Reader differential (§4.1): the native reader (`lit dump-ir`) must make
-# the same events as the frozen `markup` golden (`lit dump-ir --from-markup`
+# Reader differential (§4.1): the native reader (`cob dump-ir`) must make
+# the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
 # over the committed .markup). Hermetic — no live noweb.
-reader = pkgs.runCommand "lit-reader" { } ''
+reader = pkgs.runCommand "cob-reader" { } ''
   <<reader script>>
 '';
 @
 The script walks every fixture and diffs the native reader against the frozen
 \code{markup} golden.
 <<reader script>>=
-lit=${self.packages.${system}.lit}/bin/lit
+cob=${self.packages.${system}.cob}/bin/cob
 cd ${self}
-for nw in fixtures/*.nw; do
-  $lit dump-ir "$nw" > "$TMPDIR/reader"
-  $lit dump-ir --from-markup "''${nw%.nw}.markup" > "$TMPDIR/golden"
+for nw in fixtures/*.cob; do
+  $cob dump-ir "$nw" > "$TMPDIR/reader"
+  $cob dump-ir --from-markup "''${nw%.cob}.markup" > "$TMPDIR/golden"
   if ! diff -u "$TMPDIR/golden" "$TMPDIR/reader"; then
     echo "reader diverged from the frozen markup golden for $nw" >&2
     exit 1
@@ -746,23 +776,23 @@ touch $out
 @
 ### dogfood {#sec:NJXp}
 
-This check closes the loop. \code{flake.nix.nw}, this page, is the flake as a literate
+This check closes the loop. \code{flake.nix.cob}, this page, is the flake as a literate
 program. \code{packages.flake} is the tangled output of this page. The Nix wrapper
 hands the work to one Bash chunk, which runs two groups.
 <<the dogfood check>>=
-# Dogfood (§13): flake.nix.nw is this flake told as a literate program, and
-# packages.flake is `lit tangle flake.nix.nw` as a buildable output. The
+# Dogfood (§13): flake.nix.cob is this flake told as a literate program, and
+# packages.flake is `cob tangle flake.nix.cob` as a buildable output. The
 # committed flake.nix must equal it, or the self-host loop has drifted.
-dogfood = pkgs.runCommand "lit-dogfood" { } ''
+dogfood = pkgs.runCommand "cob-dogfood" { } ''
   <<dogfood script>>
 '';
 @
-The script sets the \code{lit} path and runs the two groups.
+The script sets the \code{cob} path and runs the two groups.
 <<dogfood script>>=
 cd ${self}
-lit=${self.packages.${system}.lit}/bin/lit
+cob=${self.packages.${system}.cob}/bin/cob
 <<assert the flake round-trips>>
-<<assert lit highlights its own nix>>
+<<assert cob highlights its own nix>>
 touch $out
 @
 This group closes the tangle loop. The committed \code{flake.nix} must equal the
@@ -772,16 +802,16 @@ page is deterministic.
 # The committed flake.nix must be exactly the tangled output.
 diff ${self}/flake.nix ${self.packages.${system}.flake}
 # Weave the literate flake twice, byte-diff: the page is deterministic.
-$lit weave --locked flake.nix.nw --out $TMPDIR/df-a
-$lit weave --locked flake.nix.nw --out $TMPDIR/df-b
+$cob weave --locked flake.nix.cob --out $TMPDIR/df-a
+$cob weave --locked flake.nix.cob --out $TMPDIR/df-b
 diff -r $TMPDIR/df-a $TMPDIR/df-b
 @
-This group confirms that lit gives color to its own Nix. The Nix grammar colors
+This group confirms that cob gives color to its own Nix. The Nix grammar colors
 an attribute path as a property and \code{let} as a keyword. A chunk-use hole stays
 inside its \code{.line} and never gets a color span. The page carries no script but the nav-spy aid.
-<<assert lit highlights its own nix>>=
+<<assert cob highlights its own nix>>=
 # The Nix grammar coloured the page — an attribute path is a property and
-# `let` is a keyword — so lit self-hosts its own highlighter (§5.5).
+# `let` is a keyword — so cob self-hosts its own highlighter (§5.5).
 grep -q 'class="tok-property">' $TMPDIR/df-a/index.html
 grep -q 'class="tok-keyword">' $TMPDIR/df-a/index.html
 # A chunk-use hole is spliced back inside its `.line`, never coloured.
@@ -798,50 +828,50 @@ fi
 @
 ### self-host {#sec:mxHP}
 
-This check closes the self-host loop for the crate (§13). Each \code{src/*.rs.nw} is
-one module of lit, and \code{templates/lit.css.nw} is its stylesheet, each told as a
-literate program. \code{lit} is compiled from \code{litSource}, the tree stage 0 tangled.
-This check tangles every module again with the shipped \code{lit} and diffs against
-\code{litSource} — the very tree \code{lit} was built from. If they match, \code{lit} is a fixed
+This check closes the self-host loop for the crate (§13). Each \code{src/*.rs.cob} is
+one module of cob, and \code{templates/cob.css.cob} is its stylesheet, each told as a
+literate program. \code{cob} is compiled from \code{cobSource}, the tree stage 0 tangled.
+This check tangles every module again with the shipped \code{cob} and diffs against
+\code{cobSource} — the very tree \code{cob} was built from. If they match, \code{cob} is a fixed
 point of its own tangler: the source it makes is the source it is made of. A
 tangler change on \code{main} that the seed has not caught up to shows here as drift,
 which is the signal to cut a new release. The Nix wrapper hands the work to one
 Bash chunk.
 <<the selfhost check>>=
-# Self-host (§13): the shipped lit must tangle every module to the same bytes
-# as litSource, the tree it was compiled from. A fixed point of its own
+# Self-host (§13): the shipped cob must tangle every module to the same bytes
+# as cobSource, the tree it was compiled from. A fixed point of its own
 # tangler — no second tangler, no noweb.
-selfhost = pkgs.runCommand "lit-selfhost" { } ''
+selfhost = pkgs.runCommand "cob-selfhost" { } ''
   <<selfhost script>>
 '';
 @
-The script tangles every module with \code{lit} and diffs against \code{litSource}, then
-weaves two modules to prove that lit also colors its own source — one Rust
+The script tangles every module with \code{cob} and diffs against \code{cobSource}, then
+weaves two modules to prove that cob also colors its own source — one Rust
 module for the crate, and the stylesheet itself, which exercises the CSS grammar
 (the fourth grammar, and the reason it exists).
 <<selfhost script>>=
 cd ${self}
-lit=${self.packages.${system}.lit}/bin/lit
-src=${self.packages.${system}.litSource}
-# lit must reproduce litSource — the tree it was compiled from. Each src/*.rs.nw
-# has one root named for its target; templates/lit.css.nw has two.
-for nw in src/*.rs.nw; do
-  root="''${nw%.nw}"
-  $lit tangle -R "$root" "$nw" > $TMPDIR/lt
+cob=${self.packages.${system}.cob}/bin/cob
+src=${self.packages.${system}.cobSource}
+# cob must reproduce cobSource — the tree it was compiled from. Each src/*.rs.cob
+# has one root named for its target; templates/cob.css.cob has two.
+for nw in src/*.rs.cob; do
+  root="''${nw%.cob}"
+  $cob tangle -R "$root" "$nw" > $TMPDIR/lt
   diff "$src/$root" $TMPDIR/lt
 done
-for root in templates/lit.css templates/lit-syntax.css; do
-  $lit tangle -R "$root" templates/lit.css.nw > $TMPDIR/lt
+for root in templates/cob.css templates/cob-syntax.css; do
+  $cob tangle -R "$root" templates/cob.css.cob > $TMPDIR/lt
   diff "$src/$root" $TMPDIR/lt
 done
-# Weave one Rust module to prove lit renders its own source: keywords and
+# Weave one Rust module to prove cob renders its own source: keywords and
 # strings colour, and the page carries no script but the nav-spy aid (§5.5/§6.3).
-$lit weave --locked src/diag.rs.nw --out $TMPDIR/sh
+$cob weave --locked src/diag.rs.cob --out $TMPDIR/sh
 grep -q 'class="tok-keyword">' $TMPDIR/sh/index.html
 grep -q 'class="tok-string">' $TMPDIR/sh/index.html
-# Weave the stylesheet to prove lit colours its own CSS: a property name is a
+# Weave the stylesheet to prove cob colours its own CSS: a property name is a
 # tok token, and the page carries no script but the nav-spy aid.
-$lit weave --locked templates/lit.css.nw --out $TMPDIR/shcss
+$cob weave --locked templates/cob.css.cob --out $TMPDIR/shcss
 grep -q 'class="tok-property">' $TMPDIR/shcss/index.html
 for page in $TMPDIR/sh $TMPDIR/shcss; do
   if grep '<script' "$page"/index.html | grep -qv '<script id="nav-spy">'; then

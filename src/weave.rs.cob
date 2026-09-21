@@ -43,7 +43,7 @@ header lives in the `summary`, which matters for a cross-reference: a link targe
 the `section`, not the `details`, so a link into a *collapsed* chunk still scrolls
 to a visible element that names the chunk.
 
-Second, the line numbers are `.nw` source lines, not per-chunk 1..n. The number a
+Second, the line numbers are `.cob` source lines, not per-chunk 1..n. The number a
 reader sees is the number they type into an editor. It matches the `data-nw-line`
 provenance and any `notangle -L` pragma. A continuation chunk restarts at its own
 source line, which is the honest answer: the two halves of a chunk are not
@@ -182,7 +182,7 @@ impl fmt::Display for WeaveError {
 impl std::error::Error for WeaveError {}
 @
 Rendering one code chunk is the delicate part. The chunk body is target text with
-chunk-use holes; the holes are lit's syntax, not the target's. So the highlighter
+chunk-use holes; the holes are cob's syntax, not the target's. So the highlighter
 must never see them. The renderer first walks the spans into a clean source buffer:
 literal runs are appended, newlines are appended, and each hole is removed but its
 byte offset and rendered anchor are recorded. The buffer is handed to the
@@ -204,7 +204,7 @@ example survives tangle as literal text and never expands.
 ///
 /// Two structural commitments (§5.3): the chunk is a `<details open>` so a
 /// reader can fold it away, and each body line is its own element carrying its
-/// `.nw` coordinate. The number is drawn by CSS from `data-line`, never written
+/// `.cob` coordinate. The number is drawn by CSS from `data-line`, never written
 /// into the text — generated content does not land in a copy-paste and does not
 /// perturb the text-quote selectors the annotation layer anchors on (§9.2).
 fn render_code(
@@ -405,7 +405,7 @@ way.
 <<render every fragment>>=
 /// Steps 1–2 (§6.2) per section: reassemble each docs body and lower it through the
 /// Markdown dialect (which also extracts math), and render each code body straight.
-/// Shared by `render` and the mint-only `lit lock` path so both see labels the same
+/// Shared by `render` and the mint-only `cob lock` path so both see labels the same
 /// way.
 fn render_frags(
     doc: &DocModel,
@@ -482,14 +482,14 @@ fn scan_frags(frags: &[Frag]) -> Result<(Scan, Vec<Option<String>>), WeaveError>
     Ok((scan, first_tags))
 }
 @
-The mint-only path is `lit lock`. It runs the same render and scan passes so it
+The mint-only path is `cob lock`. It runs the same render and scan passes so it
 sees the same labels the weaver would, then mints a frozen id for each, in document
 order, into the caller's lock. It renders no math and writes no HTML — it only
 grows the lock so the caller can persist it. The language config is empty because
 minting needs labels and floats, not colors.
 <<mint the lock without rendering>>=
 /// Mint a frozen id (§7.1) for every labelled float, in document order, without
-/// rendering the site. This is `lit lock`: it grows the in-memory lock so the
+/// rendering the site. This is `cob lock`: it grows the in-memory lock so the
 /// caller can persist it; it never renders math or writes HTML.
 pub fn mint_lock(
     doc: &DocModel,
@@ -711,10 +711,10 @@ pub fn render(
         });
     }
 
-    // One standalone sitemap page: the whole nav tree, styled by lit.css. The
+    // One standalone sitemap page: the whole nav tree, styled by cob.css. The
     // title is the first page's, so the sitemap names the document it maps. It
     // highlights nothing — an empty current means no entry is the current page.
-    let site_title = res.pages.first().map_or("lit", |m| m.title.as_str());
+    let site_title = res.pages.first().map_or("cob", |m| m.title.as_str());
     let sitemap = env
         .get_template("sitemap")
         .map_err(|e| WeaveError::Template(e.to_string()))?
@@ -766,7 +766,7 @@ The template contexts turn a page's metadata into the values the template reads:
 link is a title and a filename; a nav node is a title, an href, its children, and a
 `current` flag. `current` is true when the node is the landing entry of the page now
 being woven — an h1's href is exactly that page's filename (`resolve.rs`). Because
-lit renders every page on its own, it knows which entry is current and marks it
+cob renders every page on its own, it knows which entry is current and marks it
 statically, so the nav shows the reader's place with no script and in every browser.
 The sitemap passes an empty current, so it highlights nothing.
 <<the page link and nav context>>=
@@ -821,18 +821,17 @@ keep their read-only mode. Only the woff2 fonts are shipped — every browser th
 renders MathML supports it — and they are sorted before copying, for deterministic
 output.
 <<copy the katex assets>>=
+<<the embedded katex dist>>
+
 /// KaTeX's CSS and fonts are mandatory, not decorative: without the stylesheet
 /// the MathML and HTML layers both render and every equation appears twice.
-/// They are copied in, never CDN-linked, so the site stays a sealed artifact.
+/// They are written in, never CDN-linked, so the site stays a sealed artifact.
+///
+/// The dist comes from one of two places. `COB_KATEX_ASSETS` (a directory, set by
+/// the Nix wrapper/devShell) wins when present — a Nix deployment points it at the
+/// pinned store path. Otherwise a standalone binary uses the copy baked in at
+/// build time (feature `embed-assets`). A build with neither is an error (E023).
 fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
-    let src = std::env::var("LIT_KATEX_ASSETS").map_err(|_| {
-        WeaveError::Assets(
-            "LIT_KATEX_ASSETS is unset; it points at the pinned KaTeX dist and is \
-             set by the devShell and the wrapped package — run inside `nix develop`"
-                .to_string(),
-        )
-    })?;
-    let src = PathBuf::from(src);
     let dst = out.join("katex");
     // Files copied from the read-only Nix store keep their read-only mode, so a
     // second weave into the same directory can't overwrite them. Clear first.
@@ -843,6 +842,14 @@ fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
     }
     std::fs::create_dir_all(dst.join("fonts")).map_err(WeaveError::Io)?;
 
+    match std::env::var("COB_KATEX_ASSETS") {
+        Ok(src) => copy_katex_from(&PathBuf::from(src), &dst),
+        Err(_) => write_embedded_katex(&dst),
+    }
+}
+
+/// Copy the dist out of a directory (the Nix store path in `COB_KATEX_ASSETS`).
+fn copy_katex_from(src: &Path, dst: &Path) -> Result<(), WeaveError> {
     let css = src.join("katex.min.css");
     std::fs::copy(&css, dst.join("katex.min.css"))
         .map_err(|e| WeaveError::Assets(format!("copying {}: {e}", css.display())))?;
@@ -864,6 +871,75 @@ fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
         }
     }
     Ok(())
+}
+
+/// Write the dist baked into the binary. `FILES` is sorted, so output stays
+/// deterministic (§8). Only compiled with the `embed-assets` feature.
+#[cfg(feature = "embed-assets")]
+fn write_embedded_katex(dst: &Path) -> Result<(), WeaveError> {
+    for (name, bytes) in embedded_katex::FILES {
+        std::fs::write(dst.join(name), bytes).map_err(WeaveError::Io)?;
+    }
+    Ok(())
+}
+
+/// Without `embed-assets` there is nothing baked in, so an unset
+/// `COB_KATEX_ASSETS` is E023 — the same as before embedding existed.
+#[cfg(not(feature = "embed-assets"))]
+fn write_embedded_katex(_dst: &Path) -> Result<(), WeaveError> {
+    Err(WeaveError::Assets(
+        "COB_KATEX_ASSETS is unset and this build embeds no KaTeX dist; it points \
+         at the pinned dist and is set by the devShell and the wrapped package — \
+         run inside `nix develop`, or build with `--features embed-assets` for a \
+         standalone binary"
+            .to_string(),
+    ))
+}
+@
+The embedded dist is `include_bytes!`d from the pinned `COB_KATEX_ASSETS` at build
+time, so the version pin stays in the flake (§6.3) and no fonts are vendored in the
+source tree. The font list is fixed for the pinned KaTeX version; a bump changes
+the list here and the hash in the flake together. This module exists only under
+the `embed-assets` feature, so a default build never reads the env at compile time.
+<<the embedded katex dist>>=
+/// The pinned KaTeX dist, baked in at build time from `COB_KATEX_ASSETS` for a
+/// standalone binary. Kept sorted for deterministic output (§8).
+#[cfg(feature = "embed-assets")]
+mod embedded_katex {
+    macro_rules! font {
+        ($n:literal) => {
+            (
+                concat!("fonts/", $n),
+                include_bytes!(concat!(env!("COB_KATEX_ASSETS"), "/fonts/", $n)) as &[u8],
+            )
+        };
+    }
+    pub static FILES: &[(&str, &[u8])] = &[
+        (
+            "katex.min.css",
+            include_bytes!(concat!(env!("COB_KATEX_ASSETS"), "/katex.min.css")) as &[u8],
+        ),
+        font!("KaTeX_AMS-Regular.woff2"),
+        font!("KaTeX_Caligraphic-Bold.woff2"),
+        font!("KaTeX_Caligraphic-Regular.woff2"),
+        font!("KaTeX_Fraktur-Bold.woff2"),
+        font!("KaTeX_Fraktur-Regular.woff2"),
+        font!("KaTeX_Main-Bold.woff2"),
+        font!("KaTeX_Main-BoldItalic.woff2"),
+        font!("KaTeX_Main-Italic.woff2"),
+        font!("KaTeX_Main-Regular.woff2"),
+        font!("KaTeX_Math-BoldItalic.woff2"),
+        font!("KaTeX_Math-Italic.woff2"),
+        font!("KaTeX_SansSerif-Bold.woff2"),
+        font!("KaTeX_SansSerif-Italic.woff2"),
+        font!("KaTeX_SansSerif-Regular.woff2"),
+        font!("KaTeX_Script-Regular.woff2"),
+        font!("KaTeX_Size1-Regular.woff2"),
+        font!("KaTeX_Size2-Regular.woff2"),
+        font!("KaTeX_Size3-Regular.woff2"),
+        font!("KaTeX_Size4-Regular.woff2"),
+        font!("KaTeX_Typewriter-Regular.woff2"),
+    ];
 }
 @
 The top-level entry loads the lock, renders the whole document, then writes it to
@@ -905,11 +981,11 @@ pub fn write_site(
         }
     }
     std::fs::write(out.join("sitemap.html"), &site.sitemap).map_err(WeaveError::Io)?;
-    std::fs::write(out.join("lit.css"), include_str!("../templates/lit.css"))
+    std::fs::write(out.join("cob.css"), include_str!("../templates/cob.css"))
         .map_err(WeaveError::Io)?;
-    // The syntax palette is a separate file imported by lit.css via @import; both
+    // The syntax palette is a separate file imported by cob.css via @import; both
     // must be present in the output for the import to resolve offline.
-    std::fs::write(out.join("lit-syntax.css"), include_str!("../templates/lit-syntax.css"))
+    std::fs::write(out.join("cob-syntax.css"), include_str!("../templates/cob-syntax.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
     // The archival JSON (§8) is opt-in: plain `weave` stays an HTML-only
@@ -1030,7 +1106,7 @@ fn txf() -> DocModel {
 }
 
 fn cache() -> PathBuf {
-    std::env::temp_dir().join("lit-weave-test-cache")
+    std::env::temp_dir().join("cob-weave-test-cache")
 }
 
 /// A dev-time render with an in-memory lock and a fixed-seed minter, so float
@@ -1061,7 +1137,7 @@ need, so it must fail with the missing-label error rather than mint.
 <<a locked weave errors on a missing label>>=
 #[test]
 fn locked_weave_errors_on_a_label_absent_from_the_lock() {
-    // book.nw carries labelled floats; an empty lock under `--locked` cannot
+    // book.cob carries labelled floats; an empty lock under `--locked` cannot
     // supply their frozen ids, so weave must fail with E031 rather than mint.
     let mut lock = LockFile::default();
     let mut minter = Minter::seeded(1);
@@ -1139,7 +1215,7 @@ section its chunk name and a margin slot.
 fn page_has_provenance_and_margin_slots() {
     let html = hello_html();
     assert!(html.contains(
-        "<section class=\"docs\" id=\"sec-1\" data-nw-file=\"fixtures/hello.nw\" data-nw-line=\"1\">"
+        "<section class=\"docs\" id=\"sec-1\" data-nw-file=\"fixtures/hello.cob\" data-nw-line=\"1\">"
     ));
     assert!(html.contains("data-nw-line=\"6\" data-chunk=\"lex a token\""));
     assert!(html.contains("<div class=\"margin-slot\" data-for=\"sec-2\"></div>"));
@@ -1176,7 +1252,7 @@ fn math_is_rendered_not_left_as_placeholder() {
     let site = dev_render(&fixture(), "");
     let html = site.all_html();
     assert_eq!(site.math_count, 2);
-    assert!(!html.contains("data-lit-math"));
+    assert!(!html.contains("data-cob-math"));
     assert!(html.contains("katex"));
     // The angle-bracket case must survive as an entity, never a tag.
     assert!(!html.contains("<span>a < b</span>"));
@@ -1204,7 +1280,7 @@ as Rust; stripping the color leaves the escaped plain-text payload intact.
 <<a code body is html escaped>>=
 #[test]
 fn code_body_is_html_escaped() {
-    // hello.nw's root is `src/main.rs`, so its chunks now highlight as Rust
+    // hello.cob's root is `src/main.rs`, so its chunks now highlight as Rust
     // (§5.5); the escaped plain-text payload must survive under the coloring.
     let html = strip_tok(&hello_html());
     assert!(html.contains("println!(&quot;{count}&quot;);"));
@@ -1232,7 +1308,7 @@ fn line_numbers_are_nw_coordinates_in_attributes() {
     // Coloring nests inside each `.line`; strip it so the coordinate + payload
     // invariant reads the same whether or not the chunk highlights.
     let html = strip_tok(&hello_html());
-    // fixtures/hello.nw: `@<<next char@>>=` is line 22, its one body line 23.
+    // fixtures/hello.cob: `@<<next char@>>=` is line 22, its one body line 23.
     assert!(html
         .contains("<span class=\"line\" data-line=\"23\">input.next().unwrap()</span></pre>"));
     // src/main.rs opens at line 28; `println!` is the fifth body line.
@@ -1247,7 +1323,7 @@ chunk-use hole is spliced back verbatim and never wrapped in a color span.
 <<rust root chunks are highlighted and holes stay opaque>>=
 #[test]
 fn rust_root_chunks_are_highlighted_and_holes_stay_opaque() {
-    // hello.nw's root is `src/main.rs`, so tier-3 resolution colors it as Rust
+    // hello.cob's root is `src/main.rs`, so tier-3 resolution colors it as Rust
     // (§5.5): `let`/`fn` are keywords, the format string is a string token.
     let html = hello_html();
     assert!(html.contains("class=\"tok-keyword\">let</span>"));
@@ -1266,7 +1342,7 @@ fn a_no_language_chunk_falls_back_to_plain_text_with_one_warning() {
     // A root whose name carries no known extension resolves to no language, so
     // its body is emitted as plain escaped text and earns exactly one W104.
     let doc = model_of(
-        "@file plain.nw\n\
+        "@file plain.cob\n\
          @begin docs 0\n@text # Plain\n@nl\n@end docs 0\n\
          @begin code 1\n@defn notes.txt\n@nl\n\
          @text let x = 1;\n@nl\n@end code 1\n",
@@ -1485,7 +1561,7 @@ fn site_json_is_current_schema_and_hoists_sidenotes() {
     for id in &ids {
         assert!(site::page_json(json, id).is_some());
     }
-    // book.nw carries one sidenote on the Parsing page; it lands in a
+    // book.cob carries one sidenote on the Parsing page; it lands in a
     // margin[] entry and is stripped from that section's JSON prose, while
     // the woven HTML keeps it inline with the matching sn- id.
     let whole = site::to_json(json);
@@ -1525,7 +1601,7 @@ fn markdown_dialect_renders_prose_and_fenced_math() {
     // figure caption, and the inline tail — all rendered by KaTeX, none left
     // as a placeholder.
     assert_eq!(site.math_count, 3);
-    assert!(!html.contains("data-lit-math"));
+    assert!(!html.contains("data-cob-math"));
     assert!(html.contains("class=\"equation\""));
     assert!(html.contains("katex"));
 }

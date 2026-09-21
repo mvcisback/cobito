@@ -6,7 +6,7 @@ step 6 of the prose pipeline (§6.2).
 
 ## The rule {#sec:sHOO}
 
-lit renders KaTeX server-side, at weave time, so the content of the archival site
+cob renders KaTeX server-side, at weave time, so the content of the archival site
 needs no JavaScript. Every equation, code chunk, cross-reference, and float is
 inert markup that a reader reads with script off. A render failure is a hard error
 with the source and the location, never a silent fall back to raw text.
@@ -16,7 +16,7 @@ The site carries exactly one script: the `nav-spy` navigation aid in `page.html`
 scrolls the nav to it, and nothing else. It injects no content text, so copy-paste
 and the annotation quote selectors (§9.2) still hold, and the page reads fully
 without it. So the rule is not "no script"; it is "no script the content depends
-on". lit still links no CDN and ships every byte in `_site`, so the archive stays
+on". cob still links no CDN and ships every byte in `_site`, so the archive stays
 self-contained. The script is inline and identical on every page, so the weave
 stays byte-deterministic.
 
@@ -24,18 +24,18 @@ stays byte-deterministic.
 
 The `katex` Rust crate bundles a JS engine to run `katex.js`. This adds real
 build weight and Nix-closure cost. The alternatives are worse: a `katex` CLI is
-another runtime dependency, and a native Rust math renderer is immature. lit
+another runtime dependency, and a native Rust math renderer is immature. cob
 takes the crate and caches each rendered result under
-`hash(math_source + display_mode + macros)` in `.lit-cache`. Without the cache,
+`hash(math_source + display_mode + macros)` in `.cob-cache`. Without the cache,
 re-rendering every equation on every weave would dominate build time.
 
 ## Why the assets are not optional {#sec:iVXH}
 
 "Math needs no client-side JavaScript" and "no client-side assets" are different
-claims. lit gets the first for free and must work for the second (verified
+claims. cob gets the first for free and must work for the second (verified
 2026-08-23):
 
-- The crate runs `katex.js` inside the lit binary at weave time. The output is
+- The crate runs `katex.js` inside the cob binary at weave time. The output is
   inert markup: a hidden `katex-mathml` span that carries MathML, plus a
   `katex-html` visual span. No math script reaches the site — the only script is
   the `nav-spy` aid (§6.3, above), which math does not touch. `checks.determinism`
@@ -43,18 +43,18 @@ claims. lit gets the first for free and must work for the second (verified
 - The default output needs `katex.min.css` and the woff2 fonts for correctness,
   not for looks. The stylesheet is what hides the MathML layer. Without it both
   layers render and every equation appears twice.
-- So lit copies the assets into `_site/katex`, and never links a CDN. Otherwise
-  the archival artifact would depend on the network in secret. lit ships woff2
+- So cob copies the assets into `_site/katex`, and never links a CDN. Otherwise
+  the archival artifact would depend on the network in secret. cob ships woff2
   only (about 330 KB); woff and ttf would multiply that for no reader.
 - Version coupling. KaTeX's HTML, CSS, and font metrics move together. The crate
   embeds KaTeX 0.16.4, while nixpkgs' `katex` is a different release, so the
   assets are pinned in `flake.nix` by `fetchzip` at the crate's version and
-  exposed as `LIT_KATEX_ASSETS`. Bump the crate and the pin together.
+  exposed as `COB_KATEX_ASSETS`. Bump the crate and the pin together.
 
 ## Considered and rejected {#sec:1uIU}
 
 Pure-MathML output needs no CSS, no fonts, and no JS — a genuine single-file
-artifact. lit rejects it for v1, because browser-native math typography is much
+artifact. cob rejects it for v1, because browser-native math typography is much
 weaker than KaTeX's CSS layout, and typographic quality is the point of a
 Tufte-styled site. Revisit this if a zero-asset artifact ever outranks
 typography. Every output mode keeps the original TeX in an annotation element,
@@ -227,7 +227,7 @@ mod tests {
     use super::*;
 
     fn tmpdir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("lit-math-test-{name}"));
+        let d = std::env::temp_dir().join(format!("cob-math-test-{name}"));
         let _ = std::fs::remove_dir_all(&d);
         d
     }

@@ -1,45 +1,45 @@
 # Tangling (§11)
 
-This module is `lit tangle`. The prose is the specification. The chunks after it
-are the implementation. Tangle extracts compilable source from `.nw` files. It is
+This module is `cob tangle`. The prose is the specification. The chunks after it
+are the implementation. Tangle extracts compilable source from `.cob` files. It is
 the inverse of weave: it pulls a root chunk, and everything the root references,
 out as a plain source file.
 
 ## Three sub-commands {#sec:mtmH}
 
-`lit tangle <file.nw>…` writes every root chunk to the output directory (the
-current directory by default). `lit tangle -R 'name'` writes a single chunk to
-stdout. `lit tangle --check` tangles to memory, diffs the result against the disk,
+`cob tangle <file.cob>…` writes every root chunk to the output directory (the
+current directory by default). `cob tangle -R 'name'` writes a single chunk to
+stdout. `cob tangle --check` tangles to memory, diffs the result against the disk,
 and exits nonzero on any drift. The `--check` form exists for CI and for the
 self-hosting flip (§13) — it is what proves a committed artifact still matches its
-`.nw`.
+`.cob`.
 
 The roots are the path-shaped chunk names the model already detects. The files
 come from the CLI, the same as weave. Writes go through a temp file and a rename,
-and lit skips a write when the content is unchanged, so a build system that
+and cob skips a write when the content is unchanged, so a build system that
 watches mtimes does not rebuild for no reason. noweb ships `cpif` for exactly this
 reason.
 
-## lit tangles natively (§11) {#sec:dd8Y}
+## cob tangles natively (§11) {#sec:dd8Y}
 
-lit tangles in its own code. It does not run `notangle`. The document model
+cob tangles in its own code. It does not run `notangle`. The document model
 already holds every chunk definition (in source order) and every chunk use, so
 tangle is a walk of that model — no second parse and no external process. This is
-what lets lit ship as one binary and lets `checks.selfhost` compare two lit passes
-rather than lit against noweb.
+what lets cob ship as one binary and lets `checks.selfhost` compare two cob passes
+rather than cob against noweb.
 
 The walk grew out of the §11 contingency list. Every one of these reasons now
 holds, so the native tangler is the plan, not a fallback:
 
 - A single binary for distribution needs no noweb on `PATH`.
-- Owning the tangler lets lit keep breadcrumbs noweb discards — the column-level
+- Owning the tangler lets cob keep breadcrumbs noweb discards — the column-level
   chunk provenance that tangle-then-backout highlighting wants (§5.5).
 - A frozen set of `notangle` outputs (`fixtures/tangled/…`) is the correctness
-  oracle, so lit no longer needs the live tool to stay honest.
+  oracle, so cob no longer needs the live tool to stay honest.
 
 ## The expansion rule {#sec:9Fk2}
 
-A chunk expands to text. lit walks the chunk's definitions in source order and
+A chunk expands to text. cob walks the chunk's definitions in source order and
 joins them; a chunk defined more than once (a continuation) contributes each
 definition, the same as `notangle`. Inside a definition, a `@<<use@>>` splices the
 used chunk in place.
@@ -93,12 +93,12 @@ against it without writing), and the disk helpers those drivers share.
 <<the tests>>
 @
 The banner records the inverse-of-weave relationship and the native-expansion
-rule: lit walks the model, and it never runs `notangle`.
+rule: cob walks the model, and it never runs `notangle`.
 <<the module banner>>=
-//! `lit tangle`: extract compilable source from `.nw` files (§11).
+//! `cob tangle`: extract compilable source from `.cob` files (§11).
 //!
 //! Tangling is the inverse of weaving — it pulls a root chunk (and everything
-//! it references) out as a plain source file. lit does this natively: it walks
+//! it references) out as a plain source file. cob does this natively: it walks
 //! the document model, joins each chunk's definitions in source order, and
 //! splices every `@<<use@>>` in place with the column indentation noweb uses. It
 //! never runs `notangle`, so a shipped binary needs no noweb on PATH.
@@ -432,7 +432,7 @@ chunk is E035, not a hang.
 fn code_section(name: &str, spans: Vec<CodeSpan>) -> model::Section {
     model::Section {
         id: format!("sec-{name}"),
-        file: "t.nw".to_string(),
+        file: "t.cob".to_string(),
         line: 1,
         kind: SectionKind::Code {
             name: name.to_string(),
@@ -513,7 +513,7 @@ The disk logic is unit-tested on its own: writing creates, then reports unchange
 then updated; and the comparison tells missing, identical, and differing apart.
 <<the disk-logic tests>>=
 fn tmpdir(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("lit-tangle-test-{name}"));
+    let d = std::env::temp_dir().join(format!("cob-tangle-test-{name}"));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

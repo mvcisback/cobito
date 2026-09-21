@@ -1,14 +1,20 @@
 [package]
-name = "lit"
+name = "cob"
 version = "0.1.0"
 edition = "2021"
+description = "cobito — a web-first literate programming system (a small spider web)"
+
+[features]
+# Bake the pinned KaTeX dist into the binary (from COB_KATEX_ASSETS at build
+# time) for a standalone, single-file build. Off by default: a Nix deployment
+# reads COB_KATEX_ASSETS from the store at run time instead.
+embed-assets = []
 
 [dependencies]
 katex = "0.4.6"
 lol_html = "3.0.1"
 minijinja = "2.24.0"
 peg = "0.8.6"
-pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.4"

@@ -19,14 +19,14 @@ the earlier one. This matters in three places, and it is easy to get wrong:
 
 A chunk whose name is path-shaped is a root. A name is path-shaped when it holds
 a `/`, or when it ends in a file extension, such as `src/lexer.rs`. A root is the
-entry point that tangle writes to a file. `lit.toml` can override the set of
+entry point that tangle writes to a file. `cob.toml` can override the set of
 roots and set the line-pragma format for each one. The tangler owns that format
 (§5.2, §11), so the model only decides which names are roots.
 
 ## The line counter {#sec:m7n3}
 
 The line counter is the subtle part of the build. It advances on both `Nl` and
-`IndexNl`, because an `@ %def` line is a source line whose newline reaches lit as
+`IndexNl`, because an `@ %def` line is a source line whose newline reaches cob as
 `IndexNl` (§4.2). A wrong count silently shifts every provenance attribute after
 the first `%def` in a file.
 
@@ -67,7 +67,7 @@ point, and the queries a built model answers.
 The banner records the one subtle invariant: the line counter advances on
 `IndexNl` too.
 <<the module banner>>=
-//! Fold `markup`'s IR into lit's document model (§19.2).
+//! Fold `markup`'s IR into cob's document model (§19.2).
 //!
 //! The line counter is the subtle part: it advances on both `Nl` *and*
 //! `IndexNl`, because an `@ %def` line is a source line whose newline reaches
@@ -619,14 +619,14 @@ fn code_sections_and_continuation() {
     assert_eq!(m.chunks["lex a token"].defs, vec!["sec-2", "sec-5"]);
 }
 @
-Section line numbers match `fixtures/hello.nw` — and `sec-4` lands on 11 only if
+Section line numbers match `fixtures/hello.cob` — and `sec-4` lands on 11 only if
 the `@ %def c` line's `IndexNl` advanced the counter.
 <<line numbers track indexnl>>=
 #[test]
 fn line_numbers_track_indexnl() {
     let m = hello();
     let at = |id: &str| m.sections.iter().find(|s| s.id == id).unwrap().line;
-    // Definition lines in fixtures/hello.nw.
+    // Definition lines in fixtures/hello.cob.
     assert_eq!(at("sec-1"), 1);
     assert_eq!(at("sec-2"), 6);
     // sec-4 lands on 11 only if `@ %def c`'s IndexNl advanced the counter.
@@ -634,7 +634,7 @@ fn line_numbers_track_indexnl() {
     assert_eq!(at("sec-5"), 15);
     assert_eq!(at("sec-8"), 22);
     assert_eq!(at("sec-11"), 28);
-    assert!(m.sections.iter().all(|s| s.file == "fixtures/hello.nw"));
+    assert!(m.sections.iter().all(|s| s.file == "fixtures/hello.cob"));
 }
 @
 The newline that ends a `@defn` line is not part of the body: `sec-8`'s spans are
@@ -723,11 +723,11 @@ A use with no matching definition is E010, located at the use site.
 <<an undefined chunk is e010>>=
 #[test]
 fn undefined_chunk_is_e010() {
-    let ir = "@file t.nw\n@begin code 0\n@defn r.rs\n@nl\n@use missing\n@nl\n@end code 0\n";
+    let ir = "@file t.cob\n@begin code 0\n@defn r.rs\n@nl\n@use missing\n@nl\n@end code 0\n";
     let err = build(&parse(ir).unwrap()).unwrap_err();
     let ModelError::UndefinedChunks(u) = &err;
     assert_eq!(u[0].name, "missing");
-    assert_eq!((u[0].file.as_str(), u[0].line), ("t.nw", 1));
+    assert_eq!((u[0].file.as_str(), u[0].line), ("t.cob", 1));
     assert!(err.to_string().starts_with("error[E010]"));
 }
 @
@@ -735,7 +735,7 @@ A defined but unused non-root chunk is W102.
 <<an unused non-root chunk is w102>>=
 #[test]
 fn unused_nonroot_chunk_is_w102() {
-    let ir = "@file t.nw\n@begin code 0\n@defn orphan\n@nl\n@text x\n@nl\n@end code 0\n";
+    let ir = "@file t.cob\n@begin code 0\n@defn orphan\n@nl\n@text x\n@nl\n@end code 0\n";
     let lints = build(&parse(ir).unwrap()).unwrap().lints();
     assert_eq!(lints.len(), 1);
     assert_eq!(lints[0].code, "W102");

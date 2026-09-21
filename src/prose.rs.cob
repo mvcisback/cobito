@@ -6,13 +6,13 @@ implementation.
 
 noweb does not solve the prose problem. Its `tohtml` passes prose through
 verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
-LaTeX subset, does not expand author macros, and shows math as italics. lit does
+LaTeX subset, does not expand author macros, and shows math as italics. cob does
 its own prose layer instead.
 
 ## One prose dialect {#sec:iquM}
 
 An author writes a docs chunk in one dialect: command Markdown (§6.4). Prose is
-CommonMark plus lit's command markers and fenced-float directives. Paragraphs,
+CommonMark plus cob's command markers and fenced-float directives. Paragraphs,
 emphasis, lists, links, and headings become HTML. The fenced directives for
 math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
 cross-reference.
@@ -24,7 +24,7 @@ that step — numbering, references, math render, sidenote hoist, and `site.json
 
 ## The pipeline (the order is load-bearing) {#sec:O0Sz}
 
-lit processes each docs chunk in this order:
+cob processes each docs chunk in this order:
 
 1. Reassemble. Join the `@text` and `@nl` spans. Turn each `@quote`…`@endquote`
    into a `<code>` element with its contents HTML-escaped. This escape comes
@@ -38,11 +38,11 @@ lit processes each docs chunk in this order:
 4. Serialize.
 5. Render math. Replace each placeholder with KaTeX output.
 
-Steps 3 to 5 need document-global numbering, so lit runs the whole document
+Steps 3 to 5 need document-global numbering, so cob runs the whole document
 through step 2 before any section reaches step 3. Weave cannot stream.
 
-lit does not sanitize prose. The author is the trusted party. A margin comment
-is the annotation layer's problem (`ANNOTATIONS.md`), never merged into lit's
+cob does not sanitize prose. The author is the trusted party. A margin comment
+is the annotation layer's problem (`ANNOTATIONS.md`), never merged into cob's
 output.
 
 ## How the code implements this {#sec:bz51}
@@ -134,10 +134,10 @@ one, is left as-is rather than dropped.
 pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     let mut out = String::with_capacity(html.len());
     let mut i = 0;
-    while let Some(found) = html[i..].find("<span data-lit-math=\"") {
+    while let Some(found) = html[i..].find("<span data-cob-math=\"") {
         let start = i + found;
         out.push_str(&html[i..start]);
-        let num_start = start + "<span data-lit-math=\"".len();
+        let num_start = start + "<span data-cob-math=\"".len();
         let Some(quote) = html[num_start..].find('"') else {
             break;
         };
@@ -192,7 +192,7 @@ placeholder with no rendered entry is left as-is.
 <<substitution round-trips>>=
 #[test]
 fn substitution_round_trips() {
-    let html = "a <span data-lit-math=\"0\"></span> b <span data-lit-math=\"1\"></span>";
+    let html = "a <span data-cob-math=\"0\"></span> b <span data-cob-math=\"1\"></span>";
     let out = substitute_math(html, &["<X/>".to_string(), "<Y/>".to_string()]);
     assert_eq!(out, "a <X/> b <Y/>");
 }

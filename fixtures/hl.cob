@@ -16,7 +16,7 @@ fn main() {
 }
 @
 
-The Nix side is a tiny flake, so lit can eventually present its own `flake.nix`
+The Nix side is a tiny flake, so cob can eventually present its own `flake.nix`
 as a literate document and self-host.
 
 <<packages>>=

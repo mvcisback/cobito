@@ -5,16 +5,16 @@ prose is the specification. The chunks after it are the implementation.
 
 ## Why a node model {#sec:9dZ2}
 
-lit is a living document, and a forest in time (§13). An author must be able to
+cob is a living document, and a forest in time (§13). An author must be able to
 pull one part of a document into another place and show it there. This is
 **transclusion**: the target text appears where the author asks for it, not a
 link to it.
 
 The unit that moves is a **node**. A node is an addressable part of the document.
-lit already gives every part an address. Every `h2`/`h3` section earns an opaque
+cob already gives every part an address. Every `h2`/`h3` section earns an opaque
 `sec:` id (§7.1); every labelled float earns an opaque id. So the document is
 already a tree of nodes: the heading nesting *is* the node tree, and the woven
-nav tree already draws it. A `.nw` file is sugar for a root node that holds its
+nav tree already draws it. A `.cob` file is sugar for a root node that holds its
 child nodes in document order. The node model needs almost no new identity
 machinery — it reuses the anchors the resolver already stamps.
 
@@ -24,7 +24,7 @@ This slice does **same-document** transclusion of a **section node**. The author
 writes `\transclude{sec:name}` (Markdown) or the raw island a dialect lowers it
 to (§6.4). A node is a heading and the content under it: the heading, its own
 text, and its child headings, up to the next heading at the same or a shallower
-level. lit cuts the node at these heading boundaries, not at the chunk
+level. cob cuts the node at these heading boundaries, not at the chunk
 boundaries, and puts the node where the directive sits. So one `@` chunk can hold
 many nodes, and a node can run across several chunks.
 
@@ -33,7 +33,7 @@ Three rules make the copy safe:
 - **Recursive by default.** A transcluded node expands the directives inside it
   too. So a node pulls in its own parts.
 - **Cycles are flagged, not broken in silence.** If a node transcludes itself,
-  directly or through a chain, lit puts a short marker in place of the second
+  directly or through a chain, cob puts a short marker in place of the second
   copy and raises the W105 warning. The weave does not loop.
 - **Scoped ids.** The canonical copy keeps the bare ids. The transcluded copy
   gets a scope prefix on every id it defines, and on every link that points
@@ -62,7 +62,7 @@ pre-expansion bodies.
 ## Floats are nodes too {#sec:Fx3r}
 
 A figure, a table, and an equation are nodes too. Each one already earns an
-opaque id (§7.1), so each one is addressable. lit cuts a float node by its tag,
+opaque id (§7.1), so each one is addressable. cob cuts a float node by its tag,
 not by heading boundaries: it finds the element that carries the float's anchor
 and balances that tag, so a figure's inner tags and an equation's KaTeX `div`s do
 not cut the element short. So `\transclude{fig:name}` lifts the one figure out of
@@ -100,9 +100,9 @@ node that transcludes this one ("Transcluded by") and every node that refers to
 it with `\ref` ("Referenced by"). So the reader sees where the node is used, not
 only what it says.
 
-lit finds the backlinks by one scan of the section bodies, before the page
+cob finds the backlinks by one scan of the section bodies, before the page
 split. A `\transclude` island names its target; a resolved `\ref` keeps its
-label in `data-ref`. For each, lit finds the innermost heading above it — the
+label in `data-ref`. For each, cob finds the innermost heading above it — the
 node the use sits in — and records the pair. So a backlink names a node, and
 links to that node's page.
 
@@ -182,7 +182,7 @@ const TAIL: &str = "\"></div>";
 @
 A node is one addressable heading and its content: the heading text (the chrome's
 link text), the page it lands on canonically, and the rendered HTML of the node
-body. lit cuts the body once, at build time, from the final section bodies, so
+body. cob cuts the body once, at build time, from the final section bodies, so
 the expander only splices a finished string. The context holds every node keyed
 by its anchor, plus the page filenames so a cross-page backlink can name its file.
 <<a node and the context>>=
@@ -239,7 +239,7 @@ pub struct NodePage {
 @
 Building the table walks the scanned headings in document order. A node runs from
 its own heading to the next heading at the same or a shallower level; a heading
-with nothing shallower after it runs to the end of the document. lit finds each
+with nothing shallower after it runs to the end of the document. cob finds each
 heading in the final section bodies by the `id` that `apply` stamps on every
 heading (§5.4), then cuts the body between the two heading tags — across section
 bodies when the node spans more than one chunk. The anchor is the one the
@@ -249,7 +249,7 @@ resolver already stamped for that heading, so a `\transclude{sec:name}` and a
 impl Context {
     /// Build the node table from the scan, the plan, and the final section
     /// bodies. A node runs from its heading to the next heading at the same or a
-    /// shallower level (the heading nesting is the node tree); lit cuts the body
+    /// shallower level (the heading nesting is the node tree); cob cuts the body
     /// at the heading tags, across section bodies when the node spans chunks.
     pub fn build(scan: &Scan, res: &Resolution, bodies: &[String]) -> Context {
         let heads = &scan.headings;
@@ -574,7 +574,7 @@ fn slice_body(bodies: &[String], start: (usize, usize), end: Option<(usize, usiz
     out
 }
 @
-A float is one element, not a run between headings, so lit cuts it by balancing
+A float is one element, not a run between headings, so cob cuts it by balancing
 its tag. `cut_element` finds the element's opening tag by its `id`, reads the tag
 name, then walks the bytes counting nested opens and closes of that name until the
 depth returns to zero — so a figure's inner `img` or an equation's KaTeX `div`s do
@@ -974,7 +974,7 @@ fn run(host: &str) -> (String, Vec<Lint>) {
     let c = ctx();
     let mut scope = 0;
     let mut lints = Vec::new();
-    let out = c.expand(host, 0, &mut scope, &mut lints, "t.nw", 1);
+    let out = c.expand(host, 0, &mut scope, &mut lints, "t.cob", 1);
     (out, lints)
 }
 @
@@ -1031,7 +1031,7 @@ fn a_cycle_is_flagged_not_looped() {
     };
     let mut scope = 0;
     let mut lints = Vec::new();
-    let out = c.expand(&host(), 0, &mut scope, &mut lints, "t.nw", 1);
+    let out = c.expand(&host(), 0, &mut scope, &mut lints, "t.cob", 1);
     assert_eq!(lints.len(), 1);
     assert_eq!(lints[0].code, "W105");
     assert!(out.contains("class=\"transclusion-cycle\""));

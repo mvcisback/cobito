@@ -5,7 +5,7 @@ prose is the specification. The chunks after it are the implementation.
 
 ## Why an opaque id {#sec:5II3}
 
-lit is meant to be a living document, and one day a forest: separate projects
+cob is meant to be a living document, and one day a forest: separate projects
 import and transclude each other's notes (§16, M12). A position-dependent
 "Figure 3" cannot survive that. It changes the moment content moves inside a
 document, or is pulled into another one. So the identity of a figure, table,
@@ -18,28 +18,28 @@ caption mechanics there are unchanged.
 
 A float earns an id by carrying a label. Every section earns one too. A heading
 with a `sec:` id — `{#sec:lexing}` in Markdown, an `id="sec:lexing"` in HTML — is a
-first-class label: lit mints it into `lit.lock` with `kind = "section"`, a
+first-class label: cob mints it into `cob.lock` with `kind = "section"`, a
 `\ref{sec:lexing}` renders "Section k3f9", and the section leads with a small
 clickable permalink whose id the stylesheet draws. The id lives in `data-id`, never
 a text node, so it stays out of selections and the quote selectors (§9.2); the
 anchor itself is the click target. An h1 is addressed by its page id and is never
 minted.
 
-The author does not have to label a section by hand. `lit lock` gives every
+The author does not have to label a section by hand. `cob lock` gives every
 unlabelled `h2`/`h3` heading an id: it mints one and writes a `sec:<id>` anchor into
 the heading's source line (`section.rs`). So every section is linkable, and the id
 is source-anchored — it lives on the heading, not on a slug of the heading text — so
 a reword of the heading does not break the link. The id doubles as its own name
-until the author gives it a human one with `lit rename-label <id> <name>`, which
+until the author gives it a human one with `cob rename-label <id> <name>`, which
 rewrites the source anchor and rekeys the lock while the frozen id stays the same.
 Because the anchor lives in the source, the write happens only in the dev-time
-`lit lock` pass; a `--locked` weave never mints and never edits, so an anchored
+`cob lock` pass; a `--locked` weave never mints and never edits, so an anchored
 section absent from the committed lock is still the E031 error, like any label.
 
 ## The id itself {#sec:oaLc}
 
 The id is a random 4-character base62 string (`[0-9A-Za-z]`, case-sensitive,
-about 14.8 million values). lit mints it once and never recomputes it. It is
+about 14.8 million values). cob mints it once and never recomputes it. It is
 deliberately not derived from the label, the path, or the content, because a
 derived id would change under exactly the renames and moves it exists to survive.
 4 characters is enough for a hobby-scale forest.
@@ -48,19 +48,19 @@ derived id would change under exactly the renames and moves it exists to survive
 
 An author keeps writing a human-readable `\label{fig:pipeline}` and
 `\ref{fig:pipeline}` (§6.4). A label is note-local: two notes may both use
-`fig:pipeline` without colliding, because lit resolves a label only against its
+`fig:pipeline` without colliding, because cob resolves a label only against its
 own file. The opaque id is global. Within a file a `\ref` resolves by the human
 label. Across files (import and transclude, M12) a reference names the target by
 its opaque id, which is rename- and move-proof.
 
 ## The lock file {#sec:GIRD}
 
-`lit.lock` is a committed, human-readable, greppable map from `label` to
+`cob.lock` is a committed, human-readable, greppable map from `label` to
 `{ id, kind }`, keyed by source file so note-local labels stay distinct:
 
 ```toml
-# lit.lock — generated; edit only to delete a retired label.
-["parser.nw"]
+# cob.lock — generated; edit only to delete a retired label.
+["parser.cob"]
 "fig:pipeline" = { id = "k3f9", kind = "figure" }
 "tbl:api"      = { id = "7g2A", kind = "table" }
 "eq:wrap"      = { id = "Qx0m", kind = "equation" }
@@ -73,7 +73,7 @@ identity.
 ## Mint on miss, freeze under --locked {#sec:YZLc}
 
 A normal `weave` mints an id for any label missing from the lock and rewrites
-`lit.lock`, a dev-time side effect like updating a dependency lockfile. On a
+`cob.lock`, a dev-time side effect like updating a dependency lockfile. On a
 collision it re-rolls. But weave must stay a byte-deterministic function of its
 inputs (§8), and CI and the Nix sandbox run against a read-only source tree. So
 `weave --locked` never mints: a label absent from the lock is the E031 error,
@@ -84,9 +84,9 @@ determinism.
 ## Discovery {#sec:acTW}
 
 The id is random and persisted, so it cannot be computed; you discover it with
-tooling. `lit lock` is a fast pass that mints and populates `lit.lock` with no
-full weave, and the committed lock is greppable. `lit labels <file>` lists a
-file's label-to-id map; `lit id <file> <label>` prints one id for scripting.
+tooling. `cob lock` is a fast pass that mints and populates `cob.lock` with no
+full weave, and the committed lock is greppable. `cob labels <file>` lists a
+file's label-to-id map; `cob id <file> <label>` prints one id for scripting.
 
 ## How the code implements this {#sec:erRn}
 
@@ -182,13 +182,13 @@ pub struct LockFile {
 }
 @
 Two codes. E031 is a label missing under `--locked` — the caller must run
-`lit lock` first. E032 is any read, parse, or write failure of the lock itself.
+`cob lock` first. E032 is any read, parse, or write failure of the lock itself.
 <<the lock error>>=
 #[derive(Debug)]
 pub enum LockError {
-    /// E031 — a label absent from `lit.lock` under `--locked` (§7.1).
+    /// E031 — a label absent from `cob.lock` under `--locked` (§7.1).
     Missing { file: String, label: String },
-    /// E032 — `lit.lock` could not be read/parsed or written.
+    /// E032 — `cob.lock` could not be read/parsed or written.
     Io(std::io::Error),
     Parse(String),
 }
@@ -198,11 +198,11 @@ impl fmt::Display for LockError {
         match self {
             LockError::Missing { file, label } => write!(
                 f,
-                "error[E031]: label `{label}` (in {file}) is not in lit.lock; \
-                 run `lit lock` to mint it, or drop --locked"
+                "error[E031]: label `{label}` (in {file}) is not in cob.lock; \
+                 run `cob lock` to mint it, or drop --locked"
             ),
-            LockError::Io(e) => write!(f, "error[E032]: lit.lock: {e}"),
-            LockError::Parse(m) => write!(f, "error[E032]: lit.lock: {m}"),
+            LockError::Io(e) => write!(f, "error[E032]: cob.lock: {e}"),
+            LockError::Parse(m) => write!(f, "error[E032]: cob.lock: {m}"),
         }
     }
 }
@@ -264,7 +264,7 @@ fn base62(mut n: u32) -> String {
     String::from_utf8(buf.to_vec()).expect("base62 alphabet is ASCII")
 }
 @
-The operations the rest of lit calls: load and save the whole file, look up or mint
+The operations the rest of cob calls: load and save the whole file, look up or mint
 one id, list a file's labels, and count the total.
 <<the lock file operations>>=
 impl LockFile {
@@ -285,11 +285,11 @@ impl LockFile {
     <<count of frozen ids>>
 }
 @
-An absent lock is an empty lock, not an error — the first `lit lock` or `weave`
+An absent lock is an empty lock, not an error — the first `cob lock` or `weave`
 mints into it. Loading rebuilds the `used` index from every stored id.
 <<load the lock>>=
-/// Load `lit.lock`; an absent file is an empty lock, not an error (the first
-/// `lit lock`/`weave` mints into it).
+/// Load `cob.lock`; an absent file is an empty lock, not an error (the first
+/// `cob lock`/`weave` mints into it).
 pub fn load(path: &Path) -> Result<LockFile, LockError> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
@@ -314,7 +314,7 @@ behind a fixed two-line header. Byte-stable output is what lets CI diff the lock
 pub fn save(&self, path: &Path) -> Result<(), LockError> {
     let body = toml::to_string(&self.files).map_err(|e| LockError::Parse(e.to_string()))?;
     let text = format!(
-        "# lit.lock — generated (§7.1). label → frozen opaque id.\n\
+        "# cob.lock — generated (§7.1). label → frozen opaque id.\n\
          # Edit only to retire a label; ids never change once minted.\n{body}"
     );
     std::fs::write(path, text).map_err(LockError::Io)
@@ -350,14 +350,14 @@ pub fn mint(&mut self, file: &str, label: &str, kind: Kind, minter: &mut Minter)
     id
 }
 @
-An auto-anchored section (§7.1, `section.rs`) has no author label, so `lit lock`
-mints its id first, then uses that id as its own label: the source anchor lit writes
-is `sec:<id>`. The id and its name are the same string until `lit rename-label`
+An auto-anchored section (§7.1, `section.rs`) has no author label, so `cob lock`
+mints its id first, then uses that id as its own label: the source anchor cob writes
+is `sec:<id>`. The id and its name are the same string until `cob rename-label`
 gives it a human one. Like `mint`, a collision with an id already in use is
 re-rolled. It returns the id so the caller can write the anchor.
 <<mint an auto section id>>=
 /// Mint a fresh opaque id for an unlabelled section and record it under the label
-/// `sec:<id>` — the anchor lit writes into the source (§7.1). Returns the id.
+/// `sec:<id>` — the anchor cob writes into the source (§7.1). Returns the id.
 pub fn mint_section(&mut self, file: &str, minter: &mut Minter) -> String {
     let id = loop {
         let cand = base62(minter.next());
@@ -376,7 +376,7 @@ pub fn mint_section(&mut self, file: &str, minter: &mut Minter) -> String {
     id
 }
 @
-`lit rename-label` takes the frozen id and gives it a human name. First it finds the
+`cob rename-label` takes the frozen id and gives it a human name. First it finds the
 section entry that carries the id, then it moves the entry to the new label, keeping
 the id. The id never changes, so every reference and permalink still resolves. A
 move to a label already in the file is refused, so a name is never overwritten.
@@ -412,16 +412,16 @@ pub fn rename(&mut self, file: &str, old: &str, new: &str) -> bool {
     }
 }
 @
-A file's label-to-entry pairs in sorted order, for `lit labels`.
+A file's label-to-entry pairs in sorted order, for `cob labels`.
 <<a file's labels>>=
-/// A file's `label → entry` pairs in sorted order (for `lit labels`).
+/// A file's `label → entry` pairs in sorted order (for `cob labels`).
 pub fn labels(&self, file: &str) -> impl Iterator<Item = (&String, &LockEntry)> {
     self.files.get(file).into_iter().flat_map(|m| m.iter())
 }
 @
 The total number of ids across every file, for the mint report.
 <<count of frozen ids>>=
-/// The total number of frozen ids across every file — used by `lit lock` to
+/// The total number of frozen ids across every file — used by `cob lock` to
 /// report how many labels were newly minted.
 pub fn count(&self) -> usize {
     self.used.len()
@@ -439,8 +439,8 @@ mod tests {
     fn mint_is_idempotent_per_label() {
         let mut lock = LockFile::default();
         let mut m = Minter::seeded(1);
-        let a = lock.mint("f.nw", "fig:x", Kind::Figure, &mut m);
-        let b = lock.mint("f.nw", "fig:x", Kind::Figure, &mut m);
+        let a = lock.mint("f.cob", "fig:x", Kind::Figure, &mut m);
+        let b = lock.mint("f.cob", "fig:x", Kind::Figure, &mut m);
         assert_eq!(a, b, "the same label re-reads its frozen id, never re-mints");
         assert_eq!(a.len(), ID_LEN as usize);
         assert!(a.bytes().all(|c| c.is_ascii_alphanumeric()));
@@ -450,9 +450,9 @@ mod tests {
     fn distinct_labels_get_distinct_ids() {
         let mut lock = LockFile::default();
         let mut m = Minter::seeded(42);
-        let a = lock.mint("f.nw", "fig:a", Kind::Figure, &mut m);
-        let b = lock.mint("f.nw", "fig:b", Kind::Figure, &mut m);
-        let c = lock.mint("g.nw", "fig:a", Kind::Figure, &mut m);
+        let a = lock.mint("f.cob", "fig:a", Kind::Figure, &mut m);
+        let b = lock.mint("f.cob", "fig:b", Kind::Figure, &mut m);
+        let c = lock.mint("g.cob", "fig:a", Kind::Figure, &mut m);
         // Note-local: `fig:a` in two files is two entries with two ids.
         assert_ne!(a, b);
         assert_ne!(a, c);
@@ -471,31 +471,31 @@ mod tests {
         let mut m = Minter::seeded(7);
         // Pretend `first` is already taken elsewhere.
         lock.used.insert(first.clone());
-        let got = lock.mint("f.nw", "fig:x", Kind::Figure, &mut m);
+        let got = lock.mint("f.cob", "fig:x", Kind::Figure, &mut m);
         assert_ne!(got, first, "an id already in use is skipped");
     }
 
     #[test]
     fn toml_round_trips() {
-        let dir = std::env::temp_dir().join("lit-lock-roundtrip");
+        let dir = std::env::temp_dir().join("cob-lock-roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("lit.lock");
+        let path = dir.join("cob.lock");
         let mut lock = LockFile::default();
         let mut m = Minter::seeded(99);
-        let fig = lock.mint("parser.nw", "fig:pipeline", Kind::Figure, &mut m);
-        let tbl = lock.mint("parser.nw", "tbl:api", Kind::Table, &mut m);
+        let fig = lock.mint("parser.cob", "fig:pipeline", Kind::Figure, &mut m);
+        let tbl = lock.mint("parser.cob", "tbl:api", Kind::Table, &mut m);
         lock.save(&path).unwrap();
 
         let reloaded = LockFile::load(&path).unwrap();
-        assert_eq!(reloaded.get("parser.nw", "fig:pipeline").unwrap().id, fig);
+        assert_eq!(reloaded.get("parser.cob", "fig:pipeline").unwrap().id, fig);
         assert_eq!(
-            reloaded.get("parser.nw", "tbl:api").unwrap().kind,
+            reloaded.get("parser.cob", "tbl:api").unwrap().kind,
             Kind::Table
         );
         // The reload rebuilds `used`, so a mint after load still avoids collisions.
         let _ = tbl;
         // Saving the reloaded lock is byte-stable.
-        let path2 = dir.join("lit.lock.2");
+        let path2 = dir.join("cob.lock.2");
         reloaded.save(&path2).unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -505,10 +505,10 @@ mod tests {
 
     #[test]
     fn absent_lock_loads_empty() {
-        let path = std::env::temp_dir().join("lit-lock-does-not-exist-xyzzy.lock");
+        let path = std::env::temp_dir().join("cob-lock-does-not-exist-xyzzy.lock");
         let _ = std::fs::remove_file(&path);
         let lock = LockFile::load(&path).unwrap();
-        assert!(lock.get("f.nw", "fig:x").is_none());
+        assert!(lock.get("f.cob", "fig:x").is_none());
     }
 }
 @

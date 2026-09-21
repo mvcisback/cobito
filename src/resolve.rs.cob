@@ -8,7 +8,7 @@ label table, and one resolved target for each `data-ref` site.
 
 ## Identity is document-global {#sec:iBsg}
 
-Identity is document-global, so a reference works across pages. lit assigns every
+Identity is document-global, so a reference works across pages. cob assigns every
 number and anchor first, then splits the document into pages. A page is a
 presentation choice, so it must not change what a reference reads. This is why
 planning lives in its own pass, before the split.
@@ -22,9 +22,9 @@ attribute that carries it (`data-id`, not `data-number`).
 
 Prose carries a label on the target and a reference at the use site. In `html`
 mode these are attributes; in `markdown` mode `\label` and `\ref` lower to the
-same attributes (§6.4). At weave time lit turns each `data-ref` into an anchor
+same attributes (§6.4). At weave time cob turns each `data-ref` into an anchor
 whose text comes from the target's kind and its opaque id, such as
-`<a href="parsing.html#fig-pipeline">Figure k3f9</a>`. lit keeps author-supplied
+`<a href="parsing.html#fig-pipeline">Figure k3f9</a>`. cob keeps author-supplied
 link text if there is any. An href is relative: a same-page target is a bare
 `#anchor`; a cross-page target is `page.html#anchor`. A colon in a label id
 becomes a dash in the emitted anchor, because a colon needs escaping in every CSS
@@ -34,7 +34,7 @@ selector that touches it.
   with no known prefix is not a target.
 - The numbering scheme is `flat` or `by-page`; the default is `flat`, so a page
   boundary does not leak into a stable reference. M2 implements `flat`.
-- lit numbers an equation by default. A `data-nonumber` equation div opts out.
+- cob numbers an equation by default. A `data-nonumber` equation div opts out.
 - A figure and a table need a caption. A missing caption is the W103 lint, not an
   error.
 - A duplicate label is the E014 error. A `data-ref` to an unknown label is E015.
@@ -52,7 +52,7 @@ an equation carries it on the equation div itself. This keeps the annotation
 layer's quote selectors (§9.2) stable when a figure moves, and the opaque id does
 not change at all when it moves.
 
-lit rejects CSS counters. A counter resets per document, and each lit page is a
+cob rejects CSS counters. A counter resets per document, and each cob page is a
 separate HTML file, so a counter could not give a document-global id on the
 second page. The attribute holds the globally-assigned id instead — which under
 §7.1 is minted once and frozen, so it is stable across documents too.
@@ -104,10 +104,10 @@ use crate::model::{DocModel, Lint};
 use crate::rewrite::{anchor_of, slug, Kind, ResolvedRef, Scan};
 @
 The label-id map carries every labelled float's human label to its frozen opaque
-id (§7.1). Weave builds it from `lit.lock` before planning.
+id (§7.1). Weave builds it from `cob.lock` before planning.
 <<the label id map>>=
 /// Human label → frozen opaque id (§7.1), covering every labelled float in the
-/// document. Weave builds this from `lit.lock` before planning.
+/// document. Weave builds this from `cob.lock` before planning.
 pub type LabelIds = BTreeMap<String, String>;
 @
 Two failures: the same label id defined twice (E014), and a `data-ref` whose
@@ -262,7 +262,7 @@ starts a new page whose slug is derived from its title and made unique.
     let default_title = doc
         .files
         .first()
-        .map(|f| f.trim_end_matches(".nw").to_string())
+        .map(|f| f.trim_end_matches(".cob").to_string())
         .unwrap_or_else(|| "index".to_string());
 
     let mut pages: Vec<PageMeta> = Vec::new();
@@ -592,7 +592,7 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
         if *is_code {
             sections.push(crate::model::Section {
                 id: id.clone(),
-                file: "t.nw".into(),
+                file: "t.cob".into(),
                 line: i as u32 + 1,
                 kind: SectionKind::Code {
                     name: html.to_string(),
@@ -616,14 +616,14 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
             first_tags.push(sc.first_tag[before].clone());
             sections.push(crate::model::Section {
                 id,
-                file: "t.nw".into(),
+                file: "t.cob".into(),
                 line: i as u32 + 1,
                 kind: SectionKind::Docs { spans: vec![] },
             });
         }
     }
     let doc = DocModel {
-        files: vec!["t.nw".into()],
+        files: vec!["t.cob".into()],
         sections,
         chunks,
     };
@@ -744,10 +744,10 @@ fn duplicate_label_is_e014() {
     )
     .unwrap();
     let doc = DocModel {
-        files: vec!["t.nw".into()],
+        files: vec!["t.cob".into()],
         sections: vec![crate::model::Section {
             id: "sec-1".into(),
-            file: "t.nw".into(),
+            file: "t.cob".into(),
             line: 1,
             kind: SectionKind::Docs { spans: vec![] },
         }],
@@ -764,10 +764,10 @@ fn unknown_ref_is_e015() {
     let mut sc = Scan::default();
     scan("<h1>I</h1><a data-ref=\"fig:ghost\"></a>", 0, &mut sc).unwrap();
     let doc = DocModel {
-        files: vec!["t.nw".into()],
+        files: vec!["t.cob".into()],
         sections: vec![crate::model::Section {
             id: "sec-1".into(),
-            file: "t.nw".into(),
+            file: "t.cob".into(),
             line: 1,
             kind: SectionKind::Docs { spans: vec![] },
         }],

@@ -1,11 +1,11 @@
-# Highlighting overrides for flake.nix.nw (highlight.rs.nw §5.5, tier 1).
+# Highlighting overrides for flake.nix.cob (highlight.rs.cob §5.5, tier 1).
 #
-# flake.nix.nw is a Nix document, so every chunk resolves to `nix` by the
+# flake.nix.cob is a Nix document, so every chunk resolves to `nix` by the
 # root-extension rule (tier 3). The check bodies are shell scripts, not Nix, so
 # each script chunk is marked `bash` here. This map is out-of-band config, so it
 # survives `markup`; an inline `<<name>>= {lang=bash}` would not.
 #
-# The keys are chunk names unique to flake.nix.nw, so this map has no effect on
+# The keys are chunk names unique to flake.nix.cob, so this map has no effect on
 # the fixture weaves (book/ring/md/hl) that run in the same directory.
 [weave.chunk-lang]
 "determinism script" = "bash"
@@ -22,5 +22,5 @@
 "noweb-drift script" = "bash"
 "dogfood script" = "bash"
 "assert the flake round-trips" = "bash"
-"assert lit highlights its own nix" = "bash"
+"assert cob highlights its own nix" = "bash"
 "selfhost script" = "bash"

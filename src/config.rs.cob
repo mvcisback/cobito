@@ -1,21 +1,21 @@
 # The project manifest (§5.2, §6.1)
 
-This module is `lit.toml`, the project manifest. The prose is the specification.
+This module is `cob.toml`, the project manifest. The prose is the specification.
 The chunks after it are the implementation. Every table is optional, so an absent
 or empty file is valid — the CLI then falls back to its argument-derived defaults.
 
 ## What the manifest declares {#sec:TLsr}
 
-A `[[document]]` table names the document: its id, title, authors, and the `.nw`
+A `[[document]]` table names the document: its id, title, authors, and the `.cob`
 files in order. A `[tangle]` table sets the default output directory, and a
 `[[tangle.root]]` table per root sets that root's line-pragma format. A `[weave]`
 table holds the highlight language keys (§5.5).
 
 ```toml
 [[document]]
-id = "lit"
-title = "lit: a literate programming system"
-files = ["intro.nw", "parser.nw", "weave.nw"]
+id = "cob"
+title = "cob: a literate programming system"
+files = ["intro.cob", "parser.cob", "weave.cob"]
 
 [tangle]
 outdir = "."
@@ -31,7 +31,7 @@ A chunk whose name is path-shaped — it contains a `/`, or it matches a file
 extension — is a root. `notangle -L` takes a printf-ish format for its line
 pragma, and the correct format is language-specific: its own default is C's
 `#line`. So a single boolean would be wrong — it would emit `#line` into Python
-and Rust. lit takes a per-root format string instead, and it defaults to *off*.
+and Rust. cob takes a per-root format string instead, and it defaults to *off*.
 
 There is a verified caveat. The `-L` flag disables indentation propagation, so an
 inner chunk's lines land at column 0, and it splits the code around a chunk use
@@ -55,7 +55,7 @@ Everything downstream — the numbering, the refs, the math render, the sidenote
 ## How the code implements this {#sec:Er9s}
 
 This module is a set of serde structs, one per manifest table, plus one `impl`
-block that loads the file and answers the questions the rest of lit asks of it:
+block that loads the file and answers the questions the rest of cob asks of it:
 which document, and which tangle roots carry a line-pragma format. The file is
 laid out the way a reader meets it: the module banner, the imports, the error
 type, then each table struct in source order, then the loader and its queries,
@@ -87,7 +87,7 @@ The banner records how much of the manifest is live today. M4 reads a small slic
 the `[weave.annotate]` keys of §5.3 and §10 parse leniently now and gain meaning
 with their milestones.
 <<the module banner>>=
-//! `lit.toml`, the project manifest (§5.2). M4 reads a deliberately
+//! `cob.toml`, the project manifest (§5.2). M4 reads a deliberately
 //! small slice: `[[document]]` metadata (which feeds `site.json`'s `meta`) and
 //! `[[tangle.root]]` line-pragma formats. The `[weave]` / `[weave.annotate]`
 //! keys of §5.3/§10 are parsed leniently (unknown keys ignored) but not yet
@@ -110,9 +110,9 @@ the normal case.
 <<the config error>>=
 #[derive(Debug)]
 pub enum ConfigError {
-    /// `lit.toml` was present but did not parse.
+    /// `cob.toml` was present but did not parse.
     Parse { path: String, message: String },
-    /// Reading `lit.toml` failed for a reason other than absence.
+    /// Reading `cob.toml` failed for a reason other than absence.
     Read { path: String, source: std::io::Error },
 }
 
@@ -135,7 +135,7 @@ impl std::error::Error for ConfigError {}
 gives a valid empty manifest, and each `#[serde(default)]` lets its table be
 omitted entirely.
 <<the manifest root>>=
-/// The whole manifest. Every section is optional so a bare or absent `lit.toml`
+/// The whole manifest. Every section is optional so a bare or absent `cob.toml`
 /// is valid — the CLI simply falls back to its argument-derived defaults.
 #[derive(Deserialize, Default)]
 pub struct Config {
@@ -159,7 +159,7 @@ lost.
 #[derive(Deserialize, Default)]
 pub struct Weave {
     /// The document-wide language for syntax highlighting (tier 2, §5.5): the
-    /// value `lit language`/the weaver resolves against, e.g. `"rust"` or
+    /// value `cob language`/the weaver resolves against, e.g. `"rust"` or
     /// `"nix"`. Absent means fall back to the tangle-root file extension.
     #[serde(default)]
     pub lang: Option<String>,
@@ -243,16 +243,16 @@ impl LinePragma {
     }
 }
 @
-`load` reads `dir/lit.toml`. Absence returns `Ok(None)` so the caller keeps its
+`load` reads `dir/cob.toml`. Absence returns `Ok(None)` so the caller keeps its
 defaults; any other read error, or a parse error, becomes E029. The two query
-methods answer exactly what the rest of lit needs: the first document, and the
+methods answer exactly what the rest of cob needs: the first document, and the
 root-name → format map for the roots that configure one.
 <<loading and querying the manifest>>=
 impl Config {
-    /// Load `dir/lit.toml`. Absence is not an error — returns `Ok(None)` so the
+    /// Load `dir/cob.toml`. Absence is not an error — returns `Ok(None)` so the
     /// caller keeps its argument-derived defaults.
     pub fn load(dir: &Path) -> Result<Option<Config>, ConfigError> {
-        let path = dir.join("lit.toml");
+        let path = dir.join("cob.toml");
         let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn absent_file_is_not_an_error() {
-        let dir = std::env::temp_dir().join("lit-config-absent");
+        let dir = std::env::temp_dir().join("cob-config-absent");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert!(Config::load(&dir).unwrap().is_none());
@@ -311,17 +311,17 @@ mod tests {
         let c = parse(
             r#"
             [[document]]
-            id = "lit"
-            title = "lit: a system"
+            id = "cob"
+            title = "cob: a system"
             authors = ["A", "B"]
-            files = ["a.nw", "b.nw"]
+            files = ["a.cob", "b.cob"]
             "#,
         );
         let d = c.document().unwrap();
-        assert_eq!(d.id, "lit");
-        assert_eq!(d.title, "lit: a system");
+        assert_eq!(d.id, "cob");
+        assert_eq!(d.title, "cob: a system");
         assert_eq!(d.authors, vec!["A", "B"]);
-        assert_eq!(d.files, vec!["a.nw", "b.nw"]);
+        assert_eq!(d.files, vec!["a.cob", "b.cob"]);
     }
 
     #[test]

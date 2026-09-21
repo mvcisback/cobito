@@ -13,7 +13,7 @@ before, the line numbers stay out of that copy, and the page needs no script.
 ## The hard part {#sec:QRS0}
 
 A code chunk is not a valid program. It is target-language text with chunk uses
-spliced in. A chunk use is lit's own syntax, not the target's. A plain tokenizer
+spliced in. A chunk use is cob's own syntax, not the target's. A plain tokenizer
 reads the two brackets of a chunk use as a shift operator and chokes. Three
 moves make highlighting safe.
 
@@ -27,35 +27,35 @@ hole. It never reads across a hole. This is the discipline the math pass uses
 line `let c = HOLE;` tokenizes as `let`, `c`, `=`, and `;`, and the hole in the
 middle stays untouched, so the two brackets never lex as a shift operator.
 
-## Move 2 — lit resolves the language, once, out of band {#sec:50k1}
+## Move 2 — cob resolves the language, once, out of band {#sec:50k1}
 
-The engine never guesses the language. lit resolves it in three tiers. The most
+The engine never guesses the language. cob resolves it in three tiers. The most
 specific tier wins.
 
-1. Per-chunk override. A `[weave.chunk-lang]` table in `lit.toml` maps a chunk
+1. Per-chunk override. A `[weave.chunk-lang]` table in `cob.toml` maps a chunk
    name to a language. This is the escape hatch for a shell snippet inside a
    Rust document, or for an abstract chunk whose name has no extension. The map
    is out-of-band config, so it survives `markup`. An inline tag on the def line
    would not, because `markup` folds everything after the chunk name into the
    body.
-2. Document default. A `[weave] lang` key in `lit.toml` sets one language for
+2. Document default. A `[weave] lang` key in `cob.toml` sets one language for
    the whole document.
 3. Root file extension. With nothing else said, a chunk takes the language of
    the tangle root it flows into. A concrete chunk uses its own extension. An
-   abstract chunk has no extension, so lit walks the chunk-use graph to a root
+   abstract chunk has no extension, so cob walks the chunk-use graph to a root
    that reaches it. Most chunks need no configuration.
 
 A chunk that resolves to no known language is plain text and a W104 warning,
 never an error; the page still renders. An unknown chunk name in either
 `[weave]` key is the E033 error.
 
-lit ships four grammars: Rust, Nix, Bash, and CSS. CSS is here so lit can
+cob ships four grammars: Rust, Nix, Bash, and CSS. CSS is here so cob can
 present its own stylesheet as a literate document (§13). Each further grammar is
 one more dependency (§19.5).
 
 ## Move 3 — one resolver, shared by weave and editor {#sec:gGq9}
 
-The three tiers are one function. lit exposes it as `lit language <file>
+The three tiers are one function. cob exposes it as `cob language <file>
 <chunk>`, which prints the language id or exits nonzero. Weave calls it inside.
 An editor plugin runs the same command. So the woven page and the editor can
 never disagree on the language of a chunk.
@@ -64,9 +64,9 @@ never disagree on the language of a chunk.
 
 Highlighting runs inside §5.4's render, after the chunk-use anchors exist.
 tree-sitter needs the whole chunk as one buffer, because a string or a comment
-can cross a line break. So lit tokenizes per chunk, not per line, and then
+can cross a line break. So cob tokenizes per chunk, not per line, and then
 re-splits the colored runs at each newline into the same self-contained line
-spans that §5.4 emits. For each code chunk lit does four steps:
+spans that §5.4 emits. For each code chunk cob does four steps:
 
 - it resolves the language by the tiers above;
 - it builds a clean buffer: the literal runs joined by newlines, with each hole
@@ -80,7 +80,7 @@ spans that §5.4 emits. For each code chunk lit does four steps:
 
 The engine is tree-sitter, through `tree-sitter-highlight`. Each grammar maps a
 stable set of highlight names (`keyword`, `string`, `comment`, and so on) to
-`tok-*` CSS classes in `lit.css`. The color is a pure class over the bytes that
+`tok-*` CSS classes in `cob.css`. The color is a pure class over the bytes that
 are already there. There is no inline style and no script, so the archival rule
 (§6.3) and determinism (§8) hold, and a token span adds no text of its own, so
 §5.4's copy and quote guarantees stay true.
@@ -144,7 +144,7 @@ is pure CSS so the archival and annotation contracts hold.
 <<the module banner>>=
 //! Syntax highlighting (§5.5). A code chunk is not a valid program: it is
 //! target-language text with *chunk-use holes* (`@<<next char@>>`) spliced in, and
-//! those are lit's syntax, not the target's. So the tokenizer never sees a hole —
+//! those are cob's syntax, not the target's. So the tokenizer never sees a hole —
 //! we hand tree-sitter only the literal runs between holes and splice the holes'
 //! anchors back afterward, exactly the discipline the math pass uses (§6.2).
 //!
@@ -165,7 +165,7 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 use crate::model::{CodeSpan, DocModel, SectionKind};
 use crate::prose;
 @
-The four grammars lit ships, one dependency each.
+The four grammars cob ships, one dependency each.
 <<the language enum>>=
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Lang {
@@ -175,12 +175,12 @@ pub enum Lang {
     Css,
 }
 @
-Four small conversions: the id `lit language` prints, parsing an id from config,
+Four small conversions: the id `cob language` prints, parsing an id from config,
 mapping a file extension to a language, and reading a language off a chunk or root
 name that ends in a known extension.
 <<language conversions>>=
 impl Lang {
-    /// The id printed by `lit language` and used to select a grammar.
+    /// The id printed by `cob language` and used to select a grammar.
     pub fn id(self) -> &'static str {
         match self {
             Lang::Rust => "rust",
@@ -643,7 +643,7 @@ Tier 1 beats the chunk's own extension and the default.
 #[test]
 fn resolve_prefers_a_chunk_lang_override() {
     // Tier 1 wins over the chunk's own `.rs` extension (tier 3) and the default.
-    let doc = model_from("@file t.nw\n@begin code 0\n@defn build.rs\n@nl\n@text x\n@nl\n@end code 0\n");
+    let doc = model_from("@file t.cob\n@begin code 0\n@defn build.rs\n@nl\n@text x\n@nl\n@end code 0\n");
     let mut cfg = LangConfig::with_default(Some(Lang::Rust));
     cfg.chunk_lang.insert("build.rs".to_string(), Lang::Bash);
     assert_eq!(resolve(&doc, "build.rs", &cfg), Some(Lang::Bash));
@@ -653,7 +653,7 @@ Tier 2 is used when there is no per-chunk entry.
 <<resolve prefers the document default>>=
 #[test]
 fn resolve_prefers_the_document_default() {
-    let doc = model_from("@file t.nw\n@begin code 0\n@defn a.rs\n@nl\n@text x\n@nl\n@end code 0\n");
+    let doc = model_from("@file t.cob\n@begin code 0\n@defn a.rs\n@nl\n@text x\n@nl\n@end code 0\n");
     let cfg = LangConfig::with_default(Some(Lang::Nix));
     assert_eq!(resolve(&doc, "a.rs", &cfg), Some(Lang::Nix));
 }
@@ -662,7 +662,7 @@ Tier 3 reads the language off the chunk's own name.
 <<resolve uses the chunk-name extension>>=
 #[test]
 fn resolve_uses_the_chunk_name_extension() {
-    let doc = model_from("@file t.nw\n@begin code 0\n@defn flake.nix\n@nl\n@text x\n@nl\n@end code 0\n");
+    let doc = model_from("@file t.cob\n@begin code 0\n@defn flake.nix\n@nl\n@text x\n@nl\n@end code 0\n");
     let cfg = LangConfig::default();
     assert_eq!(resolve(&doc, "flake.nix", &cfg), Some(Lang::Nix));
 }
@@ -672,7 +672,7 @@ An abstract chunk with no extension inherits its root's language by reachability
 #[test]
 fn resolve_follows_an_abstract_chunk_to_its_root() {
     // `main.rs` uses `helper`; `helper` has no extension of its own.
-    let ir = "@file t.nw\n\
+    let ir = "@file t.cob\n\
               @begin code 0\n@defn src/main.rs\n@nl\n@text f(\n@use helper\n@text )\n@nl\n@end code 0\n\
               @begin code 1\n@defn helper\n@nl\n@text 1\n@nl\n@end code 1\n";
     let doc = model_from(ir);
@@ -684,7 +684,7 @@ An unknown extension resolves to nothing, which the weaver treats as plain text.
 <<resolve gives up on an unknown language>>=
 #[test]
 fn resolve_gives_up_on_an_unknown_language() {
-    let ir = "@file t.nw\n@begin code 0\n@defn notes.txt\n@nl\n@text x\n@nl\n@end code 0\n";
+    let ir = "@file t.cob\n@begin code 0\n@defn notes.txt\n@nl\n@text x\n@nl\n@end code 0\n";
     let doc = model_from(ir);
     let cfg = LangConfig::default();
     assert_eq!(resolve(&doc, "notes.txt", &cfg), None);

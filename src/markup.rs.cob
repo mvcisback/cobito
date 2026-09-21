@@ -3,9 +3,9 @@
 This module is the specification and the implementation of the native reader. The
 prose is the specification. The chunks after it are the implementation.
 
-The reader reads a `.nw` file and makes the same event stream that noweb's
-`markup` stage makes (§4.1). It replaces the `markup` process. lit no longer runs
-an external tool to read its own source, so lit can ship as one binary (§11). lit
+The reader reads a `.cob` file and makes the same event stream that noweb's
+`markup` stage makes (§4.1). It replaces the `markup` process. cob no longer runs
+an external tool to read its own source, so cob can ship as one binary (§11). cob
 also owns the syntax now, so a later milestone can add new chunk-line syntax that
 `markup` cannot express.
 
@@ -161,8 +161,8 @@ grammar, the escape helper, the entry point that reads each file, the stateful
 The banner states the module's job and the one safety rule: noweb stays the
 oracle, so this reader must match it byte for byte.
 <<the reader banner>>=
-//! The native `.nw` reader (§4.1). Makes the same `Event` stream as noweb's
-//! `markup`, so lit reads its own source with no external process and can ship
+//! The native `.cob` reader (§4.1). Makes the same `Event` stream as noweb's
+//! `markup`, so cob reads its own source with no external process and can ship
 //! as one binary (§11). A differential test proves the events match real
 //! `markup` for every module; `noweb::parse` stays as the oracle's decoder.
 @
@@ -320,7 +320,7 @@ The entry point reads each file and folds it into one event stream. It emits one
 `@file` per file with the path as given, so `@file` events stay portable, the
 same as `markup`. The chunk counter runs across every file.
 <<read the files>>=
-/// Read each `.nw` file and make the `markup` event stream (§4.1).
+/// Read each `.cob` file and make the `markup` event stream (§4.1).
 ///
 /// Paths should be relative to the project root so `@file` events match what a
 /// `markup` run would print.
@@ -535,47 +535,47 @@ mod tests {
     #[test]
     fn matches_markup_for_hello() {
         same_as_oracle(
-            "fixtures/hello.nw",
+            "fixtures/hello.cob",
             include_str!("../fixtures/hello.markup"),
         );
     }
 
     #[test]
     fn matches_markup_for_book() {
-        same_as_oracle("fixtures/book.nw", include_str!("../fixtures/book.markup"));
+        same_as_oracle("fixtures/book.cob", include_str!("../fixtures/book.markup"));
     }
 
     #[test]
     fn matches_markup_for_md() {
-        same_as_oracle("fixtures/md.nw", include_str!("../fixtures/md.markup"));
+        same_as_oracle("fixtures/md.cob", include_str!("../fixtures/md.markup"));
     }
 
     #[test]
     fn matches_markup_for_hl() {
-        same_as_oracle("fixtures/hl.nw", include_str!("../fixtures/hl.markup"));
+        same_as_oracle("fixtures/hl.cob", include_str!("../fixtures/hl.markup"));
     }
 
     #[test]
     fn matches_markup_for_sections() {
         same_as_oracle(
-            "fixtures/sections.nw",
+            "fixtures/sections.cob",
             include_str!("../fixtures/sections.markup"),
         );
     }
 
     #[test]
     fn matches_markup_for_tx() {
-        same_as_oracle("fixtures/tx.nw", include_str!("../fixtures/tx.markup"));
+        same_as_oracle("fixtures/tx.cob", include_str!("../fixtures/tx.markup"));
     }
 
     #[test]
     fn matches_markup_for_txf() {
-        same_as_oracle("fixtures/txf.nw", include_str!("../fixtures/txf.markup"));
+        same_as_oracle("fixtures/txf.cob", include_str!("../fixtures/txf.markup"));
     }
 
     #[test]
     fn matches_markup_for_quote() {
-        same_as_oracle("fixtures/quote.nw", include_str!("../fixtures/quote.markup"));
+        same_as_oracle("fixtures/quote.cob", include_str!("../fixtures/quote.markup"));
     }
 }
 @

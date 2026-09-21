@@ -5,12 +5,12 @@ prose is the specification. The chunks after it are the implementation.
 
 ## What the parser reads {#sec:0AwF}
 
-lit does not drive `noweave`. It reads the IR that noweb's `markup` stage emits,
+cob does not drive `noweave`. It reads the IR that noweb's `markup` stage emits,
 and it shells out to `notangle` for tangle. `markup` writes one tagged line per
 token. A short example:
 
 ```
-@file lexer.nw
+@file lexer.cob
 @begin docs 3
 @text <p>The lexer emits one token per call.</p>
 @nl
@@ -24,25 +24,25 @@ token. A short example:
 @end code 4
 ```
 
-lit consumes these tags: `@file`, `@line`, `@begin`/`@end docs|code`, `@text`,
+cob consumes these tags: `@file`, `@line`, `@begin`/`@end docs|code`, `@text`,
 `@nl`, `@defn`, `@use`, `@quote`/`@endquote` (from an inline prose quote),
 `@literal`, `@index defn`, and `@fatal`.
 
 Chunk structure is reliable with no extra filter. `markup` must emit `@defn` and
 `@use` for each definition and reference, because `notangle` is itself
-`markup | nt`, and `nt` reads exactly those tags. lit v1 skips `finduses` and
-`noidx`, which serve the identifier index, not chunk structure. So lit ships no
+`markup | nt`, and `nt` reads exactly those tags. cob v1 skips `finduses` and
+`noidx`, which serve the identifier index, not chunk structure. So cob ships no
 identifier index in v1; it can come back later.
 
 ## Verified against noweb 2.13 {#sec:Kt8c}
 
-R1 is retired. lit probed the real toolchain with `fixtures/hello.nw` and the
+R1 is retired. cob probed the real toolchain with `fixtures/hello.cob` and the
 parser encodes these facts (§4.2):
 
 - The pipeline tools are not on `bin`. `markup`, `nt`, `tohtml`, and the rest
   live in `lib/noweb`. Only the `notangle`/`noweave`/`noroots` drivers are on
   `bin`. The Nix wrapper must add `lib/noweb` to the PATH.
-- `markup` emits no `@line` markers by default. lit counts each `@nl` since the
+- `markup` emits no `@line` markers by default. cob counts each `@nl` since the
   last `@file` to get a line number, the same way `nt` does for `-L`. The parser
   tracks this count for diagnostics (§12).
 - `@ %def c` becomes `@index defn c` and makes no docs chunk.
@@ -59,7 +59,7 @@ parser encodes these facts (§4.2):
   it as `Event::Fatal`, so a frozen golden records the failure too.
 - An unescaped chunk-use bracket in a docs chunk is a fatal error. The at-escape
   (an `@` before each bracket) arrives as literal text.
-- A backslash-dollar in prose passes through untouched. That escape is lit's own
+- A backslash-dollar in prose passes through untouched. That escape is cob's own
   convention (§6.2), not a noweb feature.
 
 ## How the code implements this {#sec:nsvK}
@@ -86,15 +86,15 @@ respect.
 <<the module banner>>=
 //! Parser for noweb's `markup` pipeline format.
 //!
-//! lit reads `.nw` files with the native reader (`markup::read`, §4.1); this
+//! cob reads `.cob` files with the native reader (`markup::read`, §4.1); this
 //! module only parses `markup` IR text into events, which the frozen
-//! `fixtures/*.markup` goldens and `lit dump-ir --from-markup` still use as the
+//! `fixtures/*.markup` goldens and `cob dump-ir --from-markup` still use as the
 //! reader's oracle. Verified against noweb 2.13 (nixpkgs); see §4.2 for the
 //! findings this encodes, notably: empty text lines arrive as `@text ` with a
 //! trailing space, and an `@fatal` event marks a markup error.
 @
 Only formatting — this module parses `markup` IR text into events. It runs no
-process; the native reader (`markup::read`, §4.1) reads `.nw` files at run time.
+process; the native reader (`markup::read`, §4.1) reads `.cob` files at run time.
 <<imports>>=
 use std::fmt;
 @
@@ -129,7 +129,7 @@ pub enum Event {
 }
 @
 A line the parser cannot read is E001. It carries the line number and the offending
-text, because the usual cause is a noweb version whose IR shape lit was not built
+text, because the usual cause is a noweb version whose IR shape cob was not built
 against.
 <<the parse error>>=
 #[derive(Debug)]
@@ -252,7 +252,7 @@ come out as expected, and nothing degrades to `Other`.
 #[test]
 fn parses_pinned_markup_output() {
     let events = parse(HELLO).expect("pinned fixture must parse");
-    assert_eq!(events[0], Event::File("fixtures/hello.nw".to_string()));
+    assert_eq!(events[0], Event::File("fixtures/hello.cob".to_string()));
 
     let code_numbers: Vec<u32> = events
         .iter()

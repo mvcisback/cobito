@@ -2,19 +2,19 @@
 
 This module is the archival document model. The prose is the specification. The
 chunks after it are the implementation. Phase 1, this weaver, writes `site.json`.
-Phase 2, the annotation and review tooling, reads it unchanged. lit emits it only
-under `lit weave --archive`.
+Phase 2, the annotation and review tooling, reads it unchanged. cob emits it only
+under `cob weave --archive`.
 
 ## Page boundaries {#sec:pzpT}
 
 noweb has no starred-section concept. cweb's section levels do not exist here. So
-lit splits on the prose instead. A `[weave] split-at` key names the heading level
+cob splits on the prose instead. A `[weave] spcob-at` key names the heading level
 to split on — a Markdown `#` and an HTML `h1` both count. A `nav-depth` key sets
 how deep the nav tree goes.
 
 ```toml
 [weave]
-split-at = "h1"
+spcob-at = "h1"
 nav-depth = 3
 ```
 
@@ -32,7 +32,7 @@ the chunk graph, and the pages:
 ```jsonc
 {
   "schema": 2,
-  "meta": { "id": "lit", "title": "…", "authors": ["…"] },
+  "meta": { "id": "cob", "title": "…", "authors": ["…"] },
   "nav": [ { "id": "parsing", "title": "Parsing", "level": 1, "children": [] } ],
   "labels": {
     "fig:pipeline": { "id": "k3f9", "page": "parsing", "anchor": "fig-pipeline",
@@ -53,7 +53,7 @@ the chunk graph, and the pages:
 The `schema` field is versioned. Any consumer — the review agent, an external tool
 — checks it before use. A mismatch is a hard failure, not a runtime surprise.
 Schema 2 replaces each label's position-dependent number with the frozen `id` from
-`lit.lock` (§7.1). A reference's display text, such as "Figure k3f9", comes from
+`cob.lock` (§7.1). A reference's display text, such as "Figure k3f9", comes from
 `kind` plus `id`, so no numeric field is left in the contract.
 
 There is no `generated` timestamp. A wall-clock field would make the output
@@ -119,7 +119,7 @@ the three things a maintainer must not break.
 //! The `site.json` contract (§8): a `schema: 2` document model that
 //! Phase 1 produces and Phase 2 (annotation/review tooling) consumes unchanged.
 //!
-//! It is written only under `lit weave --archive`. Determinism is a hard
+//! It is written only under `cob weave --archive`. Determinism is a hard
 //! requirement — no timestamps, and every map is a `BTreeMap` so key order is
 //! stable — because the archival artifact is diffed and Nix-cached (§8).
 //!
@@ -208,7 +208,7 @@ struct Chunk {
 }
 @
 The per-section shape. `Margin` is one hoisted sidenote. `Source` pins the
-section to its `.nw` file and line. `Section` is the rendered unit: docs sections
+section to its `.cob` file and line. `Section` is the rendered unit: docs sections
 carry a (possibly empty) `margin`, code sections carry a chunk `name`, a
 `continues` flag, and the chunk names they define and use. Absent optional fields
 are dropped so docs and code sections each serialize only what applies.

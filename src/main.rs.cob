@@ -13,7 +13,7 @@ code 0. A build script can therefore tell "you called me wrong" apart from "the
 work failed".
 
 The front half of `weave`, `lock`, `language`, `tangle`, and both dump commands is
-the same: read the `.nw` files, fold the events into the document model. That shared
+the same: read the `.cob` files, fold the events into the document model. That shared
 front half is factored into `build_doc` where a command needs it, and inlined where
 it does not.
 <<src/main.rs>>=
@@ -78,31 +78,31 @@ use std::path::Path;
 use std::process::ExitCode;
 @
 The usage banner is the help text. It prints when the command line makes no sense.
-It lists every subcommand and every option, so a reader who runs `lit` with no
+It lists every subcommand and every option, so a reader who runs `cob` with no
 arguments learns the whole surface at once.
 <<the usage banner>>=
 const USAGE: &str = "\
-lit — web-first literate programming (early scaffold)
+cob — web-first literate programming (early scaffold)
 
 USAGE:
-    lit weave <file.nw>...        weave to _site/ (single page; M2 adds splitting)
-    lit lock <file.nw>...         mint frozen ids for every label into lit.lock (§7.1)
-    lit rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
-    lit labels <file.nw>          list the file's label → id map from lit.lock
-    lit id <file.nw> <label>      print the frozen id for one label
-    lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
-    lit dump-ir <file.nw>...       print the parsed IR events (--from-markup <f>: parse a .markup)
-    lit dump-model <file.nw>...   fold the IR into the document model, print it
-    lit tangle <file.nw>...       tangle every root chunk
+    cob weave <file.cob>...        weave to _site/ (single page; M2 adds splitting)
+    cob lock <file.cob>...         mint frozen ids for every label into cob.lock (§7.1)
+    cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
+    cob labels <file.cob>          list the file's label → id map from cob.lock
+    cob id <file.cob> <label>      print the frozen id for one label
+    cob language <file.cob> <chunk> print the highlighting language for a chunk (§5.5)
+    cob dump-ir <file.cob>...       print the parsed IR events (--from-markup <f>: parse a .markup)
+    cob dump-model <file.cob>...   fold the IR into the document model, print it
+    cob tangle <file.cob>...       tangle every root chunk
 
-    lit --explain <CODE>         print the long form of a diagnostic (e.g. E014)
+    cob --explain <CODE>         print the long form of a diagnostic (e.g. E014)
 
 OPTIONS:
     --out <dir>                   weave: output dir (default: _site)
                                   tangle: root dir for tangled files (default: .)
     --archive                     weave: also emit site.json + per-page JSON (§8)
     --locked                      weave: never mint ids; error if a label is not
-                                  in lit.lock (CI / read-only sandbox; §7.1)
+                                  in cob.lock (CI / read-only sandbox; §7.1)
     --deny-warnings               weave: exit nonzero if any lint fires (CI)
     -R <name>                     tangle: write one chunk to stdout instead
     --check                       tangle: diff roots against disk, exit 1 on drift
@@ -118,7 +118,7 @@ banner and exits with code 2.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // `--explain <CODE>` is informational and stage-independent (§12): it may
-    // sit after any subcommand (`lit weave --explain E014`) or stand alone.
+    // sit after any subcommand (`cob weave --explain E014`) or stand alone.
     if let Some(pos) = args.iter().position(|a| a == "--explain") {
         return explain_cmd(args.get(pos + 1).map(String::as_str));
     }
@@ -133,7 +133,7 @@ fn main() -> ExitCode {
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
         Some(("--version" | "-V", _)) => {
-            println!("lit {}", env!("CARGO_PKG_VERSION"));
+            println!("cob {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         _ => {
@@ -155,12 +155,12 @@ fn explain_cmd(code: Option<&str>) -> ExitCode {
                 ExitCode::SUCCESS
             }
             None => {
-                eprintln!("lit: no explanation for `{code}`");
+                eprintln!("cob: no explanation for `{code}`");
                 ExitCode::FAILURE
             }
         },
         None => {
-            eprintln!("lit: --explain needs an error code (e.g. E014)");
+            eprintln!("cob: --explain needs an error code (e.g. E014)");
             ExitCode::from(2)
         }
     }
@@ -188,7 +188,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             "--out" => match it.next() {
                 Some(dir) => out = dir.clone(),
                 None => {
-                    eprintln!("lit: --out needs a directory");
+                    eprintln!("cob: --out needs a directory");
                     return ExitCode::from(2);
                 }
             },
@@ -199,14 +199,14 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         }
     }
     if files.is_empty() {
-        eprintln!("lit: weave needs at least one .nw file");
+        eprintln!("cob: weave needs at least one .cob file");
         return ExitCode::from(2);
     }
 
     let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("lit: {e}");
+            eprintln!("cob: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -231,7 +231,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     };
     let doc_cfg = cfg.document().cloned().unwrap_or_default();
     // A declared file set is the document's own definition of its sources;
-    // fall back to the CLI arguments when `lit.toml` names none.
+    // fall back to the CLI arguments when `cob.toml` names none.
     let source_files = if doc_cfg.files.is_empty() {
         files.clone()
     } else {
@@ -260,8 +260,8 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     match weave::write_site(
         &doc,
         Path::new(&out),
-        Path::new(".lit-cache"),
-        Path::new("lit.lock"),
+        Path::new(".cob-cache"),
+        Path::new("cob.lock"),
         meta,
         &lang_cfg,
         archive,
@@ -281,7 +281,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             // `--deny-warnings` turns lints into a nonzero exit for CI (§12); the
             // site is still written, so the artifact is available to inspect.
             if deny_warnings && warnings > 0 {
-                eprintln!("lit: {warnings} warning(s); failing due to --deny-warnings");
+                eprintln!("cob: {warnings} warning(s); failing due to --deny-warnings");
                 return ExitCode::FAILURE;
             }
             ExitCode::SUCCESS
@@ -297,12 +297,12 @@ fn weave_cmd(args: &[String]) -> ExitCode {
 model. It prints its own diagnostics and carries the exit code in the `Err`, so the
 caller returns that code directly.
 <<build the document once>>=
-/// Read the `.nw` files + fold the IR into the model — the front half shared by
+/// Read the `.cob` files + fold the IR into the model — the front half shared by
 /// `weave` and `lock`. Diagnostics are printed here; the `Err` carries the process
 /// exit code.
 fn build_doc(files: &[String]) -> Result<model::DocModel, ExitCode> {
     let events = markup::read(files).map_err(|e| {
-        eprintln!("lit: {e}");
+        eprintln!("cob: {e}");
         ExitCode::FAILURE
     })?;
     model::build(&events).map_err(|e| {
@@ -319,16 +319,16 @@ it mints one, records it, and writes a `sec:` anchor into the heading's source l
 untouched, and an already anchored heading is skipped, so re-running is idempotent.
 The report shows how many were newly minted.
 <<the lock command>>=
-/// `lit lock`: mint a frozen id for every label into `lit.lock` without rendering
+/// `cob lock`: mint a frozen id for every label into `cob.lock` without rendering
 /// (§7.1). It also gives every unlabelled `h2`/`h3` heading an id, anchored into the
-/// `.nw` source. Ids already present are left untouched; new ones are written back
+/// `.cob` source. Ids already present are left untouched; new ones are written back
 /// so a later `--locked` weave finds them.
 fn lock_cmd(files: &[String]) -> ExitCode {
     let doc = match build_doc(files) {
         Ok(doc) => doc,
         Err(code) => return code,
     };
-    let path = Path::new("lit.lock");
+    let path = Path::new("cob.lock");
     let mut lock = match lock::LockFile::load(path) {
         Ok(lock) => lock,
         Err(e) => {
@@ -354,7 +354,7 @@ fn lock_cmd(files: &[String]) -> ExitCode {
     }
     for (file, list) in &edits {
         if let Err(e) = section::apply_anchors(Path::new(file), list) {
-            eprintln!("lit: error[E032]: could not anchor {file}: {e}");
+            eprintln!("cob: error[E032]: could not anchor {file}: {e}");
             return ExitCode::FAILURE;
         }
     }
@@ -363,7 +363,7 @@ fn lock_cmd(files: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     println!(
-        "lit.lock: {} label(s), {} newly minted",
+        "cob.lock: {} label(s), {} newly minted",
         lock.count(),
         lock.count() - before
     );
@@ -379,7 +379,7 @@ rewrites the source anchor from `sec:<id>` to `sec:<name>`, then rekeys the lock
 saves it. The source edit runs before the lock save, so a write failure never leaves
 a lock that points at an anchor the source does not carry.
 <<the rename-label command>>=
-/// `lit rename-label <id> <name>`: give an auto section id a human `sec:` name
+/// `cob rename-label <id> <name>`: give an auto section id a human `sec:` name
 /// (§7.1). The frozen id never changes, so every reference and permalink still
 /// resolves; only the source anchor and the lock key change.
 fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
@@ -389,10 +389,10 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
     {
-        eprintln!("lit: error: `{name}` is not a valid name (letters, digits, - or _)");
+        eprintln!("cob: error: `{name}` is not a valid name (letters, digits, - or _)");
         return ExitCode::FAILURE;
     }
-    let path = Path::new("lit.lock");
+    let path = Path::new("cob.lock");
     let mut lock = match lock::LockFile::load(path) {
         Ok(lock) => lock,
         Err(e) => {
@@ -403,7 +403,7 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
     let (file, old_label) = match lock.find_section(id) {
         Some(pair) => pair,
         None => {
-            eprintln!("lit: error: no section has id `{id}` in lit.lock (run `lit lock`)");
+            eprintln!("cob: error: no section has id `{id}` in cob.lock (run `cob lock`)");
             return ExitCode::FAILURE;
         }
     };
@@ -413,18 +413,18 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if lock.get(&file, &new_label).is_some() {
-        eprintln!("lit: error: `{new_label}` already exists in {file}");
+        eprintln!("cob: error: `{new_label}` already exists in {file}");
         return ExitCode::FAILURE;
     }
     let old_name = old_label.strip_prefix("sec:").unwrap_or(&old_label);
     match section::rename_anchor(Path::new(&file), old_name, name) {
         Ok(true) => {}
         Ok(false) => {
-            eprintln!("lit: error: no `{old_label}` anchor found in {file}");
+            eprintln!("cob: error: no `{old_label}` anchor found in {file}");
             return ExitCode::FAILURE;
         }
         Err(e) => {
-            eprintln!("lit: error[E032]: {file}: {e}");
+            eprintln!("cob: error[E032]: {file}: {e}");
             return ExitCode::FAILURE;
         }
     }
@@ -441,10 +441,10 @@ The labels command prints the file's label-to-id map from the lock file, in sort
 order. The committed lock is the greppable source of truth, so this command just
 formats it.
 <<the labels command>>=
-/// `lit labels <file>`: print the file's `label → id (kind)` map from `lit.lock`,
+/// `cob labels <file>`: print the file's `label → id (kind)` map from `cob.lock`,
 /// in sorted order (the committed lock is the greppable source of truth; §7.1).
 fn labels_cmd(file: &str) -> ExitCode {
-    let lock = match lock::LockFile::load(Path::new("lit.lock")) {
+    let lock = match lock::LockFile::load(Path::new("cob.lock")) {
         Ok(lock) => lock,
         Err(e) => {
             eprintln!("{e}");
@@ -458,12 +458,12 @@ fn labels_cmd(file: &str) -> ExitCode {
 }
 @
 The id command prints the frozen id for one label. A known label prints and
-succeeds. An unknown label fails, and the message points at `lit lock` as the fix.
+succeeds. An unknown label fails, and the message points at `cob lock` as the fix.
 <<the id command>>=
-/// `lit id <file> <label>`: print the frozen id for one label, or exit nonzero if
-/// the label is not in `lit.lock`.
+/// `cob id <file> <label>`: print the frozen id for one label, or exit nonzero if
+/// the label is not in `cob.lock`.
 fn id_cmd(file: &str, label: &str) -> ExitCode {
-    let lock = match lock::LockFile::load(Path::new("lit.lock")) {
+    let lock = match lock::LockFile::load(Path::new("cob.lock")) {
         Ok(lock) => lock,
         Err(e) => {
             eprintln!("{e}");
@@ -476,7 +476,7 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         None => {
-            eprintln!("lit: no id for label `{label}` in {file} (run `lit lock`)");
+            eprintln!("cob: no id for label `{label}` in {file} (run `cob lock`)");
             ExitCode::FAILURE
         }
     }
@@ -495,7 +495,7 @@ fn lang_config(weave: &config::Weave) -> Result<highlight::LangConfig, String> {
     let parse = |name: &str, where_: &str| match highlight::Lang::from_id(name) {
         Some(l) => Ok(l),
         None => Err(format!(
-            "error[E033]: lit.toml: {where_} = \"{name}\" is not a known language"
+            "error[E033]: cob.toml: {where_} = \"{name}\" is not a known language"
         )),
     };
     let default = match weave.lang.as_deref() {
@@ -510,13 +510,13 @@ fn lang_config(weave: &config::Weave) -> Result<highlight::LangConfig, String> {
     Ok(highlight::LangConfig { default, chunk_lang })
 }
 @
-The language command prints the highlighting language lit resolves for one chunk.
+The language command prints the highlighting language cob resolves for one chunk.
 It is the shared resolver an editor plugin agrees with, exposed on the command
 line. It builds the model, loads config, resolves the language config, then calls
 `highlight::resolve`. A resolved language prints and succeeds. No known language
 exits nonzero, so a build can gate on it.
 <<the language command>>=
-/// `lit language <file> <chunk>`: print the highlighting language lit resolves for
+/// `cob language <file> <chunk>`: print the highlighting language cob resolves for
 /// a chunk (§5.5) — the shared resolver the weaver and any editor plugin agree on.
 /// Exits nonzero when the chunk resolves to no known language, so a build can gate
 /// on it.
@@ -525,7 +525,7 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
     let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("lit: {e}");
+            eprintln!("cob: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -556,14 +556,14 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         None => {
-            eprintln!("lit: chunk `{chunk}` resolves to no known language");
+            eprintln!("cob: chunk `{chunk}` resolves to no known language");
             ExitCode::FAILURE
         }
     }
 }
 @
 The tangle command extracts root chunks. It parses `--out`, `-R`, and `--check`.
-Precedence for the output directory is explicit flag, then `lit.toml`, then the
+Precedence for the output directory is explicit flag, then `cob.toml`, then the
 current directory.
 
 Every mode walks the model — it holds each chunk and its uses, and it surfaces the
@@ -585,14 +585,14 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
             "--out" => match it.next() {
                 Some(dir) => out = Some(dir.clone()),
                 None => {
-                    eprintln!("lit: --out needs a directory");
+                    eprintln!("cob: --out needs a directory");
                     return ExitCode::from(2);
                 }
             },
             "-R" => match it.next() {
                 Some(name) => single = Some(name.clone()),
                 None => {
-                    eprintln!("lit: -R needs a chunk name");
+                    eprintln!("cob: -R needs a chunk name");
                     return ExitCode::from(2);
                 }
             },
@@ -601,7 +601,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
         }
     }
     if files.is_empty() {
-        eprintln!("lit: tangle needs at least one .nw file");
+        eprintln!("cob: tangle needs at least one .cob file");
         return ExitCode::from(2);
     }
 
@@ -616,11 +616,11 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
     // Warn if any are configured so the omission is visible, never silent.
     if !cfg.tangle_pragmas().is_empty() {
         eprintln!(
-            "lit: warning: [[tangle.root]] line-pragma formats are set but the \
+            "cob: warning: [[tangle.root]] line-pragma formats are set but the \
              native tangler does not emit them yet; tangling without pragmas"
         );
     }
-    // Precedence: explicit `--out`, then `lit.toml`'s `[tangle] outdir`, then cwd.
+    // Precedence: explicit `--out`, then `cob.toml`'s `[tangle] outdir`, then cwd.
     let out = out
         .or_else(|| cfg.tangle.outdir.clone())
         .unwrap_or_else(|| ".".to_string());
@@ -630,7 +630,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
     let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("lit: {e}");
+            eprintln!("cob: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -647,7 +647,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
     if let Some(name) = single {
         let defined = doc.chunks.get(&name).is_some_and(|c| !c.defs.is_empty());
         if !defined {
-            eprintln!("lit: no chunk named `{name}`");
+            eprintln!("cob: no chunk named `{name}`");
             return ExitCode::from(2);
         }
         return match tangle::tangle_root(&doc, &name) {
@@ -664,7 +664,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
 
     let roots = doc.roots();
     if roots.is_empty() {
-        eprintln!("lit: no root chunks (path-shaped names) to tangle");
+        eprintln!("cob: no root chunks (path-shaped names) to tangle");
         return ExitCode::from(2);
     }
     let outdir = Path::new(&out);
@@ -719,7 +719,7 @@ fn dump_model(files: &[String]) -> ExitCode {
     let events = match markup::read(files) {
         Ok(events) => events,
         Err(e) => {
-            eprintln!("lit: {e}");
+            eprintln!("cob: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -756,24 +756,24 @@ thing to reach for when the model looks wrong, because it shows the input the mo
 folds.
 
 With `--from-markup <file>` it prints the events parsed from a frozen `markup` IR
-file instead of reading a `.nw`. This is the hermetic side of the `reader` flake
-check (§4.1): the native reader over a `.nw` must print the same events as
+file instead of reading a `.cob`. This is the hermetic side of the `reader` flake
+check (§4.1): the native reader over a `.cob` must print the same events as
 `noweb::parse` over that file's pinned `.markup` golden, and no `markup` process
-runs. The pinned goldens are the reader's oracle now that lit spawns no noweb.
+runs. The pinned goldens are the reader's oracle now that cob spawns no noweb.
 <<dump the ir>>=
 fn dump_ir(args: &[String]) -> ExitCode {
     // `--from-markup <file>` parses one frozen markup IR file; otherwise read
-    // every `.nw` argument with the native reader.
+    // every `.cob` argument with the native reader.
     if let Some((flag, rest)) = args.split_first() {
         if flag == "--from-markup" {
             let [path] = rest else {
-                eprintln!("lit: dump-ir --from-markup needs exactly one .markup file");
+                eprintln!("cob: dump-ir --from-markup needs exactly one .markup file");
                 return ExitCode::from(2);
             };
             let ir = match std::fs::read_to_string(path) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("lit: {path}: {e}");
+                    eprintln!("cob: {path}: {e}");
                     return ExitCode::FAILURE;
                 }
             };
@@ -781,7 +781,7 @@ fn dump_ir(args: &[String]) -> ExitCode {
         }
     }
     if args.is_empty() {
-        eprintln!("lit: dump-ir needs at least one .nw file");
+        eprintln!("cob: dump-ir needs at least one .cob file");
         return ExitCode::from(2);
     }
     print_events(markup::read(args).map_err(|e| e.to_string()))
@@ -796,7 +796,7 @@ fn print_events(events: Result<Vec<noweb::Event>, String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("lit: {e}");
+            eprintln!("cob: {e}");
             ExitCode::FAILURE
         }
     }

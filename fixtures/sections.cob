@@ -1,14 +1,14 @@
 @ # Sections fixture
 
 A small document in the \emph{Markdown} dialect. It has unlabelled \code{h2} and
-\code{h3} headings. \code{lit lock} auto-anchors each one: it mints an opaque id
+\code{h3} headings. \code{cob lock} auto-anchors each one: it mints an opaque id
 and writes a \code{{#sec:<id>}} anchor into this source, in place. The weave then
 draws a clickable permalink prefix for the heading (§7.1).
 
 ## Lexing
 
 The lexer reads bytes and gives tokens. This heading has no author label, so
-\code{lit lock} gives it one.
+\code{cob lock} gives it one.
 
 ### Cost
 

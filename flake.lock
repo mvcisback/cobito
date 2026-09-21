@@ -25,18 +25,18 @@
     "seed": {
       "flake": false,
       "locked": {
-        "lastModified": 1789963711,
-        "narHash": "sha256-ABjjsRk7mVTNROp+gfKQJP0xTHtG+V4xSklAegYNv+c=",
+        "lastModified": 1790001741,
+        "narHash": "sha256-OzNnJ4jbjuJzvhHAZRhIx98agWKw+im2NmJ/zOQYLK8=",
         "ref": "refs/tags/v0.1.0",
-        "rev": "2005eae0b596fd32c497d890fefd58b37c8fa956",
+        "rev": "e82667d20eb1c30b9368f03ea790e451c541086a",
         "revCount": 1,
         "type": "git",
-        "url": "file:."
+        "url": "ssh://gitea@git.chanlatte.casa/marcell/cobito.git"
       },
       "original": {
         "ref": "refs/tags/v0.1.0",
         "type": "git",
-        "url": "file:."
+        "url": "ssh://gitea@git.chanlatte.casa/marcell/cobito.git"
       }
     }
   },

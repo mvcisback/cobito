@@ -2,7 +2,7 @@
 
 This is a small literate program: a fixed-capacity ring buffer of bytes,
 written in Rust. It exists to see what it feels like to author real prose in
-lit's Markdown dialect, where a docs chunk is CommonMark, floats are fenced,
+cob's Markdown dialect, where a docs chunk is CommonMark, floats are fenced,
 and only a sidenote stays a raw-HTML island.
 
 The whole program is the root chunk \ref{chunk:src/ring.rs}. We build it from

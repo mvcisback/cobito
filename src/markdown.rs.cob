@@ -1,16 +1,16 @@
 # The prose dialect (§6.4)
 
-This module is the specification and the implementation of lit's prose dialect.
+This module is the specification and the implementation of cob's prose dialect.
 The prose is the specification. The chunks after it are the implementation.
 
-## Why lit owns the dialect {#sec:xZ8V}
+## Why cob owns the dialect {#sec:xZ8V}
 
-lit tells a program as a document, so the prose surface must be small and ours.
+cob tells a program as a document, so the prose surface must be small and ours.
 CommonMark is large and hard to reason about: its emphasis rule is an operational
 flanking algorithm, its raw-HTML blocks have seven start conditions, and its link
-definitions need two passes. lit owns a small line-oriented block grammar and a
+definitions need two passes. cob owns a small line-oriented block grammar and a
 LaTeX-style command family instead. The `peg` crate — the same crate that reads
-`.nw` — builds the inline grammar into a parser at compile time. A post-pass
+`.cob` — builds the inline grammar into a parser at compile time. A post-pass
 lowers the tokens to HTML.
 
 ## The command family {#sec:TAUn}
@@ -18,7 +18,7 @@ lowers the tokens to HTML.
 Marks are commands, not punctuation, so there is no flanking rule to get wrong:
 
 - `\emph{…}` makes `<em>` and `\strong{…}` makes `<strong>`. Both nest.
-- `\code{…}` makes inline `<code>`. The body is verbatim; lit escapes it for
+- `\code{…}` makes inline `<code>`. The body is verbatim; cob escapes it for
   HTML. Balanced braces inside need no escape (`\code{fn f() { x }}`); a lone
   brace uses `\{` or `\}`.
 - `$…$` is inline math and `$$…$$` is display math. A literal dollar is `\$`.
@@ -32,7 +32,7 @@ code body is captured whole before any command is read.
 ## The block grammar {#sec:k8T0}
 
 A line loop frames the inline grammar, the way the reader's file loop frames its
-line grammar. Blank lines split blocks. lit knows:
+line grammar. Blank lines split blocks. cob knows:
 
 - an ATX heading (`#`…`######` then a space), with an optional trailing
   `{#sec:name}` id;
@@ -72,7 +72,7 @@ gets no id and is not referenceable (§7.1).
 
 ## Math order {#sec:k8T2}
 
-lit walks the blocks in document order and pushes each formula onto the shared
+cob walks the blocks in document order and pushes each formula onto the shared
 `math` list as it meets it. The index is internal: `substitute_math` (§6.2 step 6)
 maps each placeholder back by its own index, so the order the list is built in
 does not change the output.
@@ -134,9 +134,9 @@ renderers, the inline grammar and its lowering, the fence helpers, and the tests
 @
 The banner states where the dialect sits and what it owns.
 <<the module banner>>=
-//! lit's prose dialect (§6.4). A line loop splits a docs chunk into blocks; a
+//! cob's prose dialect (§6.4). A line loop splits a docs chunk into blocks; a
 //! `peg` inline grammar tokenises each run into commands, math, and text; a
-//! lowering pass makes HTML. lit owns the whole surface — there is no CommonMark
+//! lowering pass makes HTML. cob owns the whole surface — there is no CommonMark
 //! engine. Marks are commands (`\emph`, `\strong`, `\code`), so there is no
 //! emphasis flanking rule. Raw HTML has one door: the ```` ```html-escape ````
 //! fence.
@@ -351,7 +351,7 @@ fn list_item(line: &str) -> Option<String> {
 }
 @
 A heading renders its text as one inline run, with the optional id split off the
-tail. The id is source-anchored (§7.1), so `lit lock` writes `{#sec:<id>}` here.
+tail. The id is source-anchored (§7.1), so `cob lock` writes `{#sec:<id>}` here.
 <<render a heading>>=
 fn render_heading(
     level: usize,
@@ -448,7 +448,7 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
         None => " data-nonumber".to_string(),
     };
     format!(
-        "<div class=\"equation\"{attr}><span data-lit-math=\"{idx}\"></span></div>"
+        "<div class=\"equation\"{attr}><span data-cob-math=\"{idx}\"></span></div>"
     )
 }
 @
@@ -723,7 +723,7 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
                     source: src.clone(),
                     display: *display,
                 });
-                out.push_str(&format!("<span data-lit-math=\"{idx}\"></span>"));
+                out.push_str(&format!("<span data-cob-math=\"{idx}\"></span>"));
             }
         }
     }
@@ -868,10 +868,10 @@ fn fenced_math_is_a_display_equation() {
     assert!(math[0].display);
     assert_eq!(math[0].source, "slot(i) = (head + i) \\bmod n");
     assert!(html
-        .contains("<div class=\"equation\" id=\"eq:slot\"><span data-lit-math=\"0\"></span></div>"));
+        .contains("<div class=\"equation\" id=\"eq:slot\"><span data-cob-math=\"0\"></span></div>"));
     // An unlabelled fence has no id, so it opts out of numbering.
     let (html, _) = run("```math\nx\n```");
-    assert!(html.contains("<div class=\"equation\" data-nonumber><span data-lit-math=\"0\"></span></div>"));
+    assert!(html.contains("<div class=\"equation\" data-nonumber><span data-cob-math=\"0\"></span></div>"));
 }
 @
 Inline math is extracted to a placeholder.
@@ -882,7 +882,7 @@ fn inline_math_is_extracted() {
     assert_eq!(math.len(), 1);
     assert!(!math[0].display);
     assert_eq!(math[0].source, "\\operatorname{slot}(n)");
-    assert!(html.contains("<span data-lit-math=\"0\"></span>"));
+    assert!(html.contains("<span data-cob-math=\"0\"></span>"));
 }
 @
 A dollar inside a verbatim fence is not math.
@@ -901,7 +901,7 @@ fn labeled_math_fence_carries_its_id() {
     let (html, math) = run("```math \\label{eq:wrap}\nx = y\n```");
     assert_eq!(math.len(), 1);
     assert!(html.contains(
-        "<div class=\"equation\" id=\"eq:wrap\"><span data-lit-math=\"0\"></span></div>"
+        "<div class=\"equation\" id=\"eq:wrap\"><span data-cob-math=\"0\"></span></div>"
     ));
 }
 @
@@ -947,7 +947,7 @@ fn multiline_caption_with_braces_is_balanced() {
         "```figure\n\\caption{first line\nand $a_{i}$ second}\n<img src=\"p.svg\">\n```",
     );
     assert!(html.contains(
-        "<figcaption>first line\nand <span data-lit-math=\"0\"></span> second</figcaption>"
+        "<figcaption>first line\nand <span data-cob-math=\"0\"></span> second</figcaption>"
     ));
 }
 @
@@ -967,9 +967,9 @@ fn transclude_lowers_to_a_placeholder() {
     let (html, _) = run("before\n\n\\transclude{sec:lexing}\n\nafter");
     assert!(html.contains("<div class=\"transclusion\" data-transclude=\"sec:lexing\"></div>"));
     // A `\transclude` inside `\code` is literal.
-    let (lit, _) = run("write \\code{\\transclude{sec:x}} here");
-    assert!(lit.contains("<code>\\transclude{sec:x}</code>"));
-    assert!(!lit.contains("data-transclude=\"sec:x\""));
+    let (cob, _) = run("write \\code{\\transclude{sec:x}} here");
+    assert!(cob.contains("<code>\\transclude{sec:x}</code>"));
+    assert!(!cob.contains("data-transclude=\"sec:x\""));
 }
 @
 A ref inside `\code` is literal, never lowered.

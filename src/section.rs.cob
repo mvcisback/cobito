@@ -2,15 +2,15 @@
 
 This module gives every section a stable identity. §7.1 makes a labelled float
 and a `sec:`-labelled heading earn a frozen opaque id. This module removes the
-"labelled" precondition for a heading: `lit lock` finds every unlabelled `h2`/`h3`
-heading and writes a `sec:` anchor into the `.nw` source, so the heading joins the
+"labelled" precondition for a heading: `cob lock` finds every unlabelled `h2`/`h3`
+heading and writes a `sec:` anchor into the `.cob` source, so the heading joins the
 same id scheme without the author's hand. The id is source-anchored — it lives on
 the heading line, not in a slug — so it survives a reword of the heading text.
 
 The module has one job on each side of the round trip. It finds the source line of
-every heading, so `lit lock` knows which line to anchor. It writes the Markdown
+every heading, so `cob lock` knows which line to anchor. It writes the Markdown
 anchor into that line. And it renames the anchor when the author gives the id a
-human name with `lit rename-label`.
+human name with `cob rename-label`.
 
 The weaver needs no change. Once a heading carries a `sec:` anchor, the existing
 resolve and rewrite passes (§7.1) mint its id, draw its permalink, and answer a
@@ -36,8 +36,8 @@ the same path an author-written one does.
 The banner states the one rule: this module only touches the heading line, and
 leaves every other byte of the source alone.
 <<the module banner>>=
-//! Source-side section anchors (§7.1). `lit lock` gives every unlabelled `h2`/`h3`
-//! heading a frozen opaque id by writing a `sec:` anchor into the `.nw` source, so
+//! Source-side section anchors (§7.1). `cob lock` gives every unlabelled `h2`/`h3`
+//! heading a frozen opaque id by writing a `sec:` anchor into the `.cob` source, so
 //! the id lives on the heading line and survives a reword of the heading text. This
 //! module finds a heading's source line, writes the Markdown anchor, and renames
 //! it when the author gives the id a human name. It edits only the heading line;
@@ -51,12 +51,12 @@ use std::path::Path;
 use crate::model::{DocModel, ProseSpan, SectionKind};
 @
 A heading and the source line that carries it. `anchored` is true when the heading
-already has an id — an author `sec:` label or an anchor a past `lit lock` wrote — so
+already has an id — an author `sec:` label or an anchor a past `cob lock` wrote — so
 the caller skips it and never anchors a heading twice.
 <<a heading site>>=
-/// A heading found in a docs chunk, with the `.nw` line that carries it. `anchored`
+/// A heading found in a docs chunk, with the `.cob` line that carries it. `anchored`
 /// is true when the heading already has an id (an author `sec:` label or a past
-/// anchor), so `lit lock` skips it.
+/// anchor), so `cob lock` skips it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadingSite {
     pub file: String,
@@ -72,7 +72,7 @@ then tests it for a heading. A code fence in Markdown hides its lines, so a `#`
 inside a fenced block is not a false heading; the fence state carries across the
 sections of one file, because a fence can span a code chunk.
 <<find every heading in the source>>=
-/// Every heading (levels 1..=3) in document order, each with its `.nw` source line.
+/// Every heading (levels 1..=3) in document order, each with its `.cob` source line.
 /// Walks the model's docs sections; a Markdown code fence hides the lines inside it.
 pub fn headings(doc: &DocModel) -> Vec<HeadingSite> {
     let mut out = Vec::new();
@@ -152,7 +152,7 @@ fn md_heading(text: &str) -> Option<(u8, bool)> {
 The writer takes the lines to anchor and the id to write on each, and edits the file
 once. It reads the whole source, keeps every newline, and rewrites only the given
 lines. A Markdown anchor is a trailing `{#sec:<id>}`. The label the anchor carries
-is `sec:<id>` — the id doubles as its own name until `lit rename-label` gives it a
+is `sec:<id>` — the id doubles as its own name until `cob rename-label` gives it a
 human one.
 <<write anchors into the source>>=
 /// Write a `sec:<id>` anchor into the heading on each `(line, id)` of `path`. Edits
@@ -180,7 +180,7 @@ fn split_nl(line: &str) -> (&str, &str) {
     }
 }
 @
-The renamer swaps one anchor for another. `lit rename-label` gives an id a human
+The renamer swaps one anchor for another. `cob rename-label` gives an id a human
 name, so the source anchor changes from `sec:<old>` to `sec:<new>` while the frozen
 id stays the same. The names are unique strings, so a plain replace hits only the
 one anchor. It returns whether it changed the source, so the caller can report a
@@ -243,7 +243,7 @@ mod tests {
 #[test]
 fn finds_markdown_headings_with_source_lines() {
     let doc = model(vec![docs(
-        "a.nw",
+        "a.cob",
         1,
         "# Title\n\n## Lexing\n\nprose\n\n### Cost {#sec:cost}",
     )]);
@@ -251,9 +251,9 @@ fn finds_markdown_headings_with_source_lines() {
     assert_eq!(
         hs,
         vec![
-            HeadingSite { file: "a.nw".into(), line: 1, level: 1, anchored: false },
-            HeadingSite { file: "a.nw".into(), line: 3, level: 2, anchored: false },
-            HeadingSite { file: "a.nw".into(), line: 7, level: 3, anchored: true },
+            HeadingSite { file: "a.cob".into(), line: 1, level: 1, anchored: false },
+            HeadingSite { file: "a.cob".into(), line: 3, level: 2, anchored: false },
+            HeadingSite { file: "a.cob".into(), line: 7, level: 3, anchored: true },
         ]
     );
 }
@@ -261,7 +261,7 @@ fn finds_markdown_headings_with_source_lines() {
 #[test]
 fn a_hash_inside_a_fence_is_not_a_heading() {
     let doc = model(vec![docs(
-        "a.nw",
+        "a.cob",
         1,
         "## Real\n\n```\n## not a heading\n```\n\n## Also real",
     )]);
@@ -273,9 +273,9 @@ fn a_hash_inside_a_fence_is_not_a_heading() {
 <<the writer and rename tests>>=
 #[test]
 fn writes_a_markdown_anchor_on_the_named_line() {
-    let dir = std::env::temp_dir().join(format!("lit-sec-md-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("cob-sec-md-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("a.nw");
+    let path = dir.join("a.cob");
     std::fs::write(&path, "@ # Title\n\n## Lexing\nprose\n").unwrap();
     apply_anchors(&path, &[(3, "k3f9".into())]).unwrap();
     let got = std::fs::read_to_string(&path).unwrap();
@@ -285,9 +285,9 @@ fn writes_a_markdown_anchor_on_the_named_line() {
 
 #[test]
 fn renames_a_named_anchor_and_reports_a_miss() {
-    let dir = std::env::temp_dir().join(format!("lit-sec-rn-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("cob-sec-rn-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("a.nw");
+    let path = dir.join("a.cob");
     std::fs::write(&path, "## Lexing {#sec:k3f9}\n").unwrap();
     assert!(rename_anchor(&path, "k3f9", "lexing").unwrap());
     assert_eq!(

@@ -1,4 +1,4 @@
-@file fixtures/hl.nw
+@file fixtures/hl.cob
 @begin docs 0
 @text # Highlighting sampler
 @nl
@@ -46,7 +46,7 @@
 @nl
 @text 
 @nl
-@text The Nix side is a tiny flake, so lit can eventually present its own `flake.nix`
+@text The Nix side is a tiny flake, so cob can eventually present its own `flake.nix`
 @nl
 @text as a literate document and self-host.
 @nl

@@ -1,22 +1,22 @@
-# Annotations — the margin commenting layer for lit sites
+# Annotations — the margin commenting layer for cob sites
 
-**Status:** draft spec, v0.1. Split out from lit's own literate document, which
-keeps only lit's side of the contract — the annotation-ready-HTML rule in
-`src/rewrite.rs.nw` (§9). Research findings below are from 2026-08-23.
+**Status:** draft spec, v0.1. Split out from cob's own literate document, which
+keeps only cob's side of the contract — the annotation-ready-HTML rule in
+`src/rewrite.rs.cob` (§9). Research findings below are from 2026-08-23.
 
 **Not a v1 blocker — do not re-litigate before M5.** The ecosystem is surveyed
 (§3) and the fallback routing is decided (§4); what remains are judgments that
-require annotating a real woven page, which does not exist yet. lit's only
-obligation until then is the §9 contract in `src/rewrite.rs.nw`: provenance attributes,
+require annotating a real woven page, which does not exist yet. cob's only
+obligation until then is the §9 contract in `src/rewrite.rs.cob`: provenance attributes,
 anchorable markup, margin slots, embed hook. Build that, ship v1, then choose.
 
 ## 1. Purpose
 
-Reviewers read a woven lit site, select prose or code, and leave margin
-comments; threads are collapsible; an AI agent (`lit review`, specced in lit's
-top-level document `lit.nw`) reads all open annotations and proposes revisions to
-the `.nw` source. This tool is **separate from lit**: lit emits annotation-ready
-HTML (`src/rewrite.rs.nw` §9) and otherwise knows nothing about comments.
+Reviewers read a woven cob site, select prose or code, and leave margin
+comments; threads are collapsible; an AI agent (`cob review`, specced in cob's
+top-level document `cobito.cob`) reads all open annotations and proposes revisions to
+the `.cob` source. This tool is **separate from cob**: cob emits annotation-ready
+HTML (`src/rewrite.rs.cob` §9) and otherwise knows nothing about comments.
 
 Requirements:
 
@@ -48,26 +48,26 @@ them only:
    we do not write it: `dom-anchor-text-quote` / `dom-anchor-text-position`
    (battle-tested, used by Hypothesis) and Apache Annotator (incubating, the
    W3C-blessed successor).
-3. **Target:** the woven HTML. Mapping back to `.nw` source uses lit's
-   provenance attributes (`data-nw-file`/`data-nw-line`, `src/rewrite.rs.nw` §9.1) —
-   the annotation layer itself never reads `.nw` files.
+3. **Target:** the woven HTML. Mapping back to `.cob` source uses cob's
+   provenance attributes (`data-nw-file`/`data-nw-line`, `src/rewrite.rs.cob` §9.1) —
+   the annotation layer itself never reads `.cob` files.
 
 ## 3. Options researched
 
 ### 3.1 Adopt hosted hypothes.is
 
-One script tag (lit's `[weave.annotate] embed`), a **private group** for the
+One script tag (cob's `[weave.annotate] embed`), a **private group** for the
 review circle, REST API v1 for A4. The client already implements selection,
 anchoring, sidebar UI, threads, and orphan handling.
 
 - For: zero code, zero ops; the API returns annotations with W3C-style
-  selector bundles, exactly what `lit review` needs; groups give a usable
+  selector bundles, exactly what `cob review` needs; groups give a usable
   A5 without us building auth.
 - Against: data lives with a third party (mitigated by A6 export via API);
   accounts required; UI is their sidebar, not Tufte margins (A2 partially
   unmet — annotations highlight in-text and open in a right-hand sidebar,
   which is close in spirit); no "resolved" state in their model (convention:
-  agent replies + adds a `lit:resolved` tag, and the review adapter filters
+  agent replies + adds a `cob:resolved` tag, and the review adapter filters
   on it).
 
 ### 3.2 Self-host the Hypothesis `h` server
@@ -99,7 +99,7 @@ Annotation Protocol). Building shrinks to: a small CRUD server storing
 selector-bearing W3C JSON, plus a margin overlay client.
 
 - For: true Tufte-margin UI (A2 fully), local data, no accounts (token list),
-  archival by construction, and the overlay can mount into lit's
+  archival by construction, and the overlay can mount into cob's
   `margin-slot`s.
 - Against: it is still a real project — selection UI, thread rendering,
   sanitization of untrusted comment bodies, auth, ops. The graveyard of
@@ -114,7 +114,7 @@ selector-bearing W3C JSON, plus a margin overlay client.
   while running a heavier server than §3.3's sketch.
 - **Recogito Studio**: actively maintained, self-hosted, W3C-compliant, but a
   *destination platform* — documents are imported into its app and annotated
-  there. It cannot overlay the woven lit site, so A1/A2 fail structurally.
+  there. It cannot overlay the woven cob site, so A1/A2 fail structurally.
   Its `text-annotator-js` library is a candidate client building block for
   §3.3, alongside Apache Annotator.
 
@@ -126,7 +126,7 @@ trigger in §4.
 
 ## 4. Decision: adopt first; the fallback depends on which trigger fires
 
-Same policy as lit's noweb dependency (`src/tangle.rs.nw` §11): **start with hosted
+Same policy as cob's noweb dependency (`src/tangle.rs.cob` §11): **start with hosted
 hypothes.is** (private group + embed + API adapter). The contingency is *not*
 always the thin tool — each trigger routes to whichever of §3.2/§3.3 actually
 addresses it:
@@ -145,14 +145,14 @@ the cheaper answer despite the ops; the thin tool is justified by wanting the
 **margin UI** or the **sealed archive**, both of which are judgments to make
 after M5, not now.
 
-Validation for the adopt path happens in lit's M5/M6: embed on a real woven
+Validation for the adopt path happens in cob's M5/M6: embed on a real woven
 page, annotate math-adjacent prose and code chunks, pull via API, map to
-`.nw` via provenance attributes, and run the full review loop.
+`.cob` via provenance attributes, and run the full review loop.
 
 ## 5. If built: design sketch
 
 Kept deliberately short until a trigger fires. Inherits intent from the
-pre-split lit spec (v0.2 §9), updated for the W3C decisions:
+pre-split cob spec (v0.2 §9), updated for the W3C decisions:
 
 - **Server:** FastAPI + SQLite (WAL), packaged with uv2nix in its own flake.
   Stores annotations as W3C JSON documents (one row per annotation: id, doc,
@@ -163,10 +163,10 @@ pre-split lit spec (v0.2 §9), updated for the W3C decisions:
   convention from the pre-split spec applies to any UI pages: every HTML
   endpoint is a pure function of a JSON endpoint (`P.json` canonical).
 - **Client:** selection → selector bundle via Apache Annotator /
-  `dom-anchor-*`; overlay mounts threads into lit's
+  `dom-anchor-*`; overlay mounts threads into cob's
   `<div class="margin-slot">`s; collapsed pills expand in the margin, pushing
   subsequent margin content down; inline disclosure under a viewport
-  breakpoint. Sidenote/comment margin contention is resolved here — lit only
+  breakpoint. Sidenote/comment margin contention is resolved here — cob only
   guarantees the slot.
 - **Comment bodies are untrusted:** Markdown subset, sanitized, `$…$` math
   KaTeX-rendered from extracted source only, no raw HTML.
@@ -182,20 +182,20 @@ reviewer selects text on woven page
         │  client stores W3C annotation {TextQuoteSelector, TextPositionSelector}
         ▼
 backend (hypothes.is group │ thin tool)
-        │  lit review: backend adapter fetches W3C JSON (A4)
+        │  cob review: backend adapter fetches W3C JSON (A4)
         ▼
 map: quote selector → location in page → enclosing section
-     → data-nw-file/data-nw-line → .nw region
+     → data-nw-file/data-nw-line → .cob region
         ▼
-unified diff against .nw  →  human accepts  →  re-weave
+unified diff against .cob  →  human accepts  →  re-weave
         │
         └─ agent marks addressed annotations (thin tool: status=resolved;
-           hypothes.is: reply + tag lit:resolved) — orphans surface, never vanish
+           hypothes.is: reply + tag cob:resolved) — orphans surface, never vanish
 ```
 
 ## 7. Open questions
 
-- **AN-1** (was lit's D) Margin contention between Tufte sidenotes and
+- **AN-1** (was cob's D) Margin contention between Tufte sidenotes and
   comment threads — build-path only; the adopt path uses the Hypothesis
   sidebar as-is.
 - **AN-2** Does quote-selector anchoring behave acceptably on KaTeX-rendered
