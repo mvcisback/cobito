@@ -284,7 +284,7 @@ introduces a code, it claims the next free number in this registry.
 | E024 | writing the site failed | \code{weave.rs} |
 | E025 | template render failure | \code{weave.rs} |
 | E026 | rewriting prose HTML failed | \code{rewrite.rs} |
-| E027 | \code{notangle} failed or not found | \code{tangle.rs} |
+| E027 | retired (was \code{notangle} failure); lit tangles natively | \code{tangle.rs} |
 | E028 | writing tangled output failed | \code{tangle.rs} |
 | E029 | \code{lit.toml} unreadable or malformed | \code{config.rs} |
 | E030 | malformed fence modifier | \code{markdown.rs} |
@@ -292,6 +292,7 @@ introduces a code, it claims the next free number in this registry.
 | E032 | \code{lit.lock} unreadable, malformed, or unwritable | \code{lock.rs} |
 | E033 | a highlight key names an unknown language | \code{main.rs} |
 | E034 | bare or unknown fence kind | \code{markdown.rs} |
+| E035 | recursive chunk expansion (cycle) | \code{tangle.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

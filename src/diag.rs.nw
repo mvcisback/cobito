@@ -115,15 +115,20 @@ authored HTML.
            almost always malformed HTML in authored prose; the message \
            names the offending construct.",
 @
-These two codes come from the tangle path. E027 is a failed or missing
-\code{notangle}. E028 is a disk failure while writing a tangled root.
+These codes come from the tangle path. E028 is a disk failure while writing a
+tangled root. E035 is a chunk that uses itself, directly or through others — the
+native tangler reports the cycle instead of looping forever. E027 is retired: lit
+tangled through \code{notangle} in v1, and the code stays reserved so an old
+diagnostic still explains.
 <<tangle diagnostics>>=
-"E027" => "`notangle` could not be run or exited nonzero. It ships with \
-           noweb — run inside the dev shell or wrapped package. A nonzero \
-           exit carries noweb's own `file:line: message`.",
+"E027" => "Retired. lit v1 tangled by running noweb's `notangle`; it now \
+           tangles natively (§11), so this code is no longer emitted.",
 "E028" => "Writing a tangled root to disk failed — permissions, a full disk, \
            or an unwritable parent directory. The path and OS error are \
            included.",
+"E035" => "A chunk expands into itself, directly or through a chain of uses. \
+           The native tangler reports the cycle (with the chain of names) \
+           instead of looping forever; break the recursion.",
 @
 This code is the manifest failure. \code{lit.toml} was present but could not be read
 or parsed. Removing it falls back to CLI-derived defaults.

@@ -93,7 +93,7 @@ USAGE:
     lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
     lit dump-ir [--oracle] <file.nw>...  print the parsed IR events (--oracle: via noweb)
     lit dump-model <file.nw>...   fold the IR into the document model, print it
-    lit tangle <file.nw>...       tangle every root chunk (via notangle)
+    lit tangle <file.nw>...       tangle every root chunk
 
     lit --explain <CODE>         print the long form of a diagnostic (e.g. E014)
 
@@ -566,14 +566,13 @@ The tangle command extracts root chunks. It parses `--out`, `-R`, and `--check`.
 Precedence for the output directory is explicit flag, then `lit.toml`, then the
 current directory.
 
-`-R name` is a direct passthrough to notangle: it needs no model and never touches
-disk, so the caller redirects stdout. The per-root pragma still applies, so the
-stdout form matches the on-disk form.
-
-The whole-document modes enumerate roots from the model, which also surfaces the
-use-of-undefined-chunk error before notangle runs. `--check` diffs each root
-against disk and reports drift; the default mode writes each root and reports
-whether it was created, updated, or unchanged.
+Every mode walks the model — it holds each chunk and its uses, and it surfaces the
+use-of-undefined-chunk error (E010) before tangle runs. `-R name` tangles one
+chunk (any name, not only a root) to stdout and never touches disk, so the caller
+redirects it. `--check` diffs each root against disk and reports drift; the default
+mode writes each root and reports whether it was created, updated, or unchanged.
+The native tangler does not emit `-L` line pragmas yet, so a configured format
+gives a warning, not silent output (§11).
 <<the tangle command>>=
 fn tangle_cmd(args: &[String]) -> ExitCode {
     let mut out: Option<String> = None;
@@ -613,31 +612,21 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let pragmas = cfg.tangle_pragmas();
+    // The native tangler does not emit `-L` line pragmas yet (§11 follow-up).
+    // Warn if any are configured so the omission is visible, never silent.
+    if !cfg.tangle_pragmas().is_empty() {
+        eprintln!(
+            "lit: warning: [[tangle.root]] line-pragma formats are set but the \
+             native tangler does not emit them yet; tangling without pragmas"
+        );
+    }
     // Precedence: explicit `--out`, then `lit.toml`'s `[tangle] outdir`, then cwd.
     let out = out
         .or_else(|| cfg.tangle.outdir.clone())
         .unwrap_or_else(|| ".".to_string());
 
-    // `-R name` is a direct passthrough to notangle: no model needed, and it
-    // never touches disk — the caller redirects stdout where they want it. The
-    // per-root pragma still applies so the stdout form matches the on-disk form.
-    if let Some(name) = single {
-        let pragma = pragmas.get(&name).map(String::as_str);
-        return match tangle::tangle_root(&name, &files, pragma) {
-            Ok(code) => {
-                print!("{code}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("{e}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-
-    // The whole-document modes enumerate roots from the model, which also
-    // surfaces E010 (use of an undefined chunk) before we spawn notangle.
+    // Every mode walks the model: it holds each chunk and its uses, and it
+    // surfaces E010 (use of an undefined chunk) before tangle runs.
     let events = match markup::read(&files) {
         Ok(events) => events,
         Err(e) => {
@@ -652,6 +641,27 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    // `-R name` tangles one chunk (any name, not only a root) to stdout; the
+    // caller redirects it. It never touches disk.
+    if let Some(name) = single {
+        let defined = doc.chunks.get(&name).is_some_and(|c| !c.defs.is_empty());
+        if !defined {
+            eprintln!("lit: no chunk named `{name}`");
+            return ExitCode::from(2);
+        }
+        return match tangle::tangle_root(&doc, &name) {
+            Ok(code) => {
+                print!("{code}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     let roots = doc.roots();
     if roots.is_empty() {
         eprintln!("lit: no root chunks (path-shaped names) to tangle");
@@ -660,7 +670,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
     let outdir = Path::new(&out);
 
     if check {
-        return match tangle::check(&roots, &files, outdir, &pragmas) {
+        return match tangle::check(&doc, &roots, outdir) {
             Ok(drift) if drift.is_empty() => {
                 println!("tangle --check: {} root(s) in sync", roots.len());
                 ExitCode::SUCCESS
@@ -682,7 +692,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
         };
     }
 
-    match tangle::tangle_to_dir(&roots, &files, outdir, &pragmas) {
+    match tangle::tangle_to_dir(&doc, &roots, outdir) {
         Ok(report) => {
             for (root, wrote) in &report {
                 let verb = match wrote {
