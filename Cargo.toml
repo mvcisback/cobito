@@ -1,0 +1,21 @@
+[package]
+name = "cob"
+version = "0.1.0"
+edition = "2021"
+description = "cobito — a web-first literate programming system (a small spider web)"
+
+[dependencies]
+katex = "0.4.6"
+lol_html = "3.0.1"
+minijinja = "2.24.0"
+peg = "0.8.6"
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.4"
+tree-sitter = "0.26.13"
+tree-sitter-bash = "0.25.1"
+tree-sitter-css = "0.25.0"
+tree-sitter-highlight = "0.26.13"
+tree-sitter-nix = "0.3.0"
+tree-sitter-rust = "0.24.2"

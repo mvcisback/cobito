@@ -1,0 +1,137 @@
+@file fixtures/book.cob
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Front matter
+@nl
+@text 
+@nl
+@text Everything before the first boundary is the index page, so this chunk
+@nl
+@text lands on \code{index.html}. It refers forward to \ref{fig:pipeline} and to
+@nl
+@text the cost bound in \ref{eq:cost}, both of which live on a later page.
+@nl
+@text 
+@nl
+@end docs 1
+@begin docs 2
+@text # Parsing
+@nl
+@text 
+@nl
+@text This chunk opens with an \code{h1}, so it starts a new page.
+@nl
+@text 
+@nl
+@text ```html-escape
+@nl
+@text <aside class="sidenote">Sidenotes stay where the author put them; CSS
+@nl
+@text floats them into the margin.</aside>
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text The lexer is \ref{chunk:lex a token}.
+@nl
+@text 
+@nl
+@text ## Lexing {#sec:lexing}
+@nl
+@text 
+@nl
+@text A second-level heading, which the nav tree picks up, and which the author
+@nl
+@text labelled so it can be linked with a stable id.
+@nl
+@text 
+@nl
+@text ```figure \label{fig:pipeline}
+@nl
+@text \caption{The weave pipeline.}
+@nl
+@text <img src="pipeline.svg" alt="the weave pipeline">
+@nl
+@text ```
+@nl
+@text 
+@nl
+@end docs 2
+@begin code 3
+@defn lex a token
+@nl
+@text tokens.push(next());
+@nl
+@end code 3
+@begin docs 4
+@text ### Cost
+@nl
+@text 
+@nl
+@text A third-level heading. The bound is $O(n \log n)$.
+@nl
+@text 
+@nl
+@text ```math \label{eq:cost}
+@nl
+@text T(n) = 2T(n/2) + O(n)
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ```math
+@nl
+@text \text{this one opts out of numbering}
+@nl
+@text ```
+@nl
+@text 
+@nl
+@end docs 4
+@begin docs 5
+@text # Codegen
+@nl
+@text 
+@nl
+@text A third page, so pagination has a middle with both neighbours.
+@nl
+@text See also \ref{fig:pipeline}, referenced twice, and
+@nl
+@text \ref{sec:lexing} back on the second page.
+@nl
+@text 
+@nl
+@text ```table \label{tbl:opcodes}
+@nl
+@text \caption{Opcodes.}
+@nl
+@text | Opcode |
+@nl
+@text |--------|
+@nl
+@text | nop |
+@nl
+@text ```
+@nl
+@text 
+@nl
+@end docs 5
+@begin code 6
+@defn src/main.rs
+@nl
+@text fn main() {
+@nl
+@text     
+@use lex a token
+@text 
+@nl
+@text }
+@nl
+@end code 6
+@begin docs 7
+@text 
+@nl
+@end docs 7

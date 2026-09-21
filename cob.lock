@@ -1,0 +1,429 @@
+# cob.lock — generated (§7.1). label → frozen opaque id.
+# Edit only to retire a label; ids never change once minted.
+["examples/ring.cob"."eq:wrap"]
+id = "5lYN"
+kind = "equation"
+
+["examples/ring.cob"."tbl:api"]
+id = "dryu"
+kind = "table"
+
+["fixtures/book.cob"."eq:cost"]
+id = "xVmZ"
+kind = "equation"
+
+["fixtures/book.cob"."fig:pipeline"]
+id = "qe1t"
+kind = "figure"
+
+["fixtures/book.cob"."sec:lexing"]
+id = "Zbzy"
+kind = "section"
+
+["fixtures/book.cob"."tbl:opcodes"]
+id = "JWD7"
+kind = "table"
+
+["fixtures/md.cob"."eq:mass"]
+id = "SWHo"
+kind = "equation"
+
+["fixtures/md.cob"."fig:diagram"]
+id = "Z5QH"
+kind = "figure"
+
+["fixtures/md.cob"."tbl:units"]
+id = "EaO1"
+kind = "table"
+
+["fixtures/tx.cob"."sec:reuse"]
+id = "ZYhb"
+kind = "section"
+
+["fixtures/tx.cob"."sec:source"]
+id = "5QKY"
+kind = "section"
+
+["fixtures/txf.cob"."eq:demo"]
+id = "3KtH"
+kind = "equation"
+
+["fixtures/txf.cob"."fig:demo"]
+id = "tbL3"
+kind = "figure"
+
+["fixtures/txf.cob"."sec:home"]
+id = "2tYh"
+kind = "section"
+
+["fixtures/txf.cob"."sec:reuse"]
+id = "fpIK"
+kind = "section"
+
+["flake.nix.cob"."sec:3OSt"]
+id = "3OSt"
+kind = "section"
+
+["flake.nix.cob"."sec:9hJs"]
+id = "9hJs"
+kind = "section"
+
+["flake.nix.cob"."sec:ATUX"]
+id = "ATUX"
+kind = "section"
+
+["flake.nix.cob"."sec:ETOA"]
+id = "ETOA"
+kind = "section"
+
+["flake.nix.cob"."sec:FT5y"]
+id = "FT5y"
+kind = "section"
+
+["flake.nix.cob"."sec:Mh65"]
+id = "Mh65"
+kind = "section"
+
+["flake.nix.cob"."sec:NJXp"]
+id = "NJXp"
+kind = "section"
+
+["flake.nix.cob"."sec:P3N3"]
+id = "P3N3"
+kind = "section"
+
+["flake.nix.cob"."sec:TaAs"]
+id = "TaAs"
+kind = "section"
+
+["flake.nix.cob"."sec:UIDl"]
+id = "UIDl"
+kind = "section"
+
+["flake.nix.cob"."sec:Vv1B"]
+id = "Vv1B"
+kind = "section"
+
+["flake.nix.cob"."sec:c8DE"]
+id = "c8DE"
+kind = "section"
+
+["flake.nix.cob"."sec:dNbo"]
+id = "dNbo"
+kind = "section"
+
+["flake.nix.cob"."sec:e9uc"]
+id = "e9uc"
+kind = "section"
+
+["flake.nix.cob"."sec:hwLv"]
+id = "hwLv"
+kind = "section"
+
+["flake.nix.cob"."sec:kHIL"]
+id = "kHIL"
+kind = "section"
+
+["flake.nix.cob"."sec:mxHP"]
+id = "mxHP"
+kind = "section"
+
+["flake.nix.cob"."sec:zQ5K"]
+id = "zQ5K"
+kind = "section"
+
+["cobito.cob"."sec:4y6v"]
+id = "4y6v"
+kind = "section"
+
+["cobito.cob"."sec:68J6"]
+id = "68J6"
+kind = "section"
+
+["cobito.cob"."sec:7p6J"]
+id = "7p6J"
+kind = "section"
+
+["cobito.cob"."sec:8GfD"]
+id = "8GfD"
+kind = "section"
+
+["cobito.cob"."sec:Fv9U"]
+id = "Fv9U"
+kind = "section"
+
+["cobito.cob"."sec:JPcq"]
+id = "JPcq"
+kind = "section"
+
+["cobito.cob"."sec:LEQV"]
+id = "LEQV"
+kind = "section"
+
+["cobito.cob"."sec:QznE"]
+id = "QznE"
+kind = "section"
+
+["cobito.cob"."sec:UnND"]
+id = "UnND"
+kind = "section"
+
+["cobito.cob"."sec:av7Q"]
+id = "av7Q"
+kind = "section"
+
+["cobito.cob"."sec:lxbi"]
+id = "lxbi"
+kind = "section"
+
+["cobito.cob"."sec:oXEK"]
+id = "oXEK"
+kind = "section"
+
+["cobito.cob"."sec:teiT"]
+id = "teiT"
+kind = "section"
+
+["cobito.cob"."sec:zBDS"]
+id = "zBDS"
+kind = "section"
+
+["src/config.rs.cob"."sec:E4N0"]
+id = "E4N0"
+kind = "section"
+
+["src/config.rs.cob"."sec:Er9s"]
+id = "Er9s"
+kind = "section"
+
+["src/config.rs.cob"."sec:TLsr"]
+id = "TLsr"
+kind = "section"
+
+["src/config.rs.cob"."sec:ZZAp"]
+id = "ZZAp"
+kind = "section"
+
+["src/diag.rs.cob"."sec:9zhc"]
+id = "9zhc"
+kind = "section"
+
+["src/diag.rs.cob"."sec:ZCuq"]
+id = "ZCuq"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:50k1"]
+id = "50k1"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:Hjwm"]
+id = "Hjwm"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:QRS0"]
+id = "QRS0"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:Zi6G"]
+id = "Zi6G"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:gGq9"]
+id = "gGq9"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:rxh8"]
+id = "rxh8"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:sQwN"]
+id = "sQwN"
+kind = "section"
+
+["src/highlight.rs.cob"."sec:vXmF"]
+id = "vXmF"
+kind = "section"
+
+["src/lock.rs.cob"."sec:5II3"]
+id = "5II3"
+kind = "section"
+
+["src/lock.rs.cob"."sec:GIRD"]
+id = "GIRD"
+kind = "section"
+
+["src/lock.rs.cob"."sec:X0Yp"]
+id = "X0Yp"
+kind = "section"
+
+["src/lock.rs.cob"."sec:YZLc"]
+id = "YZLc"
+kind = "section"
+
+["src/lock.rs.cob"."sec:acTW"]
+id = "acTW"
+kind = "section"
+
+["src/lock.rs.cob"."sec:erRn"]
+id = "erRn"
+kind = "section"
+
+["src/lock.rs.cob"."sec:jJzq"]
+id = "jJzq"
+kind = "section"
+
+["src/lock.rs.cob"."sec:oaLc"]
+id = "oaLc"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:TAUn"]
+id = "TAUn"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:UWqg"]
+id = "UWqg"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:k8T0"]
+id = "k8T0"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:lisV"]
+id = "lisV"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:xZ8V"]
+id = "xZ8V"
+kind = "section"
+
+["src/math.rs.cob"."sec:1uIU"]
+id = "1uIU"
+kind = "section"
+
+["src/math.rs.cob"."sec:EqJN"]
+id = "EqJN"
+kind = "section"
+
+["src/math.rs.cob"."sec:PzZ2"]
+id = "PzZ2"
+kind = "section"
+
+["src/math.rs.cob"."sec:iVXH"]
+id = "iVXH"
+kind = "section"
+
+["src/math.rs.cob"."sec:sHOO"]
+id = "sHOO"
+kind = "section"
+
+["src/model.rs.cob"."sec:N3uM"]
+id = "N3uM"
+kind = "section"
+
+["src/model.rs.cob"."sec:Ugl4"]
+id = "Ugl4"
+kind = "section"
+
+["src/model.rs.cob"."sec:jijh"]
+id = "jijh"
+kind = "section"
+
+["src/model.rs.cob"."sec:m7n3"]
+id = "m7n3"
+kind = "section"
+
+["src/noweb.rs.cob"."sec:0AwF"]
+id = "0AwF"
+kind = "section"
+
+["src/noweb.rs.cob"."sec:Kt8c"]
+id = "Kt8c"
+kind = "section"
+
+["src/noweb.rs.cob"."sec:nsvK"]
+id = "nsvK"
+kind = "section"
+
+["src/prose.rs.cob"."sec:O0Sz"]
+id = "O0Sz"
+kind = "section"
+
+["src/prose.rs.cob"."sec:bz51"]
+id = "bz51"
+kind = "section"
+
+["src/prose.rs.cob"."sec:iquM"]
+id = "iquM"
+kind = "section"
+
+["src/resolve.rs.cob"."sec:XwSp"]
+id = "XwSp"
+kind = "section"
+
+["src/resolve.rs.cob"."sec:fnwt"]
+id = "fnwt"
+kind = "section"
+
+["src/resolve.rs.cob"."sec:iBsg"]
+id = "iBsg"
+kind = "section"
+
+["src/resolve.rs.cob"."sec:m11o"]
+id = "m11o"
+kind = "section"
+
+["src/rewrite.rs.cob"."sec:9k7W"]
+id = "9k7W"
+kind = "section"
+
+["src/rewrite.rs.cob"."sec:9p9p"]
+id = "9p9p"
+kind = "section"
+
+["src/rewrite.rs.cob"."sec:G7pc"]
+id = "G7pc"
+kind = "section"
+
+["src/rewrite.rs.cob"."sec:SAwZ"]
+id = "SAwZ"
+kind = "section"
+
+["src/rewrite.rs.cob"."sec:poyA"]
+id = "poyA"
+kind = "section"
+
+["src/site.rs.cob"."sec:5Q9y"]
+id = "5Q9y"
+kind = "section"
+
+["src/site.rs.cob"."sec:Cafo"]
+id = "Cafo"
+kind = "section"
+
+["src/site.rs.cob"."sec:Tjx4"]
+id = "Tjx4"
+kind = "section"
+
+["src/site.rs.cob"."sec:pzpT"]
+id = "pzpT"
+kind = "section"
+
+["src/tangle.rs.cob"."sec:TXnD"]
+id = "TXnD"
+kind = "section"
+
+["src/tangle.rs.cob"."sec:dd8Y"]
+id = "dd8Y"
+kind = "section"
+
+["src/tangle.rs.cob"."sec:mtmH"]
+id = "mtmH"
+kind = "section"
+
+["src/weave.rs.cob"."sec:A00S"]
+id = "A00S"
+kind = "section"
+
+["src/weave.rs.cob"."sec:LG7c"]
+id = "LG7c"
+kind = "section"

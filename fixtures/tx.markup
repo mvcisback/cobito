@@ -1,0 +1,59 @@
+@file fixtures/tx.cob
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Transclusion fixture
+@nl
+@text 
+@nl
+@text A tiny document in the \emph{Markdown} dialect that exercises transclusion (§10). The
+@nl
+@text title, an intro, and the source section all live in one \code{@} chunk, so the node
+@nl
+@text boundary is the markdown heading, not the chunk. A later section pulls the source
+@nl
+@text in with \code{\transclude}, so the weave must cut the node at the heading, splice it in
+@nl
+@text place, scope its ids, and link back to it.
+@nl
+@text 
+@nl
+@text ## The source {#sec:source}
+@nl
+@text 
+@nl
+@text This section is the transclusion target. The title above it belongs to a
+@nl
+@text shallower node, so the copy must start here and leave the \code{h1} out. It owns a
+@nl
+@text small code chunk, so the transcluded copy must scope a code section's id too.
+@nl
+@text 
+@nl
+@end docs 1
+@begin code 2
+@defn demo.rs
+@nl
+@text pub fn demo() -> u32 {
+@nl
+@text     7
+@nl
+@text }
+@nl
+@end code 2
+@begin docs 3
+@text ## The reuse {#sec:reuse}
+@nl
+@text 
+@nl
+@text The source section appears again here, transcluded in place:
+@nl
+@text 
+@nl
+@text \transclude{sec:source}
+@nl
+@text 
+@nl
+@text The document continues after the copy.
+@nl
+@end docs 3

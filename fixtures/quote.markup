@@ -1,0 +1,70 @@
+@file fixtures/quote.cob
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Quote and escape fixture
+@nl
+@text 
+@nl
+@text This document exercises the documentation-quote and bracket-escape edge cases the
+@nl
+@text native reader must match (§4.1). It is not a real program; it only feeds the
+@nl
+@text differential test.
+@nl
+@text 
+@nl
+@text A quote can run over more than one line: the open 
+@quote
+@text begins here
+@nl
+@text and the close
+@endquote
+@text  lands on the next line. An empty quote a
+@quote
+@endquote
+@text b makes no inner
+@nl
+@text text. A nested quote 
+@quote
+@text v[[0]]
+@endquote
+@text  keeps its inner brackets, greedy to the last
+@nl
+@text close.
+@nl
+@text 
+@nl
+@text An escaped <<name>> in prose is literal, not a use. A single @< or @> stays
+@nl
+@text literal, the @ and all.
+@nl
+@text 
+@nl
+@end docs 1
+@begin code 2
+@defn root
+@nl
+@text let shift = a << b;
+@nl
+@text let use = 
+@use real
+@text  here;
+@nl
+@text let single = @< keep @> me;
+@nl
+@text let esc = <<name>> literal;
+@nl
+@index defn shift
+@index nl
+@end code 2
+@begin code 3
+@defn real
+@nl
+@text 0
+@nl
+@end code 3
+@begin docs 4
+@text The document ends here.
+@nl
+@end docs 4

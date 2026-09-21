@@ -1,0 +1,65 @@
+@file fixtures/txf.cob
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # Float transclusion fixture
+@nl
+@text 
+@nl
+@text A Markdown document that exercises the float node model (§10). A labelled figure
+@nl
+@text and a labelled equation live inside a section. A later section refers to each and
+@nl
+@text transcludes each. So the weave must lift one element out of a section body, give
+@nl
+@text it a node page of its own, and inline it where the directive sits.
+@nl
+@text 
+@nl
+@text ## The originals {#sec:home}
+@nl
+@text 
+@nl
+@text Here are the floats the rest of the document points at: the figure \ref{fig:demo}
+@nl
+@text and the relation \ref{eq:demo}.
+@nl
+@text 
+@nl
+@text ```math \label{eq:demo}
+@nl
+@text E = mc^2
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ```figure \label{fig:demo}
+@nl
+@text \caption{A \emph{tiny} schematic.}
+@nl
+@text <img src="demo.svg" alt="a demo">
+@nl
+@text ```
+@nl
+@text 
+@nl
+@text ## The reuse {#sec:reuse}
+@nl
+@text 
+@nl
+@text The figure appears again here, lifted out on its own:
+@nl
+@text 
+@nl
+@text \transclude{fig:demo}
+@nl
+@text 
+@nl
+@text And the equation too:
+@nl
+@text 
+@nl
+@text \transclude{eq:demo}
+@nl
+@end docs 1

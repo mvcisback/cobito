@@ -1,0 +1,7 @@
+/target
+/result
+/result-*
+/_site
+/.cob-cache
+
+# tangled: buildable release snapshot; generated tree tracked here (§13).

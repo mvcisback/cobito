@@ -1,0 +1,101 @@
+@file fixtures/hello.cob
+@begin docs 0
+@end docs 0
+@begin docs 1
+@text # A tiny literate program
+@nl
+@text This fixture exercises the noweb constructs we care about.
+@nl
+@text We call \code{lex()} in a loop, which runs in $O(n \log n)$ time.
+@nl
+@text Note a tricky case: math with an angle bracket, $a < b$.
+@nl
+@text 
+@nl
+@end docs 1
+@begin code 2
+@defn lex a token
+@nl
+@text let c = 
+@use next char
+@text ;
+@nl
+@text tokens.push(c);
+@nl
+@index defn c
+@index nl
+@end code 2
+@begin docs 3
+@text 
+@nl
+@end docs 3
+@begin docs 4
+@text Chunk continuation: we append to the same chunk later.
+@nl
+@text Also an inline code example: \code{tokens[0]} and a literal
+@nl
+@text dollar in prose: cost is \$5.
+@nl
+@text 
+@nl
+@end docs 4
+@begin code 5
+@defn lex a token
+@nl
+@text count += 1;
+@nl
+@end code 5
+@begin docs 6
+@text 
+@nl
+@text 
+@nl
+@end docs 6
+@begin docs 7
+@text ## The next char helper
+@nl
+@text A second-level heading, for the nav tree.
+@nl
+@text 
+@nl
+@end docs 7
+@begin code 8
+@defn next char
+@nl
+@text input.next().unwrap()
+@nl
+@end code 8
+@begin docs 9
+@text 
+@nl
+@text 
+@nl
+@end docs 9
+@begin docs 10
+@text Finally the root chunk, path-shaped.
+@nl
+@text 
+@nl
+@end docs 10
+@begin code 11
+@defn src/main.rs
+@nl
+@text fn main() {
+@nl
+@text     let mut tokens = vec![];
+@nl
+@text     let mut count = 0;
+@nl
+@text     
+@use lex a token
+@text 
+@nl
+@text     println!("{count}");
+@nl
+@text }
+@nl
+@end code 11
+@begin docs 12
+@text 
+@nl
+@end docs 12

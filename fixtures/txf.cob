@@ -1,0 +1,30 @@
+@ # Float transclusion fixture
+
+A Markdown document that exercises the float node model (§10). A labelled figure
+and a labelled equation live inside a section. A later section refers to each and
+transcludes each. So the weave must lift one element out of a section body, give
+it a node page of its own, and inline it where the directive sits.
+
+## The originals {#sec:home}
+
+Here are the floats the rest of the document points at: the figure \ref{fig:demo}
+and the relation \ref{eq:demo}.
+
+```math \label{eq:demo}
+E = mc^2
+```
+
+```figure \label{fig:demo}
+\caption{A \emph{tiny} schematic.}
+<img src="demo.svg" alt="a demo">
+```
+
+## The reuse {#sec:reuse}
+
+The figure appears again here, lifted out on its own:
+
+\transclude{fig:demo}
+
+And the equation too:
+
+\transclude{eq:demo}

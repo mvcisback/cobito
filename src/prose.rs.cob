@@ -1,0 +1,199 @@
+# The prose layer (§6.1, §6.2)
+
+This module is the specification and the implementation of the shared ends of
+the prose pipeline. The prose is the specification. The chunks after it are the
+implementation.
+
+noweb does not solve the prose problem. Its `tohtml` passes prose through
+verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
+LaTeX subset, does not expand author macros, and shows math as italics. cob does
+its own prose layer instead.
+
+## One prose dialect {#sec:iquM}
+
+An author writes a docs chunk in one dialect: command Markdown (§6.4). Prose is
+CommonMark plus cob's command markers and fenced-float directives. Paragraphs,
+emphasis, lists, links, and headings become HTML. The fenced directives for
+math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
+cross-reference.
+
+The Markdown render is a post-`markup` transform on the reassembled prose
+(§6.4). It slots in between reassembly and the HTML rewrite. Everything after
+that step — numbering, references, math render, sidenote hoist, and `site.json`
+— is the same for every document.
+
+## The pipeline (the order is load-bearing) {#sec:O0Sz}
+
+cob processes each docs chunk in this order:
+
+1. Reassemble. Join the `@text` and `@nl` spans. Turn each `@quote`…`@endquote`
+   into a `<code>` element with its contents HTML-escaped. This escape comes
+   first, so an inline quote of a tag such as `<div>` is safe.
+2. Render Markdown. The command-Markdown pass (§6.4) turns the prose into HTML.
+   It extracts each math run into an opaque placeholder as it goes, so a formula
+   like `$a < b$` is never read as a broken tag.
+3. Rewrite. Inject section ids, number the figures, tables, and equations,
+   resolve each `data-ref`, and hoist each sidenote aside into the section's
+   margin array.
+4. Serialize.
+5. Render math. Replace each placeholder with KaTeX output.
+
+Steps 3 to 5 need document-global numbering, so cob runs the whole document
+through step 2 before any section reaches step 3. Weave cannot stream.
+
+cob does not sanitize prose. The author is the trusted party. A margin comment
+is the annotation layer's problem (`ANNOTATIONS.md`), never merged into cob's
+output.
+
+## How the code implements this {#sec:bz51}
+
+This module holds the shared ends of the pipeline: the extracted-math type, the
+HTML escaper, step 1 (reassembly), and the step-5 substitution that puts
+rendered math back. The Markdown render (step 2) is the markdown module; the
+rewrite (steps 3–4) is the rewrite module; step 5's KaTeX call is the math
+module.
+<<src/prose.rs>>=
+<<the module banner>>
+
+<<imports>>
+
+<<extracted math>>
+
+<<the html escaper>>
+
+<<step 1: reassemble>>
+
+<<step 5: substitute math>>
+
+<<the tests>>
+@
+The banner states the two shared ends of the pipeline this module owns.
+<<the module banner>>=
+//! The shared ends of the prose pipeline (§6.2): reassemble docs spans into
+//! prose (step 1), and substitute rendered math back into the serialized HTML
+//! (step 5). The Markdown render in between, which extracts math, is the
+//! markdown module.
+@
+The `ProseSpan` the model hands us.
+<<imports>>=
+use crate::model::ProseSpan;
+@
+One extracted formula: its source and whether it renders in display mode.
+<<extracted math>>=
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Math {
+    pub source: String,
+    pub display: bool,
+}
+@
+Escape for HTML text — four characters only. Prose is authored HTML by a trusted
+author (§6.2), so this exists to make quoted code inert, not to sanitize.
+<<the html escaper>>=
+/// Escape for HTML text context. `&<>"` only — prose is authored HTML and the
+/// author is trusted (§6.2); this exists to make quoted code inert, not to
+/// sanitize.
+pub fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+@
+Step 1. Concatenate the text and newline spans; a quoted-code span becomes an
+escaped `<code>` element.
+<<step 1: reassemble>>=
+/// Step 1. `@text`/`@nl` concatenated; `[[…]]` becomes escaped `<code>`.
+pub fn reassemble(spans: &[ProseSpan]) -> String {
+    let mut out = String::new();
+    for span in spans {
+        match span {
+            ProseSpan::Text(t) => out.push_str(t),
+            ProseSpan::Nl => out.push('\n'),
+            ProseSpan::Quote(q) => {
+                out.push_str("<code>");
+                out.push_str(&escape(q));
+                out.push_str("</code>");
+            }
+        }
+    }
+    out
+}
+@
+Step 5. Walk the serialized HTML, replacing each numbered placeholder with its
+rendered fragment. A placeholder whose number has no rendered entry, or a malformed
+one, is left as-is rather than dropped.
+<<step 5: substitute math>>=
+/// Step 5. Substitute rendered math back into the serialized HTML.
+pub fn substitute_math(html: &str, rendered: &[String]) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while let Some(found) = html[i..].find("<span data-cob-math=\"") {
+        let start = i + found;
+        out.push_str(&html[i..start]);
+        let num_start = start + "<span data-cob-math=\"".len();
+        let Some(quote) = html[num_start..].find('"') else {
+            break;
+        };
+        let end_tag = "\"></span>";
+        if !html[num_start + quote..].starts_with(end_tag) {
+            out.push_str(&html[start..num_start]);
+            i = num_start;
+            continue;
+        }
+        let idx: usize = html[num_start..num_start + quote]
+            .parse()
+            .unwrap_or(usize::MAX);
+        match rendered.get(idx) {
+            Some(r) => out.push_str(r),
+            None => out.push_str(&html[start..num_start + quote + end_tag.len()]),
+        }
+        i = num_start + quote + end_tag.len();
+    }
+    out.push_str(&html[i..]);
+    out
+}
+@
+The tests walk this module's two behaviors: escaping at reassembly, and math
+substitution back into serialized HTML.
+<<the tests>>=
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    <<quoted code is escaped at reassembly>>
+
+    <<substitution round-trips>>
+}
+@
+Quoted code becomes an escaped `<code>` element at reassembly.
+<<quoted code is escaped at reassembly>>=
+#[test]
+fn quoted_code_is_escaped_at_reassembly() {
+    let spans = vec![
+        ProseSpan::Text("see ".to_string()),
+        ProseSpan::Quote("<div> & \"x\"".to_string()),
+        ProseSpan::Nl,
+    ];
+    assert_eq!(
+        reassemble(&spans),
+        "see <code>&lt;div&gt; &amp; &quot;x&quot;</code>\n"
+    );
+}
+@
+Rendered fragments substitute back into their placeholders by index; a
+placeholder with no rendered entry is left as-is.
+<<substitution round-trips>>=
+#[test]
+fn substitution_round_trips() {
+    let html = "a <span data-cob-math=\"0\"></span> b <span data-cob-math=\"1\"></span>";
+    let out = substitute_math(html, &["<X/>".to_string(), "<Y/>".to_string()]);
+    assert_eq!(out, "a <X/> b <Y/>");
+}
+@

@@ -1,0 +1,862 @@
+# The stylesheet
+
+This is cob's stylesheet, told as a literate program (§13, §16). It
+tangles byte-identically to \code{templates/cob.css}, which the weaver embeds into
+every page. Weaving this file back shows cob highlighting its own CSS — the fourth
+grammar, and the reason the CSS grammar exists.
+
+The design is Tufte-flavoured: a centred reading column with a wide right margin
+that holds sidenotes and, later, the annotation overlay's margin slots. The page
+frame is a CSS grid, and the reader gets a light or a dark theme from the operating
+system. Two rules run through the whole sheet. A float's identity — its opaque id, a
+section's permalink, a code line's number — is drawn from a data attribute as
+generated content, never written into the text, so it stays out of selections,
+copies, and the annotation layer's quote selectors. And colour is a class over the
+existing bytes, so syntax highlighting adds no text and needs no script.
+
+Cascade layers order the sheet from general to specific — base, layout, components,
+then syntax. A later layer wins, so a component rule never fights a base rule by
+specificity. The chunks below fill those layers in turn: the page frame and tokens,
+the grid layout and margin column, the components (numbering, cross-references,
+navigation, code chunks, inline code, tables), the highlight palette, and a last
+block of phone refinements. The palette lives
+in its own file, \code{cob-syntax.css}, which the main sheet imports with a CSS
+\code{@import} at the top. The CSS spec permits a \code{@layer} ordering statement before
+\code{@import}, so the layer order is declared first; the import comes second, before any
+style rule with a block.
+<<templates/cob.css>>=
+<<the layer order and design tokens>>
+
+<<the grid page frame>>
+
+<<the section box>>
+
+<<the margin column>>
+
+<<generated numbering>>
+
+<<internal cross-references>>
+
+<<transcluded nodes>>
+
+<<node pages>>
+
+<<navigation and pagination>>
+
+<<the code-chunk layout>>
+
+<<inline code>>
+
+<<tables>>
+
+<<phone refinements>>
+@
+The base layer holds the design tokens and the body. The \code{@layer} line at the top
+names the four layers in order, once, so every block below joins a named layer and
+the cascade reads top to bottom. The tokens are grouped: the layout measures and the
+three type faces are theme-independent; the colours come in two sets. The default set
+is a warm cream page. The \code{prefers-color-scheme} rule holds the whole dark theme — it
+gives each colour token a dark value, and no rule below hard-codes a colour, so the
+two themes stay in one place. \code{color-scheme} tells the browser to match its own parts
+— the scrollbar and the form controls — to the page.
+<<the layer order and design tokens>>=
+@layer base, layout, components, syntax;
+@import url('cob-syntax.css') layer(syntax);
+
+@layer base {
+  /* Tufte-flavoured tokens (§16). A float's identity is drawn from its data-id
+     attribute (the frozen opaque id of §7.1) as generated content, never written
+     into the text (§7, §9.2). */
+  :root {
+    color-scheme: light dark;
+
+    /* Layout and faces — theme-independent. */
+    --measure: 40rem;      /* the reading column */
+    --margin: 18rem;       /* the note column to its right */
+    --gap: 2.5rem;
+    --serif: Palatino, "Palatino Linotype", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Iosevka", "DejaVu Sans Mono", monospace;
+
+    /* Light theme (default): a warm cream page. */
+    --bg: #fffff8;         /* the page (a sticky heading paints over it) */
+    --band: #f6f4e9;       /* the sticky-heading band, a hair off the page */
+    --band-shadow: rgba(60, 55, 30, 0.16);
+    --ink: #111;
+    --faint: #a09c88;
+    --rule: #ccc9b8;
+    --link: #4a4a8a;       /* ordinary prose links */
+    --ref: #7a3b2e;        /* internal cross-references (§7) — a warmer accent */
+    --code-bg: #f4f4ec;    /* inline code */
+    --chunk-bg: #f4f4ec;   /* code-chunk body */
+
+    /* Syntax palette (§5.5) — warm hues on cream. */
+    --tok-keyword: #9a3327;
+    --tok-string: #4d6a1f;
+    --tok-function: #3a5a8a;
+    --tok-type: #6a3b7a;
+    --tok-number: #7a3b2e;
+    --tok-attribute: #4a4a8a;
+    --tok-operator: #6a6a5a;
+    --tok-punctuation: #8a8674;
+  }
+
+  /* Dark theme: the same warm hues, lifted off a near-black page. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f;
+      --band: #1e1c14;
+      --band-shadow: rgba(0, 0, 0, 0.5);
+      --ink: #e9e6d8;
+      --faint: #6f6a54;
+      --rule: #3a382c;
+      --link: #a6a6e0;
+      --ref: #d79a70;
+      --code-bg: #201e16;
+      --chunk-bg: #201e16;
+
+      --tok-keyword: #e0806f;
+      --tok-string: #a6c37a;
+      --tok-function: #86a8d8;
+      --tok-type: #c093d0;
+      --tok-number: #d79a70;
+      --tok-attribute: #9a9ae0;
+      --tok-operator: #b0ab90;
+      --tok-punctuation: #8f8a72;
+    }
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1rem);
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--bg);
+    text-wrap: pretty;
+  }
+}
+@
+The page is a grid. Named line boundaries mark a \code{content} track — the reading
+column — and, to its right, a \code{margin} track for sidenotes. The two outer \code{1fr}
+tracks centre the whole content-plus-margin group, so the reading column sits a
+little left of centre and the margin has room. Every top-level block — the table of
+contents, the prose, the footer — sits in the \code{content} track. A narrow viewport has
+no room for a margin track, so the grid collapses to one centred column and the
+sidenotes fall inline.
+
+Headings sit in the normal flow. The sticky navigation bar (below) shows the reader
+where they are, so a heading needs no sticky band of its own — and two sticky
+headings never fight as one section leaves and the next arrives. A jump to an anchor
+lands below the sticky bar, not under it, so every section, heading, and float
+reserves that much scroll margin at the top.
+<<the grid page frame>>=
+@layer layout {
+  body {
+    display: grid;
+    align-content: start;
+    grid-template-columns:
+      [full-start] 1fr
+      [content-start] min(var(--measure), 100% - 2rem)
+      [content-end] var(--gap)
+      [margin-start] var(--margin)
+      [margin-end] 1fr [full-end];
+  }
+
+  body > * {
+    grid-column: content;
+  }
+
+  main {
+    margin-block: 2rem;
+    padding-inline: 1rem;
+  }
+
+  /* No room for a margin track: one centred column; sidenotes go inline. */
+  @media (max-width: 100rem) {
+    body {
+      justify-content: center;
+      grid-template-columns:
+        [full-start content-start] min(var(--measure), 100% - 2rem) [content-end full-end];
+    }
+  }
+
+  main :is(h1, h2, h3, h4) {
+    margin-top: 1.5rem;
+  }
+
+  /* An anchored jump lands below the sticky nav bar, not under it. */
+  main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+    scroll-margin-top: 3.5rem;
+  }
+}
+@
+Every section is a positioning context for its margin slot and sidenotes.
+<<the section box>>=
+@layer layout {
+  section {
+    position: relative;
+    margin-bottom: 1.5rem;
+  }
+}
+@
+The margin column holds the annotation slot and sidenotes. A float — not a grid cell
+— keeps the note beside the point it marks: the note must line up with its anchor in
+the prose, not with a grid row. On a narrow screen there is no margin, so the note
+falls back to an indented aside within the column.
+<<the margin column>>=
+@layer layout {
+  /* --- Margin column: annotation slot + sidenotes ----------------------- */
+
+  .margin-slot {
+    float: right;
+    clear: right;
+    width: 0;
+  }
+
+  .sidenote {
+    float: right;
+    clear: right;
+    width: var(--margin);
+    margin-right: calc(-1 * (var(--margin) + var(--gap)));
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  @media (max-width: 100rem) {
+    /* No room for a margin: inline the note as an indented aside. */
+    .sidenote {
+      float: none;
+      width: auto;
+      margin: 0.6rem 0 0.6rem 1.5rem;
+      padding-left: 0.8rem;
+      border-left: 2px solid var(--rule);
+    }
+  }
+}
+@
+A float's number is generated content drawn from its data-id, so it is never
+selectable. A figure and a table caption lead with their kind and id; an equation's
+id sits in the right margin of its centred block.
+<<generated numbering>>=
+@layer components {
+  /* --- Numbering (generated, never selectable) -------------------------- */
+
+  figure {
+    margin: 1.5rem 0;
+  }
+
+  figcaption,
+  caption {
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
+
+  figcaption[data-id]::before {
+    content: "Figure " attr(data-id) ". ";
+    font-weight: bold;
+  }
+
+  caption[data-id]::before {
+    content: "Table " attr(data-id) ". ";
+    font-weight: bold;
+  }
+
+  /* A wide display equation scrolls sideways rather than widening the page.
+     KaTeX's own stylesheet does not guard this, and it matters most on a phone. */
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .equation {
+    position: relative;
+    margin: 1rem 0;
+    text-align: center;
+
+    &[data-id]::after {
+      content: "(" attr(data-id) ")";
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--faint);
+    }
+  }
+}
+@
+A resolved cross-reference is navigation, not prose, so it reads in a warm sans
+accent distinct from both the serif body and ordinary links. A labelled section
+leads with a clickable permalink whose opaque id is generated content, never a text
+node, so it stays out of selections and quote selectors.
+<<internal cross-references>>=
+@layer components {
+  /* --- Internal cross-references (§7) ------------------------------------ */
+
+  /* A resolved <a data-ref> — "Figure k3f9", a chunk link, a section link — is
+     navigation, not prose, and its opaque id is a machine token. Set it in a sans
+     face at medium weight with a warm accent so it reads distinctly from both the
+     serif body and ordinary links, without the underline that would fight the id. */
+  a[data-ref] {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.9em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* A `sec:`-labelled section leads with a clickable permalink carrying its opaque
+     id (§7.1). Like a float's number the id is generated content drawn from
+     data-id, never a text node, so it stays out of selections and the annotation
+     layer's quote selectors (§9.2); the <a> itself is the click target. It sits a
+     hair smaller than the heading and in the same warm sans accent as an inline
+     cross-reference, so a section id reads as the machine token it is. */
+  .sec-uid {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.7em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
+
+    &::before {
+      content: "§" attr(data-id);
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* A second, fainter glyph after the permalink links to the node's own page
+     (§10 node pages): the same section shown on its own, with a breadcrumb and
+     backlinks. Like the permalink it is generated content, never a text node, so
+     it stays out of selections and the quote selectors (§9.2). */
+  .node-link {
+    font-size: 0.7em;
+    color: var(--faint);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
+
+    &::before {
+      content: "⧉";
+    }
+
+    &:hover {
+      color: var(--ref);
+    }
+  }
+
+  /* A float is a node too (§10). Its node link rides the caption, after the
+     caption text. An equation has no caption, so its link rides the block and
+     drops into the left margin, a mirror of the number at the right. */
+  figcaption .node-link,
+  caption .node-link {
+    margin-right: 0;
+    margin-left: 0.4em;
+  }
+
+  .equation .node-link {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+}
+@
+A transcluded node (§10) is one part of the document shown a second time in
+another place. A reader must see that the text is a copy, and must be able to go
+to the canonical place. So the copy gets a soft inset card with a left rule, and a
+small header that names the node and links back to it. The two fault markers — an
+unknown target and a cycle — get the same card in a warm error tone, so a broken
+directive is visible but never an error. The card draws only from classes, so it
+adds no text a copy-paste or a quote selector would pick up (§9.2).
+<<transcluded nodes>>=
+@layer components {
+  /* --- Transcluded nodes (§10) ------------------------------------------- */
+
+  /* The copy reads as an inset card: a soft band, a left rule in the warm
+     accent, and room to breathe, so a reader sees the text is shown from another
+     place and is not the canonical node. */
+  .transclusion {
+    margin-block: 1.5rem;
+    padding: 0.25rem 1rem;
+    border-left: 3px solid var(--ref);
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* The header names the node and links back to its canonical place. It sits in
+     the same warm sans accent as a cross-reference, a hair smaller than body, and
+     leads with a hook glyph so it reads as "transcluded from". */
+  .transclusion-from {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    letter-spacing: 0.01em;
+    margin-block: 0.25rem 0.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &::before {
+        content: "⮢ ";
+      }
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* A broken directive — an unknown target or a cycle — is visible but inert: the
+     same card in a warm error tone, with the fault named by generated content so
+     it stays out of the copy-paste and the quote selectors. */
+  .transclusion-missing,
+  .transclusion-cycle {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1rem;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid #c0392b;
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+    color: #c0392b;
+  }
+}
+@
+A node page (§10) shows one node on its own, the way a forester wiki shows one
+tree. Three parts frame the node body: a breadcrumb of the parents above it, a
+link to the node in context, and the backlinks below it — the nodes that
+transclude it and the nodes that refer to it. All three read in the quiet sans
+accent and sit off the body text, so the node body stays the center of the page.
+<<node pages>>=
+@layer components {
+  /* --- Per-node pages (§10) --------------------------------------------- */
+
+  /* The breadcrumb of parents, above the node body. A row of small sans links
+     with a slash between, in the muted tone, so it frames the node without
+     competing with it. */
+  .crumbs {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    margin-block-end: 1.5rem;
+
+    ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+    }
+
+    li:not(:last-child)::after {
+      content: "/";
+      margin-left: 0.5em;
+      color: var(--faint);
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The link back to the node in its document page, just under the node body. */
+  .node-context {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The backlinks, below the node, set off by a top rule. Each list is a plain
+     run of sans links to the nodes that use this one. */
+  .backlinks {
+    margin-block-start: 2.5rem;
+    padding-block-start: 1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--sans);
+
+    h2 {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--faint);
+      margin-block: 1rem 0.25rem;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.2em;
+      font-size: 0.9em;
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+}
+@
+The table of contents is a sticky bar across the top of the page — the one fixed
+landmark, in place of the old sticky headings. It spans the full width and holds a
+single horizontal, scrollable run of section links: each list, top level and nested,
+lays its items in a row, so the reader gets a flat scrollable list of every section
+and can reach any of them from anywhere. The weaver marks the current page's own
+entry, so it reads in the warm accent at full weight — a static "you are here" that
+works before any script and in every browser. On top of that static mark, the
+\code{nav-spy} script (§5.3, in \code{page.html}) marks the section the reader is on with a
+soft pill and scrolls the bar to keep it in view. The mark is progressive
+enhancement: the page reads fully without it. The bar carries the band treatment — a
+hair off the page shade, a thin bottom rule, a soft lower shadow. The footer
+pagination sits in the content track as a two-end row with a sitemap link between.
+<<navigation and pagination>>=
+@layer components {
+  /* --- Navigation and pagination ---------------------------------------- */
+
+  nav.toc {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    grid-column: full;
+    margin: 0;
+    padding-block: 0.45rem;
+    font-size: 0.8rem;
+    background: var(--band);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+
+    /* The nav tree flattens into one horizontal row: every list lays its items
+       out in a row, so the whole thing is a scrollable list of sections. The
+       row is `max-content` wide, so it overflows the bar and scrolls sideways
+       rather than wrapping. */
+    ul {
+      display: flex;
+      align-items: baseline;
+      gap: 0.9rem;
+      width: max-content;
+      margin: 0;
+      padding-inline: 1rem;
+      list-style: none;
+    }
+
+    ul ul {
+      padding-inline: 0;
+    }
+
+    li {
+      display: flex;
+      gap: 0.9rem;
+      white-space: nowrap;
+    }
+
+    /* Top-level entries — the pages — read a touch stronger than their sections. */
+    & > ul > li > a {
+      font-weight: 600;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    /* The current page's own entry, marked statically by the weaver (§5.3), so
+       the reader's place shows even before the script runs, in every browser. */
+    a[aria-current="page"] {
+      color: var(--ref);
+      font-weight: 700;
+    }
+
+    /* The section the reader is on, marked live by the nav-spy script (§5.3).
+       It paints a soft accent pill so the moving mark reads apart from both the
+       bar (also --band) and the static page mark above. */
+    a[data-current-section] {
+      color: var(--ref);
+      background: color-mix(in srgb, var(--ref) 16%, var(--bg));
+      border-radius: 0.7rem;
+      padding: 0.1rem 0.45rem;
+      margin-inline: -0.2rem;
+    }
+  }
+
+  footer.pagination {
+    display: flex;
+    justify-content: space-between;
+    margin-block: 2rem;
+    padding: 1rem 1rem 0;
+    border-top: 1px solid var(--rule);
+    font-size: 0.9rem;
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+  }
+}
+@
+A code chunk is a foldable block with a monospace header and body. Each line is its
+own block, and its number is generated content drawn from data-line, so it stays out
+of copies and quote selectors.
+<<the code-chunk layout>>=
+@layer components {
+  /* --- Code chunks (§5.4) ----------------------------------------------- */
+
+  details.chunk {
+    background: var(--chunk-bg);
+    border-left: 3px solid var(--rule);
+    margin: 1rem 0;
+
+    & > summary {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      font-weight: bold;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  pre.chunk-body {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin: 0;
+    padding: 0 0.8rem 0.6rem;
+    overflow-x: auto;
+    white-space: pre;
+
+    /* Line numbers are generated content so they stay out of selections, copies,
+       and the text-quote selectors the annotation layer anchors on (§9.2). */
+    .line {
+      display: block;
+
+      &::before {
+        content: attr(data-line);
+        display: inline-block;
+        width: 3ch;
+        margin-right: 1ch;
+        text-align: right;
+        color: var(--faint);
+        user-select: none;
+      }
+    }
+  }
+}
+@
+The highlight palette lives in \code{cob-syntax.css} and is composed into the \code{syntax}
+layer by the \code{@import} above. Splitting it out lets authors swap the whole palette
+without touching the page chrome, and it shows how one CSS document can import
+another. The palette is pure classes over the existing bytes: no injected text, no
+script, so the copy-paste payload, the line numbers, and the quote selectors all
+survive. A chunk-use hole is never wrapped in one of these. Each class draws its
+colour from a \code{--tok-*} variable, so the light and the dark theme both set the palette
+in the base block of \code{cob.css}; a plain identifier keeps the default ink so it reads
+as prose, not decoration.
+<<templates/cob-syntax.css>>=
+@layer syntax {
+  /* --- Syntax highlighting (§5.5) --------------------------------------- *
+   * Pure classes over the existing bytes: no injected text, no <script>, so the
+   * copy-paste payload, data-line numbers, and annotation quote selectors all
+   * survive untouched. A chunk-use hole is never wrapped in one of these — its
+   * <a> stays opaque. Each class reads a --tok-* variable, so both themes set the
+   * palette in one place (the base block). */
+  .tok-keyword { color: var(--tok-keyword); }
+  .tok-string { color: var(--tok-string); }
+  .tok-escape { color: var(--tok-keyword); }
+  .tok-comment { color: var(--faint); font-style: italic; }
+  .tok-function { color: var(--tok-function); }
+  .tok-type,
+  .tok-constructor { color: var(--tok-type); }
+  .tok-module { color: var(--tok-type); }
+  .tok-number,
+  .tok-constant { color: var(--tok-number); }
+  .tok-attribute,
+  .tok-property { color: var(--tok-attribute); }
+  .tok-operator { color: var(--tok-operator); }
+  .tok-punctuation { color: var(--tok-punctuation); }
+  .tok-label,
+  .tok-tag { color: var(--tok-keyword); }
+  /* .tok-variable stays --ink: the default text color, so plain identifiers read
+     as prose, not decoration. */
+}
+@
+Inline code in prose keeps the same monospace face on a faint background. A fenced
+code block in prose — not a chunk, but a plain \code{```} block such as the architecture
+diagram — is a \code{pre} with no chunk class. It scrolls sideways on its own, so a wide
+line (an ASCII diagram) never widens the page on a narrow screen. The \code{code} inside it
+drops the inline background and padding, which would otherwise tile behind every line.
+<<inline code>>=
+@layer components {
+  code {
+    font-family: var(--mono);
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.05em 0.25em;
+  }
+
+  /* A prose code block (not a chunk): scroll sideways instead of widening the
+     page, and drop the inline-code background/padding on the nested <code>. */
+  pre:not(.chunk-body) {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    background: var(--code-bg);
+    padding: 0.8rem;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+    }
+  }
+}
+@
+A table from a \code{table} fence (§6.4) reads in the Tufte style: no vertical rules,
+one rule under the header, one under the last row, and generous cell padding. The
+caption sits above. A wide table does not push the page wide — the element scrolls
+sideways on its own when the viewport is narrow.
+<<tables>>=
+@layer components {
+  /* --- Tables (from a `table` fence, §6.4) ------------------------------ */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+    /* A wide table scrolls sideways instead of widening the page. */
+    display: block;
+    overflow-x: auto;
+  }
+
+  th,
+  td {
+    padding: 0.4rem 0.9rem 0.4rem 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+  }
+
+  tbody tr:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+}
+@
+The rules above already adapt to a narrow viewport: the grid collapses to one column,
+the sidenotes fall inline, and a wide code chunk or table scrolls on its own. This
+last block tunes a phone. The reading gutter gets smaller so the column uses more of
+the screen, the block spacing tightens, the scrolling nav gives each link a taller tap
+target, a long previous or next title wraps instead of overlapping its neighbour, and
+the code face shrinks a step so more of a line shows before it scrolls. The break is
+34rem — about a large phone in portrait.
+<<phone refinements>>=
+@layer layout {
+  @media (max-width: 34rem) {
+    main {
+      margin-block: 1.25rem;
+      padding-inline: 0.75rem;
+    }
+
+    main :is(h1, h2, h3, h4) {
+      margin-top: 1.25rem;
+    }
+
+    /* The browser's em-based headings are too tall on a phone: a long title
+       wraps to four lines. Step them down so a heading fills fewer lines. */
+    main h1 {
+      font-size: 1.75rem;
+      line-height: 1.15;
+    }
+
+    main h2 {
+      font-size: 1.35rem;
+    }
+
+    main h3 {
+      font-size: 1.1rem;
+    }
+
+    /* The sticky bar is shorter here, so a jump needs less scroll room. */
+    main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+      scroll-margin-top: 3rem;
+    }
+  }
+}
+
+@layer components {
+  @media (max-width: 34rem) {
+    /* A taller tap target for each section link in the scrolling bar. */
+    nav.toc a {
+      display: inline-block;
+      padding-block: 0.35rem;
+    }
+
+    /* A long previous/next title wraps instead of colliding with its neighbour. */
+    footer.pagination {
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    /* A smaller code face shows more of a line before it scrolls sideways. */
+    details.chunk > summary,
+    pre.chunk-body {
+      font-size: 0.8rem;
+      padding-inline: 0.6rem;
+    }
+  }
+}
+@

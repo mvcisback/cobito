@@ -1,0 +1,756 @@
+# The document model (§5.1, §5.2)
+
+This module is the specification and the implementation of the document model.
+The prose is the specification. The chunks after it are the implementation. The
+model folds `markup`'s IR (§4.1) into the types the weaver and the tangler read.
+
+## Chunk continuation {#sec:jijh}
+
+noweb lets a chunk name be defined more than once. A later definition appends to
+the earlier one. This matters in three places, and it is easy to get wrong:
+
+- Tangle joins the definitions in source order. `notangle` does this.
+- The JSON model keeps `chunks[name].defs` as an ordered list. Each section
+  after the first carries `continues: true`.
+- The render shows a continuation with a `+=` marker, the noweb convention, and
+  links it back to the first definition.
+
+## Root chunks {#sec:Ugl4}
+
+A chunk whose name is path-shaped is a root. A name is path-shaped when it holds
+a `/`, or when it ends in a file extension, such as `src/lexer.rs`. A root is the
+entry point that tangle writes to a file. `cob.toml` can override the set of
+roots and set the line-pragma format for each one. The tangler owns that format
+(§5.2, §11), so the model only decides which names are roots.
+
+## The line counter {#sec:m7n3}
+
+The line counter is the subtle part of the build. It advances on both `Nl` and
+`IndexNl`, because an `@ %def` line is a source line whose newline reaches cob as
+`IndexNl` (§4.2). A wrong count silently shifts every provenance attribute after
+the first `%def` in a file.
+
+## How the code implements this {#sec:N3uM}
+
+The module is the model's data types, two classification helpers, the error and
+lint types, a stateful `Builder` that walks the event stream, the `build` entry
+point, and the queries a built model answers.
+<<src/model.rs>>=
+<<the module banner>>
+
+<<imports>>
+
+<<the span types>>
+
+<<a section and its kind>>
+
+<<chunk info and the whole model>>
+
+<<is a name a tangle root>>
+
+<<is a docs chunk blank>>
+
+<<the model error>>
+
+<<a lint>>
+
+<<the builder state>>
+
+<<the builder methods>>
+
+<<build the model>>
+
+<<queries on the model>>
+
+<<the tests>>
+@
+The banner records the one subtle invariant: the line counter advances on
+`IndexNl` too.
+<<the module banner>>=
+//! Fold `markup`'s IR into cob's document model (§19.2).
+//!
+//! The line counter is the subtle part: it advances on both `Nl` *and*
+//! `IndexNl`, because an `@ %def` line is a source line whose newline reaches
+//! us as `IndexNl` (§4.2). Getting this wrong silently shifts every
+//! provenance attribute after the first `%def` in a file.
+@
+Only maps, formatting, and the event type this module consumes.
+<<imports>>=
+use std::collections::BTreeMap;
+use std::fmt;
+
+use crate::noweb::Event;
+@
+A section's content is a list of spans. Prose spans are text, a newline, or a
+quoted run; code spans are text, a newline, or a chunk use. Keeping the two
+distinct lets weave treat prose and code differently downstream.
+<<the span types>>=
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProseSpan {
+    Text(String),
+    Nl,
+    Quote(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeSpan {
+    Text(String),
+    Nl,
+    Use { name: String },
+}
+@
+A section is either docs or code. A code section carries its chunk name, whether
+it continues an earlier definition, its spans, and any `@index defn` names. A
+`Section` wraps a kind with its id and source provenance.
+<<a section and its kind>>=
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionKind {
+    Docs {
+        spans: Vec<ProseSpan>,
+    },
+    Code {
+        name: String,
+        continues: bool,
+        spans: Vec<CodeSpan>,
+        /// `@index defn` names; unused until the identifier index lands.
+        index_defs: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section {
+    pub id: String,
+    pub file: String,
+    pub line: u32,
+    pub kind: SectionKind,
+}
+@
+`ChunkInfo` gathers every definition and use of one chunk name; more than one def
+means the chunk is continued. `DocModel` is the whole document: the source files,
+the sections in order, and the chunk table.
+<<chunk info and the whole model>>=
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ChunkInfo {
+    /// Section ids in source order; `len() > 1` means the chunk is continued.
+    pub defs: Vec<String>,
+    pub uses: Vec<String>,
+    pub root: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct DocModel {
+    pub files: Vec<String>,
+    pub sections: Vec<Section>,
+    pub chunks: BTreeMap<String, ChunkInfo>,
+}
+@
+A root is a chunk noweb would tangle to a file: path-shaped, or bare with an
+extension. Chunk names are free text, so any name with whitespace is prose-like
+and never a root.
+<<is a name a tangle root>>=
+/// A chunk name noweb would tangle to a file: path-shaped, or bare with an
+/// extension. Chunk names are free text, so anything containing whitespace is
+/// prose-like and never a root.
+fn is_root_name(name: &str) -> bool {
+    if name.is_empty() || name.chars().any(char::is_whitespace) {
+        return false;
+    }
+    if name.contains('/') {
+        return true;
+    }
+    match name.rsplit_once('.') {
+        Some((stem, ext)) => {
+            !stem.is_empty() && !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        }
+        None => false,
+    }
+}
+@
+The blank lines noweb emits between chunks arrive as empty docs chunks. This
+recognizes them so `finish` can drop them.
+<<is a docs chunk blank>>=
+fn is_blank_docs(spans: &[ProseSpan]) -> bool {
+    spans.iter().all(|s| match s {
+        ProseSpan::Nl => true,
+        ProseSpan::Text(t) => t.trim().is_empty(),
+        ProseSpan::Quote(_) => false,
+    })
+}
+@
+E010 is a use of an undefined chunk, one entry per offending use site. The error
+carries each site's name and source location, and prints them one per line.
+<<the model error>>=
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UndefinedChunk {
+    pub name: String,
+    pub file: String,
+    pub line: u32,
+}
+
+#[derive(Debug)]
+pub enum ModelError {
+    /// E010 — one entry per offending use site.
+    UndefinedChunks(Vec<UndefinedChunk>),
+}
+
+impl fmt::Display for ModelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ModelError::UndefinedChunks(uses) = self;
+        for (i, u) in uses.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(
+                f,
+                "error[E010]: use of undefined chunk `{}`\n  --> {}:{}",
+                u.name, u.file, u.line
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ModelError {}
+@
+A lint is a non-fatal diagnostic with a code, message, and location; it prints in
+the warning form of §12.
+<<a lint>>=
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lint {
+    pub code: &'static str,
+    pub message: String,
+    pub file: String,
+    pub line: u32,
+}
+
+impl fmt::Display for Lint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "warning[{}]: {}\n  --> {}:{}",
+            self.code, self.message, self.file, self.line
+        )
+    }
+}
+@
+The builder holds the walk's state. `UseSite` remembers where each `@use`
+appeared so E010 can point at it. `Builder` accumulates files, sections, and the
+chunk table alongside the current file, line, open section, and the two quirks the
+walk must track: whether we are inside a quote, and whether the next `Nl`
+terminates a `@defn` line rather than the body. `Open` is the section under
+construction.
+<<the builder state>>=
+/// Where a `@use` appeared, kept during the walk so E010 can be located.
+struct UseSite {
+    name: String,
+    file: String,
+    line: u32,
+}
+
+#[derive(Default)]
+struct Builder {
+    files: Vec<String>,
+    sections: Vec<Section>,
+    chunks: BTreeMap<String, ChunkInfo>,
+    use_sites: Vec<UseSite>,
+
+    file: String,
+    line: u32,
+    open: Option<Open>,
+    in_quote: bool,
+    quote_buf: String,
+    /// The `Nl` right after `@defn` terminates the definition line, not the body.
+    pending_defn_nl: bool,
+}
+
+struct Open {
+    id: String,
+    file: String,
+    line: u32,
+    code: bool,
+    name: String,
+    continues: bool,
+    prose: Vec<ProseSpan>,
+    code_spans: Vec<CodeSpan>,
+    index_defs: Vec<String>,
+}
+@
+Four methods drive the section under construction: `begin` opens one, `finish`
+closes it (recording the chunk def, or dropping a blank docs chunk), `text`
+appends a text span (buffering instead when inside a quote), and `newline`
+advances the line and appends a newline span (swallowing the one that ends a
+`@defn` line).
+<<the builder methods>>=
+impl Builder {
+    <<begin a section>>
+
+    <<finish a section>>
+
+    <<append text>>
+
+    <<advance a line>>
+}
+@
+Opening a section stamps it with `sec-N`, the current file and line, and empty
+buffers.
+<<begin a section>>=
+fn begin(&mut self, n: u32, code: bool) {
+    self.open = Some(Open {
+        id: format!("sec-{n}"),
+        file: self.file.clone(),
+        line: self.line,
+        code,
+        name: String::new(),
+        continues: false,
+        prose: Vec::new(),
+        code_spans: Vec::new(),
+        index_defs: Vec::new(),
+    });
+}
+@
+Closing a code section records its def under the chunk name and marks the chunk a
+root if the name is path-shaped. A blank docs section is dropped entirely.
+<<finish a section>>=
+fn finish(&mut self) {
+    let Some(open) = self.open.take() else {
+        return;
+    };
+    let kind = if open.code {
+        let entry = self.chunks.entry(open.name.clone()).or_default();
+        entry.root = is_root_name(&open.name);
+        entry.defs.push(open.id.clone());
+        SectionKind::Code {
+            name: open.name,
+            continues: open.continues,
+            spans: open.code_spans,
+            index_defs: open.index_defs,
+        }
+    } else {
+        // Blank lines between chunks arrive as empty docs chunks; drop them.
+        if is_blank_docs(&open.prose) {
+            return;
+        }
+        SectionKind::Docs { spans: open.prose }
+    };
+    self.sections.push(Section {
+        id: open.id,
+        file: open.file,
+        line: open.line,
+        kind,
+    });
+}
+@
+Text goes to the quote buffer while a quote is open, otherwise to the current
+section's code or prose spans.
+<<append text>>=
+fn text(&mut self, t: &str) {
+    if self.in_quote {
+        self.quote_buf.push_str(t);
+        return;
+    }
+    let Some(open) = self.open.as_mut() else {
+        return;
+    };
+    if open.code {
+        open.code_spans.push(CodeSpan::Text(t.to_string()));
+    } else {
+        open.prose.push(ProseSpan::Text(t.to_string()));
+    }
+}
+@
+A newline always advances the counter. The one right after `@defn` ends the
+definition line and is swallowed; otherwise it is appended as a span.
+<<advance a line>>=
+fn newline(&mut self) {
+    self.line += 1;
+    if self.pending_defn_nl {
+        self.pending_defn_nl = false;
+        return;
+    }
+    let Some(open) = self.open.as_mut() else {
+        return;
+    };
+    if open.code {
+        open.code_spans.push(CodeSpan::Nl);
+    } else {
+        open.prose.push(ProseSpan::Nl);
+    }
+}
+@
+The entry point walks the events, driving the builder. A `@file` finishes the
+open section and resets the line counter. Quotes buffer between `@quote` and
+`@endquote`, then attach as a prose quote or, inside code, as literal text.
+`@defn` sets the chunk name and arms the defn-newline swallow; `@use` records the
+edge and remembers the site. `IndexNl` advances the line but adds no span. After
+the walk, any use whose chunk was never defined is collected into E010.
+<<build the model>>=
+pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
+    let mut b = Builder::default();
+
+    for event in events {
+        match event {
+            Event::File(f) => {
+                b.finish();
+                if b.files.last().map(String::as_str) != Some(f.as_str()) {
+                    b.files.push(f.clone());
+                }
+                b.file = f.clone();
+                b.line = 1;
+            }
+            Event::BeginDocs(n) => b.begin(*n, false),
+            Event::BeginCode(n) => b.begin(*n, true),
+            Event::EndDocs(_) | Event::EndCode(_) => b.finish(),
+
+            Event::Text(t) => b.text(t),
+            Event::Nl => b.newline(),
+
+            Event::Quote => {
+                b.in_quote = true;
+                b.quote_buf.clear();
+            }
+            Event::EndQuote => {
+                b.in_quote = false;
+                let quoted = std::mem::take(&mut b.quote_buf);
+                if let Some(open) = b.open.as_mut() {
+                    if open.code {
+                        // `[[ ]]` carries no meaning inside code; keep it literal.
+                        open.code_spans.push(CodeSpan::Text(quoted));
+                    } else {
+                        open.prose.push(ProseSpan::Quote(quoted));
+                    }
+                }
+            }
+
+            Event::Defn(name) => {
+                b.pending_defn_nl = true;
+                // Continuation means *already defined*. A forward `@use` creates
+                // the map entry first, so key-existence is not the question.
+                let seen = b
+                    .chunks
+                    .get(name.as_str())
+                    .is_some_and(|c| !c.defs.is_empty());
+                if let Some(open) = b.open.as_mut() {
+                    open.name = name.clone();
+                    open.continues = seen;
+                }
+            }
+            Event::Use(name) => {
+                let (id, file, line) = match b.open.as_ref() {
+                    Some(open) => (open.id.clone(), open.file.clone(), open.line),
+                    None => continue,
+                };
+                if let Some(open) = b.open.as_mut() {
+                    open.code_spans.push(CodeSpan::Use { name: name.clone() });
+                }
+                b.chunks.entry(name.clone()).or_default().uses.push(id);
+                b.use_sites.push(UseSite {
+                    name: name.clone(),
+                    file,
+                    line,
+                });
+            }
+
+            Event::IndexDefn(name) => {
+                if let Some(open) = b.open.as_mut() {
+                    open.index_defs.push(name.clone());
+                }
+            }
+            Event::IndexNl => b.line += 1,
+
+            // Parsed and preserved, but not yet part of the model (§19.2 step 6).
+            Event::IndexUse(_)
+            | Event::Line(_)
+            | Event::Literal(_)
+            | Event::Fatal(_)
+            | Event::Other { .. } => {}
+        }
+    }
+    b.finish();
+
+    let undefined: Vec<UndefinedChunk> = b
+        .use_sites
+        .iter()
+        .filter(|u| {
+            b.chunks
+                .get(&u.name)
+                .map(|c| c.defs.is_empty())
+                .unwrap_or(true)
+        })
+        .map(|u| UndefinedChunk {
+            name: u.name.clone(),
+            file: u.file.clone(),
+            line: u.line,
+        })
+        .collect();
+    if !undefined.is_empty() {
+        return Err(ModelError::UndefinedChunks(undefined));
+    }
+
+    Ok(DocModel {
+        files: b.files,
+        sections: b.sections,
+        chunks: b.chunks,
+    })
+}
+@
+A built model answers two queries: `lints` reports each non-root chunk nothing
+uses (W102, dead code), and `roots` lists the tangle roots.
+<<queries on the model>>=
+impl DocModel {
+    /// W102: a non-root chunk that nothing uses is dead code.
+    pub fn lints(&self) -> Vec<Lint> {
+        let mut lints = Vec::new();
+        for (name, info) in &self.chunks {
+            if info.root || !info.uses.is_empty() {
+                continue;
+            }
+            let (file, line) = info
+                .defs
+                .first()
+                .and_then(|id| self.sections.iter().find(|s| &s.id == id))
+                .map(|s| (s.file.clone(), s.line))
+                .unwrap_or_default();
+            lints.push(Lint {
+                code: "W102",
+                message: format!("chunk `{name}` is defined but never used"),
+                file,
+                line,
+            });
+        }
+        lints
+    }
+
+    pub fn roots(&self) -> Vec<&str> {
+        self.chunks
+            .iter()
+            .filter(|(_, c)| c.root)
+            .map(|(n, _)| n.as_str())
+            .collect()
+    }
+}
+@
+The tests fold the pinned `hello` fixture and assert the model's shape: blank
+docs dropped, code sections and continuation, line numbers that only line up if
+`IndexNl` advanced the counter, the swallowed defn newline, indentation as its own
+span, uses and roots, quotes as prose spans, and the two diagnostics E010 and
+W102, plus the root-name classifier.
+<<the tests>>=
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::noweb::parse;
+
+    const HELLO: &str = include_str!("../fixtures/hello.markup");
+    const QUOTE: &str = include_str!("../fixtures/quote.markup");
+
+    fn hello() -> DocModel {
+        build(&parse(HELLO).expect("fixture parses")).expect("fixture folds")
+    }
+
+    fn quote_doc() -> DocModel {
+        build(&parse(QUOTE).expect("fixture parses")).expect("fixture folds")
+    }
+
+    <<blank docs chunks are dropped>>
+
+    <<code sections and continuation>>
+
+    <<line numbers track indexnl>>
+
+    <<the defn newline is not body>>
+
+    <<indentation before a use is its own span>>
+
+    <<uses and roots>>
+
+    <<quotes become prose spans>>
+
+    <<an undefined chunk is e010>>
+
+    <<an unused non-root chunk is w102>>
+
+    <<root names>>
+}
+@
+markup emits seven docs chunks for `hello`, but only four carry prose; the rest
+are inter-chunk blanks and are dropped.
+<<blank docs chunks are dropped>>=
+#[test]
+fn blank_docs_chunks_are_dropped() {
+    let m = hello();
+    let docs: Vec<&Section> = m
+        .sections
+        .iter()
+        .filter(|s| matches!(s.kind, SectionKind::Docs { .. }))
+        .collect();
+    // markup emits 7 docs chunks; only 4 carry prose (incl. a leading empty
+    // `docs 0` and the blank lines between chunks).
+    assert_eq!(
+        docs.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+        vec!["sec-1", "sec-4", "sec-7", "sec-10"]
+    );
+}
+@
+The code sections come out in order with the right names, and the second
+definition of `lex a token` is marked a continuation.
+<<code sections and continuation>>=
+#[test]
+fn code_sections_and_continuation() {
+    let m = hello();
+    let code: Vec<(&str, &str, bool)> = m
+        .sections
+        .iter()
+        .filter_map(|s| match &s.kind {
+            SectionKind::Code {
+                name, continues, ..
+            } => Some((s.id.as_str(), name.as_str(), *continues)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        code,
+        vec![
+            ("sec-2", "lex a token", false),
+            ("sec-5", "lex a token", true),
+            ("sec-8", "next char", false),
+            ("sec-11", "src/main.rs", false),
+        ]
+    );
+    assert_eq!(m.chunks["lex a token"].defs, vec!["sec-2", "sec-5"]);
+}
+@
+Section line numbers match `fixtures/hello.cob` — and `sec-4` lands on 11 only if
+the `@ %def c` line's `IndexNl` advanced the counter.
+<<line numbers track indexnl>>=
+#[test]
+fn line_numbers_track_indexnl() {
+    let m = hello();
+    let at = |id: &str| m.sections.iter().find(|s| s.id == id).unwrap().line;
+    // Definition lines in fixtures/hello.cob.
+    assert_eq!(at("sec-1"), 1);
+    assert_eq!(at("sec-2"), 6);
+    // sec-4 lands on 11 only if `@ %def c`'s IndexNl advanced the counter.
+    assert_eq!(at("sec-4"), 11);
+    assert_eq!(at("sec-5"), 15);
+    assert_eq!(at("sec-8"), 22);
+    assert_eq!(at("sec-11"), 28);
+    assert!(m.sections.iter().all(|s| s.file == "fixtures/hello.cob"));
+}
+@
+The newline that ends a `@defn` line is not part of the body: `sec-8`'s spans are
+its one text run and a single trailing newline.
+<<the defn newline is not body>>=
+#[test]
+fn defn_newline_is_not_body() {
+    let m = hello();
+    let SectionKind::Code { spans, .. } =
+        &m.sections.iter().find(|s| s.id == "sec-8").unwrap().kind
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        spans,
+        &vec![
+            CodeSpan::Text("input.next().unwrap()".to_string()),
+            CodeSpan::Nl
+        ]
+    );
+}
+@
+noweb propagates a use's indentation by emitting it as a text span just before the
+use, which the model preserves.
+<<indentation before a use is its own span>>=
+#[test]
+fn indentation_before_use_is_its_own_span() {
+    let m = hello();
+    let SectionKind::Code { spans, .. } =
+        &m.sections.iter().find(|s| s.id == "sec-11").unwrap().kind
+    else {
+        unreachable!()
+    };
+    let i = spans
+        .iter()
+        .position(|s| matches!(s, CodeSpan::Use { .. }))
+        .unwrap();
+    // noweb propagates indentation by emitting it as text before the use.
+    assert_eq!(spans[i - 1], CodeSpan::Text("    ".to_string()));
+    assert_eq!(
+        spans[i],
+        CodeSpan::Use {
+            name: "lex a token".to_string()
+        }
+    );
+}
+@
+The use edges point the right way, `src/main.rs` is the sole root, and the fixture
+is lint-clean.
+<<uses and roots>>=
+#[test]
+fn uses_and_roots() {
+    let m = hello();
+    assert_eq!(m.chunks["next char"].uses, vec!["sec-2"]);
+    assert_eq!(m.chunks["lex a token"].uses, vec!["sec-11"]);
+    assert!(m.chunks["src/main.rs"].uses.is_empty());
+    assert_eq!(m.roots(), vec!["src/main.rs"]);
+    assert!(m.lints().is_empty(), "fixture should be lint-clean");
+}
+@
+Quoted runs in prose become `Quote` spans, verbatim.
+<<quotes become prose spans>>=
+#[test]
+fn quotes_become_prose_spans() {
+    let m = quote_doc();
+    let quoted: Vec<&str> = m
+        .sections
+        .iter()
+        .filter_map(|s| match &s.kind {
+            SectionKind::Docs { spans } => Some(spans),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|s| match s {
+            ProseSpan::Quote(q) => Some(q.as_str()),
+            _ => None,
+        })
+        .collect();
+    // The greedy match keeps inner brackets to the last `]]`.
+    assert!(quoted.contains(&"v[[0]]"));
+    // An empty quote makes an empty span.
+    assert!(quoted.iter().any(|q| q.is_empty()));
+}
+@
+A use with no matching definition is E010, located at the use site.
+<<an undefined chunk is e010>>=
+#[test]
+fn undefined_chunk_is_e010() {
+    let ir = "@file t.cob\n@begin code 0\n@defn r.rs\n@nl\n@use missing\n@nl\n@end code 0\n";
+    let err = build(&parse(ir).unwrap()).unwrap_err();
+    let ModelError::UndefinedChunks(u) = &err;
+    assert_eq!(u[0].name, "missing");
+    assert_eq!((u[0].file.as_str(), u[0].line), ("t.cob", 1));
+    assert!(err.to_string().starts_with("error[E010]"));
+}
+@
+A defined but unused non-root chunk is W102.
+<<an unused non-root chunk is w102>>=
+#[test]
+fn unused_nonroot_chunk_is_w102() {
+    let ir = "@file t.cob\n@begin code 0\n@defn orphan\n@nl\n@text x\n@nl\n@end code 0\n";
+    let lints = build(&parse(ir).unwrap()).unwrap().lints();
+    assert_eq!(lints.len(), 1);
+    assert_eq!(lints[0].code, "W102");
+    assert!(lints[0].to_string().starts_with("warning[W102]"));
+}
+@
+The root-name classifier: path-shaped and extension-bearing names are roots;
+prose-like names and bare stems are not.
+<<root names>>=
+#[test]
+fn root_names() {
+    assert!(is_root_name("src/main.rs"));
+    assert!(is_root_name("Makefile.in"));
+    assert!(!is_root_name("lex a token"));
+    assert!(!is_root_name("next char"));
+    assert!(!is_root_name("Makefile"));
+}
+@

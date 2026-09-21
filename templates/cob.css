@@ -1,0 +1,682 @@
+@layer base, layout, components, syntax;
+@import url('cob-syntax.css') layer(syntax);
+
+@layer base {
+  /* Tufte-flavoured tokens (§16). A float's identity is drawn from its data-id
+     attribute (the frozen opaque id of §7.1) as generated content, never written
+     into the text (§7, §9.2). */
+  :root {
+    color-scheme: light dark;
+
+    /* Layout and faces — theme-independent. */
+    --measure: 40rem;      /* the reading column */
+    --margin: 18rem;       /* the note column to its right */
+    --gap: 2.5rem;
+    --serif: Palatino, "Palatino Linotype", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Iosevka", "DejaVu Sans Mono", monospace;
+
+    /* Light theme (default): a warm cream page. */
+    --bg: #fffff8;         /* the page (a sticky heading paints over it) */
+    --band: #f6f4e9;       /* the sticky-heading band, a hair off the page */
+    --band-shadow: rgba(60, 55, 30, 0.16);
+    --ink: #111;
+    --faint: #a09c88;
+    --rule: #ccc9b8;
+    --link: #4a4a8a;       /* ordinary prose links */
+    --ref: #7a3b2e;        /* internal cross-references (§7) — a warmer accent */
+    --code-bg: #f4f4ec;    /* inline code */
+    --chunk-bg: #f4f4ec;   /* code-chunk body */
+
+    /* Syntax palette (§5.5) — warm hues on cream. */
+    --tok-keyword: #9a3327;
+    --tok-string: #4d6a1f;
+    --tok-function: #3a5a8a;
+    --tok-type: #6a3b7a;
+    --tok-number: #7a3b2e;
+    --tok-attribute: #4a4a8a;
+    --tok-operator: #6a6a5a;
+    --tok-punctuation: #8a8674;
+  }
+
+  /* Dark theme: the same warm hues, lifted off a near-black page. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f;
+      --band: #1e1c14;
+      --band-shadow: rgba(0, 0, 0, 0.5);
+      --ink: #e9e6d8;
+      --faint: #6f6a54;
+      --rule: #3a382c;
+      --link: #a6a6e0;
+      --ref: #d79a70;
+      --code-bg: #201e16;
+      --chunk-bg: #201e16;
+
+      --tok-keyword: #e0806f;
+      --tok-string: #a6c37a;
+      --tok-function: #86a8d8;
+      --tok-type: #c093d0;
+      --tok-number: #d79a70;
+      --tok-attribute: #9a9ae0;
+      --tok-operator: #b0ab90;
+      --tok-punctuation: #8f8a72;
+    }
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: clamp(1rem, 0.95rem + 0.3vw, 1.1rem);
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--bg);
+    text-wrap: pretty;
+  }
+}
+
+@layer layout {
+  body {
+    display: grid;
+    align-content: start;
+    grid-template-columns:
+      [full-start] 1fr
+      [content-start] min(var(--measure), 100% - 2rem)
+      [content-end] var(--gap)
+      [margin-start] var(--margin)
+      [margin-end] 1fr [full-end];
+  }
+
+  body > * {
+    grid-column: content;
+  }
+
+  main {
+    margin-block: 2rem;
+    padding-inline: 1rem;
+  }
+
+  /* No room for a margin track: one centred column; sidenotes go inline. */
+  @media (max-width: 100rem) {
+    body {
+      justify-content: center;
+      grid-template-columns:
+        [full-start content-start] min(var(--measure), 100% - 2rem) [content-end full-end];
+    }
+  }
+
+  main :is(h1, h2, h3, h4) {
+    margin-top: 1.5rem;
+  }
+
+  /* An anchored jump lands below the sticky nav bar, not under it. */
+  main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+    scroll-margin-top: 3.5rem;
+  }
+}
+
+@layer layout {
+  section {
+    position: relative;
+    margin-bottom: 1.5rem;
+  }
+}
+
+@layer layout {
+  /* --- Margin column: annotation slot + sidenotes ----------------------- */
+
+  .margin-slot {
+    float: right;
+    clear: right;
+    width: 0;
+  }
+
+  .sidenote {
+    float: right;
+    clear: right;
+    width: var(--margin);
+    margin-right: calc(-1 * (var(--margin) + var(--gap)));
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--ink);
+  }
+
+  @media (max-width: 100rem) {
+    /* No room for a margin: inline the note as an indented aside. */
+    .sidenote {
+      float: none;
+      width: auto;
+      margin: 0.6rem 0 0.6rem 1.5rem;
+      padding-left: 0.8rem;
+      border-left: 2px solid var(--rule);
+    }
+  }
+}
+
+@layer components {
+  /* --- Numbering (generated, never selectable) -------------------------- */
+
+  figure {
+    margin: 1.5rem 0;
+  }
+
+  figcaption,
+  caption {
+    font-size: 0.9rem;
+    color: var(--ink);
+  }
+
+  figcaption[data-id]::before {
+    content: "Figure " attr(data-id) ". ";
+    font-weight: bold;
+  }
+
+  caption[data-id]::before {
+    content: "Table " attr(data-id) ". ";
+    font-weight: bold;
+  }
+
+  /* A wide display equation scrolls sideways rather than widening the page.
+     KaTeX's own stylesheet does not guard this, and it matters most on a phone. */
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .equation {
+    position: relative;
+    margin: 1rem 0;
+    text-align: center;
+
+    &[data-id]::after {
+      content: "(" attr(data-id) ")";
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--faint);
+    }
+  }
+}
+
+@layer components {
+  /* --- Internal cross-references (§7) ------------------------------------ */
+
+  /* A resolved <a data-ref> — "Figure k3f9", a chunk link, a section link — is
+     navigation, not prose, and its opaque id is a machine token. Set it in a sans
+     face at medium weight with a warm accent so it reads distinctly from both the
+     serif body and ordinary links, without the underline that would fight the id. */
+  a[data-ref] {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.9em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* A `sec:`-labelled section leads with a clickable permalink carrying its opaque
+     id (§7.1). Like a float's number the id is generated content drawn from
+     data-id, never a text node, so it stays out of selections and the annotation
+     layer's quote selectors (§9.2); the <a> itself is the click target. It sits a
+     hair smaller than the heading and in the same warm sans accent as an inline
+     cross-reference, so a section id reads as the machine token it is. */
+  .sec-uid {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.7em;
+    letter-spacing: 0.01em;
+    color: var(--ref);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
+
+    &::before {
+      content: "§" attr(data-id);
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* A second, fainter glyph after the permalink links to the node's own page
+     (§10 node pages): the same section shown on its own, with a breadcrumb and
+     backlinks. Like the permalink it is generated content, never a text node, so
+     it stays out of selections and the quote selectors (§9.2). */
+  .node-link {
+    font-size: 0.7em;
+    color: var(--faint);
+    text-decoration: none;
+    margin-right: 0.5em;
+    vertical-align: 0.15em;
+
+    &::before {
+      content: "⧉";
+    }
+
+    &:hover {
+      color: var(--ref);
+    }
+  }
+
+  /* A float is a node too (§10). Its node link rides the caption, after the
+     caption text. An equation has no caption, so its link rides the block and
+     drops into the left margin, a mirror of the number at the right. */
+  figcaption .node-link,
+  caption .node-link {
+    margin-right: 0;
+    margin-left: 0.4em;
+  }
+
+  .equation .node-link {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* --- Transcluded nodes (§10) ------------------------------------------- */
+
+  /* The copy reads as an inset card: a soft band, a left rule in the warm
+     accent, and room to breathe, so a reader sees the text is shown from another
+     place and is not the canonical node. */
+  .transclusion {
+    margin-block: 1.5rem;
+    padding: 0.25rem 1rem;
+    border-left: 3px solid var(--ref);
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* The header names the node and links back to its canonical place. It sits in
+     the same warm sans accent as a cross-reference, a hair smaller than body, and
+     leads with a hook glyph so it reads as "transcluded from". */
+  .transclusion-from {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    letter-spacing: 0.01em;
+    margin-block: 0.25rem 0.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &::before {
+        content: "⮢ ";
+      }
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* A broken directive — an unknown target or a cycle — is visible but inert: the
+     same card in a warm error tone, with the fault named by generated content so
+     it stays out of the copy-paste and the quote selectors. */
+  .transclusion-missing,
+  .transclusion-cycle {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1rem;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid #c0392b;
+    background: var(--band);
+    border-radius: 0 4px 4px 0;
+    color: #c0392b;
+  }
+}
+
+@layer components {
+  /* --- Per-node pages (§10) --------------------------------------------- */
+
+  /* The breadcrumb of parents, above the node body. A row of small sans links
+     with a slash between, in the muted tone, so it frames the node without
+     competing with it. */
+  .crumbs {
+    font-family: var(--sans);
+    font-size: 0.8em;
+    margin-block-end: 1.5rem;
+
+    ol {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5em;
+    }
+
+    li:not(:last-child)::after {
+      content: "/";
+      margin-left: 0.5em;
+      color: var(--faint);
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The link back to the node in its document page, just under the node body. */
+  .node-context {
+    font-family: var(--sans);
+    font-size: 0.85em;
+    margin-block: 1.5rem;
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+
+  /* The backlinks, below the node, set off by a top rule. Each list is a plain
+     run of sans links to the nodes that use this one. */
+  .backlinks {
+    margin-block-start: 2.5rem;
+    padding-block-start: 1rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--sans);
+
+    h2 {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--faint);
+      margin-block: 1rem 0.25rem;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.2em;
+      font-size: 0.9em;
+    }
+
+    a {
+      color: var(--ref);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+    }
+  }
+}
+
+@layer components {
+  /* --- Navigation and pagination ---------------------------------------- */
+
+  nav.toc {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    grid-column: full;
+    margin: 0;
+    padding-block: 0.45rem;
+    font-size: 0.8rem;
+    background: var(--band);
+    border-bottom: 1px solid var(--rule);
+    box-shadow: 0 3px 6px -4px var(--band-shadow);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+
+    /* The nav tree flattens into one horizontal row: every list lays its items
+       out in a row, so the whole thing is a scrollable list of sections. The
+       row is `max-content` wide, so it overflows the bar and scrolls sideways
+       rather than wrapping. */
+    ul {
+      display: flex;
+      align-items: baseline;
+      gap: 0.9rem;
+      width: max-content;
+      margin: 0;
+      padding-inline: 1rem;
+      list-style: none;
+    }
+
+    ul ul {
+      padding-inline: 0;
+    }
+
+    li {
+      display: flex;
+      gap: 0.9rem;
+      white-space: nowrap;
+    }
+
+    /* Top-level entries — the pages — read a touch stronger than their sections. */
+    & > ul > li > a {
+      font-weight: 600;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    /* The current page's own entry, marked statically by the weaver (§5.3), so
+       the reader's place shows even before the script runs, in every browser. */
+    a[aria-current="page"] {
+      color: var(--ref);
+      font-weight: 700;
+    }
+
+    /* The section the reader is on, marked live by the nav-spy script (§5.3).
+       It paints a soft accent pill so the moving mark reads apart from both the
+       bar (also --band) and the static page mark above. */
+    a[data-current-section] {
+      color: var(--ref);
+      background: color-mix(in srgb, var(--ref) 16%, var(--bg));
+      border-radius: 0.7rem;
+      padding: 0.1rem 0.45rem;
+      margin-inline: -0.2rem;
+    }
+  }
+
+  footer.pagination {
+    display: flex;
+    justify-content: space-between;
+    margin-block: 2rem;
+    padding: 1rem 1rem 0;
+    border-top: 1px solid var(--rule);
+    font-size: 0.9rem;
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+  }
+}
+
+@layer components {
+  /* --- Code chunks (§5.4) ----------------------------------------------- */
+
+  details.chunk {
+    background: var(--chunk-bg);
+    border-left: 3px solid var(--rule);
+    margin: 1rem 0;
+
+    & > summary {
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      font-weight: bold;
+      padding: 0.4rem 0.8rem;
+      cursor: pointer;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  pre.chunk-body {
+    font-family: var(--mono);
+    font-size: 0.9rem;
+    line-height: 1.4;
+    margin: 0;
+    padding: 0 0.8rem 0.6rem;
+    overflow-x: auto;
+    white-space: pre;
+
+    /* Line numbers are generated content so they stay out of selections, copies,
+       and the text-quote selectors the annotation layer anchors on (§9.2). */
+    .line {
+      display: block;
+
+      &::before {
+        content: attr(data-line);
+        display: inline-block;
+        width: 3ch;
+        margin-right: 1ch;
+        text-align: right;
+        color: var(--faint);
+        user-select: none;
+      }
+    }
+  }
+}
+
+@layer components {
+  code {
+    font-family: var(--mono);
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0.05em 0.25em;
+  }
+
+  /* A prose code block (not a chunk): scroll sideways instead of widening the
+     page, and drop the inline-code background/padding on the nested <code>. */
+  pre:not(.chunk-body) {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    background: var(--code-bg);
+    padding: 0.8rem;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+    }
+  }
+}
+
+@layer components {
+  /* --- Tables (from a `table` fence, §6.4) ------------------------------ */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.9rem;
+    /* A wide table scrolls sideways instead of widening the page. */
+    display: block;
+    overflow-x: auto;
+  }
+
+  th,
+  td {
+    padding: 0.4rem 0.9rem 0.4rem 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  thead th {
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+  }
+
+  tbody tr:last-child {
+    border-bottom: 1px solid var(--rule);
+  }
+}
+
+@layer layout {
+  @media (max-width: 34rem) {
+    main {
+      margin-block: 1.25rem;
+      padding-inline: 0.75rem;
+    }
+
+    main :is(h1, h2, h3, h4) {
+      margin-top: 1.25rem;
+    }
+
+    /* The browser's em-based headings are too tall on a phone: a long title
+       wraps to four lines. Step them down so a heading fills fewer lines. */
+    main h1 {
+      font-size: 1.75rem;
+      line-height: 1.15;
+    }
+
+    main h2 {
+      font-size: 1.35rem;
+    }
+
+    main h3 {
+      font-size: 1.1rem;
+    }
+
+    /* The sticky bar is shorter here, so a jump needs less scroll room. */
+    main :is(section, h1, h2, h3, h4, figure, table, .equation) {
+      scroll-margin-top: 3rem;
+    }
+  }
+}
+
+@layer components {
+  @media (max-width: 34rem) {
+    /* A taller tap target for each section link in the scrolling bar. */
+    nav.toc a {
+      display: inline-block;
+      padding-block: 0.35rem;
+    }
+
+    /* A long previous/next title wraps instead of colliding with its neighbour. */
+    footer.pagination {
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    /* A smaller code face shows more of a line before it scrolls sideways. */
+    details.chunk > summary,
+    pre.chunk-body {
+      font-size: 0.8rem;
+      padding-inline: 0.6rem;
+    }
+  }
+}

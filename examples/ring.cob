@@ -1,0 +1,119 @@
+@ # A byte ring buffer
+
+This is a small literate program: a fixed-capacity ring buffer of bytes,
+written in Rust. It exists to see what it feels like to author real prose in
+cob's Markdown dialect, where a docs chunk is CommonMark, floats are fenced,
+and only a sidenote stays a raw-HTML island.
+
+The whole program is the root chunk \ref{chunk:src/ring.rs}. We build it from
+three pieces: the \ref{chunk:buffer state}, then \ref{chunk:push a byte} and
+\ref{chunk:pop a byte}. The one idea worth stating up front is the wrap-around
+index in \ref{eq:wrap}; the public surface is summarised in \ref{tbl:api}.
+
+@ ## State
+
+A ring buffer is a fixed array plus two cursors. We keep an explicit \code{len}
+rather than only a head and tail, because with just two cursors a completely
+full buffer and a completely empty one look identical.<aside class="sidenote">The
+head/tail-only trick is to keep one slot permanently empty, trading a byte of
+capacity for the ability to tell full from empty. Carrying \code{len} is simpler to
+read, which is what matters here.</aside>
+
+The capacity is a power of two so the wrap in \ref{eq:wrap} could
+later become a bitmask, though we keep the modulo for clarity.
+
+<<buffer state>>=
+const CAP: usize = 16;
+
+pub struct Ring {
+    buf: [u8; CAP],
+    head: usize,
+    len: usize,
+}
+@
+
+@ ## Indexing
+
+Logical position \code{i} counts from the oldest byte still in the buffer. It maps
+to a physical slot by adding the head and wrapping:
+
+```math \label{eq:wrap}
+\operatorname{slot}(i) = (\mathit{head} + i) \bmod \mathrm{CAP}
+```
+
+Both operations below reduce to one call to this rule, so it is worth naming
+once. The tail — the slot the next pushed byte will occupy — is just
+$\operatorname{slot}(\mathit{len})$.
+
+@ ## Operations
+
+The buffer exposes the four methods in \ref{tbl:api}. Reads and
+writes are $O(1)$; there is no allocation after construction.
+
+```table \label{tbl:api}
+\caption{The public API of \code{Ring}.}
+| Method    | Meaning                     |
+|-----------|-----------------------------|
+| \code{push}    | append a byte, if room      |
+| \code{pop}     | remove the oldest byte      |
+| \code{len}     | bytes currently held        |
+| \code{is_full} | whether \code{push} would fail   |
+```
+
+\ref{chunk:push a byte} writes into the tail slot and grows the
+length. It refuses to overwrite unread data, returning \code{false} when the buffer
+is full.
+
+<<push a byte>>=
+pub fn push(&mut self, b: u8) -> bool {
+    if self.len == CAP {
+        return false;
+    }
+    let tail = (self.head + self.len) % CAP;
+    self.buf[tail] = b;
+    self.len += 1;
+    true
+}
+@
+
+\ref{chunk:pop a byte} is the mirror image: it reads the head
+slot, advances the head with the same wrap, and shrinks the length.
+
+<<pop a byte>>=
+pub fn pop(&mut self) -> Option<u8> {
+    if self.len == 0 {
+        return None;
+    }
+    let b = self.buf[self.head];
+    self.head = (self.head + 1) % CAP;
+    self.len -= 1;
+    Some(b)
+}
+@
+
+@ ## Assembling the module
+
+Finally we compose the pieces into one file. The state defines the type; the
+operations and the two small predicates hang off it in a single \code{impl} block.
+
+<<src/ring.rs>>=
+<<buffer state>>
+
+impl Ring {
+    pub fn new() -> Self {
+        Ring { buf: [0; CAP], head: 0, len: 0 }
+    }
+
+    <<push a byte>>
+
+    <<pop a byte>>
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.len == CAP
+    }
+}
+@
