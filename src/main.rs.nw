@@ -91,7 +91,7 @@ USAGE:
     lit labels <file.nw>          list the file's label → id map from lit.lock
     lit id <file.nw> <label>      print the frozen id for one label
     lit language <file.nw> <chunk> print the highlighting language for a chunk (§5.5)
-    lit dump-ir [--oracle] <file.nw>...  print the parsed IR events (--oracle: via noweb)
+    lit dump-ir <file.nw>...       print the parsed IR events (--from-markup <f>: parse a .markup)
     lit dump-model <file.nw>...   fold the IR into the document model, print it
     lit tangle <file.nw>...       tangle every root chunk
 
@@ -755,25 +755,39 @@ window in the tool: read the files, print what the reader returned. It is the fi
 thing to reach for when the model looks wrong, because it shows the input the model
 folds.
 
-With `--oracle` it reads the same files through noweb `markup` instead of the native
-reader. The two paths must print the same events for every file: that is the
-differential the `reader` flake check runs (§4.1). So `--oracle` keeps noweb as the
-reader's oracle, even though no other command spawns `markup` now.
+With `--from-markup <file>` it prints the events parsed from a frozen `markup` IR
+file instead of reading a `.nw`. This is the hermetic side of the `reader` flake
+check (§4.1): the native reader over a `.nw` must print the same events as
+`noweb::parse` over that file's pinned `.markup` golden, and no `markup` process
+runs. The pinned goldens are the reader's oracle now that lit spawns no noweb.
 <<dump the ir>>=
 fn dump_ir(args: &[String]) -> ExitCode {
-    let (oracle, files) = match args.split_first() {
-        Some((first, rest)) if first == "--oracle" => (true, rest),
-        _ => (false, args),
-    };
-    if files.is_empty() {
+    // `--from-markup <file>` parses one frozen markup IR file; otherwise read
+    // every `.nw` argument with the native reader.
+    if let Some((flag, rest)) = args.split_first() {
+        if flag == "--from-markup" {
+            let [path] = rest else {
+                eprintln!("lit: dump-ir --from-markup needs exactly one .markup file");
+                return ExitCode::from(2);
+            };
+            let ir = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("lit: {path}: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            return print_events(noweb::parse(&ir).map_err(|e| e.to_string()));
+        }
+    }
+    if args.is_empty() {
         eprintln!("lit: dump-ir needs at least one .nw file");
         return ExitCode::from(2);
     }
-    let events = if oracle {
-        noweb::run_markup(files).map_err(|e| e.to_string())
-    } else {
-        markup::read(files).map_err(|e| e.to_string())
-    };
+    print_events(markup::read(args).map_err(|e| e.to_string()))
+}
+
+fn print_events(events: Result<Vec<noweb::Event>, String>) -> ExitCode {
     match events {
         Ok(events) => {
             for event in &events {

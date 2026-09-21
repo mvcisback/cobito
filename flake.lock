@@ -18,7 +18,25 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "seed": "seed"
+      }
+    },
+    "seed": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789963711,
+        "narHash": "sha256-ABjjsRk7mVTNROp+gfKQJP0xTHtG+V4xSklAegYNv+c=",
+        "ref": "refs/tags/v0.1.0",
+        "rev": "2005eae0b596fd32c497d890fefd58b37c8fa956",
+        "revCount": 1,
+        "type": "git",
+        "url": "file:."
+      },
+      "original": {
+        "ref": "refs/tags/v0.1.0",
+        "type": "git",
+        "url": "file:."
       }
     }
   },

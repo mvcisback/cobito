@@ -1,9 +1,12 @@
 {
-  description = "lit — a web-first literate programming system built on noweb";
+  description = "lit — a web-first literate programming system";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # The `tangled` release branch, pinned by tag: the committed .rs/.css seed a
+  # build on `main` (§13). A release retags `tangled` and bumps this ref.
+  inputs.seed = { url = "git+file:.?ref=refs/tags/v0.1.0"; flake = false; };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, seed }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       eachSystem = f: nixpkgs.lib.genAttrs systems (system:
@@ -19,9 +22,9 @@
         sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
       };
 
-      # One buildRustPackage, applied to two source trees (the bootstrap seed and
-      # the tangled .nw). noweb's pipeline stages (markup, nt, ...) live in
-      # lib/noweb, not bin — see §4.2 — so the wrapper adds both to PATH.
+      # One buildRustPackage, applied to two source trees (the committed seed and
+      # the freshly tangled .nw). lit reads and tangles .nw natively, so the binary
+      # needs no noweb — only the KaTeX assets for weave.
       mkLit = pkgs: src: pkgs.rustPlatform.buildRustPackage {
         pname = "lit";
         version = "0.1.0";
@@ -30,32 +33,18 @@
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postFixup = ''
           wrapProgram $out/bin/lit \
-            --prefix PATH : ${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb \
             --set LIT_KATEX_ASSETS ${katexAssets pkgs}
         '';
       };
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        # Stage 0 source: notangle every .nw into the .rs/.css cargo needs, with no
-        # lit binary. notangle ships with noweb and makes the same bytes lit tangle
-        # makes (§15). templates/lit.css.nw has two roots; the rest one each.
-        bootstrapSource = pkgs.runCommand "lit-bootstrap-src" { } ''
-          cp -r ${self} $out
-          chmod -R +w $out
-          cd $out
-          export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
-          for nw in src/*.rs.nw; do
-            notangle -R"''${nw%.nw}" "$nw" > "''${nw%.nw}"
-          done
-          notangle -R'templates/lit.css' templates/lit.css.nw > templates/lit.css
-          notangle -R'templates/lit-syntax.css' templates/lit.css.nw > templates/lit-syntax.css
-        '';
-        # Stage 0: build the tangler from the notangle-bootstrapped sources.
-        litBootstrap = mkLit pkgs bootstrapSource;
-        # Stage 1 tangles every .nw with lit, so the shipped binary compiles from a
-        # tree lit itself made (§13). templates/lit.css is include_str!'d into the
-        # weaver, so it and its imported palette must be tangled here too.
+        # Stage 0: build lit from the seed — the committed .rs of the pinned tangled
+        # snapshot. This is why `main` needs no tangler of its own to start.
+        litBootstrap = mkLit pkgs seed;
+        # Stage 1 tangles every .nw with lit (natively, no noweb), so the shipped
+        # binary compiles from a tree lit itself made (§13). templates/lit.css is
+        # include_str!'d into the weaver, so it and its palette are tangled here too.
         litSource = pkgs.runCommand "lit-src" { } ''
           cp -r ${self} $out
           chmod -R +w $out
@@ -79,18 +68,16 @@
 
       devShells = eachSystem (system: pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer noweb ];
+          packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
           shellHook = ''
-            export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
             export LIT_KATEX_ASSETS="${katexAssets pkgs}"
-            # The .rs/.css are generated from the .nw (§13). On a fresh checkout they
-            # are absent, so notangle-bootstrap them once, the same as stage 0.
+            # On `main` the .rs/.css are generated and gitignored (§13). Seed them from
+            # the pinned tangled snapshot so cargo has something to build; then
+            # `lit tangle` refreshes from the current .nw.
             if [ ! -f src/main.rs ]; then
-              for nw in src/*.rs.nw; do
-                notangle -R"''${nw%.nw}" "$nw" > "''${nw%.nw}"
-              done
-              notangle -R'templates/lit.css' templates/lit.css.nw > templates/lit.css
-              notangle -R'templates/lit-syntax.css' templates/lit.css.nw > templates/lit-syntax.css
+              echo "lit: seeding generated .rs/.css from the tangled snapshot; run 'lit tangle' to refresh"
+              cp ${seed}/src/*.rs src/
+              cp ${seed}/templates/lit.css ${seed}/templates/lit-syntax.css templates/
             fi
           '';
         };
@@ -375,51 +362,41 @@
           touch $out
         '';
 
-        # Tangle differential (§15): `lit tangle` must byte-match `notangle`
-        # itself, and `--check` must be clean after a tangle and flag drift
-        # after an edit. This is also the acceptance test for the eventual Rust
-        # reimplementation (§11).
+        # Tangle goldens (§11): `lit tangle` must byte-match the frozen notangle
+        # goldens in fixtures/tangled/, and `--check` must be clean after a tangle
+        # and flag drift after an edit. The goldens are the oracle now — no live
+        # noweb runs.
         tangle = pkgs.runCommand "lit-tangle" { } ''
           lit=${self.packages.${system}.lit}/bin/lit
-          nw=${self}/fixtures/hello.nw
-          $lit tangle "$nw" --out $TMPDIR/out
-          test -f $TMPDIR/out/src/main.rs
-          ${pkgs.noweb}/bin/notangle -R'src/main.rs' "$nw" > $TMPDIR/oracle
-          diff $TMPDIR/out/src/main.rs $TMPDIR/oracle
+          cd ${self}
+          # `lit tangle --out DIR` writes each root under DIR; fixtures/tangled/<stem>
+          # holds the frozen notangle output for the same roots. Diff the trees.
+          for stem in hello book hl md sections tx; do
+            $lit tangle "fixtures/$stem.nw" --out "$TMPDIR/$stem"
+            diff -r "$TMPDIR/$stem" "fixtures/tangled/$stem"
+          done
           # Clean immediately after a tangle.
-          $lit tangle --check "$nw" --out $TMPDIR/out
+          $lit tangle --check fixtures/hello.nw --out $TMPDIR/hello
           # An edited root must be reported as drift (nonzero exit).
-          echo '// drift' >> $TMPDIR/out/src/main.rs
-          if $lit tangle --check "$nw" --out $TMPDIR/out; then
+          echo '// drift' >> $TMPDIR/hello/src/main.rs
+          if $lit tangle --check fixtures/hello.nw --out $TMPDIR/hello; then
             echo "--check passed despite an edited root" >&2
             exit 1
           fi
           touch $out
         '';
 
-        # Golden guard: `markup` output for the fixture corpus must not drift
-        # across noweb/nixpkgs updates. If this fails, inspect the diff, then
-        # regenerate with:  markup fixtures/NAME.nw > fixtures/NAME.markup
-        noweb-drift = pkgs.runCommand "noweb-drift" { } ''
-          cd ${self}
-          for f in fixtures/*.nw; do
-            ${pkgs.noweb}/lib/noweb/markup "$f" > "$TMPDIR/got"
-            diff -u "''${f%.nw}.markup" "$TMPDIR/got"
-          done
-          touch $out
-        '';
-
-        # Full-corpus differential (§4.1): the native reader (`lit dump-ir`) must
-        # make the same events as noweb `markup` (`lit dump-ir --oracle`) for every
-        # tracked .nw file. Two independent readers that agree prove the port.
+        # Reader differential (§4.1): the native reader (`lit dump-ir`) must make
+        # the same events as the frozen `markup` golden (`lit dump-ir --from-markup`
+        # over the committed .markup). Hermetic — no live noweb.
         reader = pkgs.runCommand "lit-reader" { } ''
           lit=${self.packages.${system}.lit}/bin/lit
           cd ${self}
-          for nw in *.nw src/*.nw fixtures/*.nw; do
+          for nw in fixtures/*.nw; do
             $lit dump-ir "$nw" > "$TMPDIR/reader"
-            $lit dump-ir --oracle "$nw" > "$TMPDIR/oracle"
-            if ! diff -u "$TMPDIR/oracle" "$TMPDIR/reader"; then
-              echo "reader diverged from noweb markup for $nw" >&2
+            $lit dump-ir --from-markup "''${nw%.nw}.markup" > "$TMPDIR/golden"
+            if ! diff -u "$TMPDIR/golden" "$TMPDIR/reader"; then
+              echo "reader diverged from the frozen markup golden for $nw" >&2
               exit 1
             fi
           done
@@ -456,25 +433,23 @@
           touch $out
         '';
 
-        # Self-host (§13): with no committed .rs/.css, two independent tanglers —
-        # notangle and lit — must make the same bytes for every module. Their
-        # agreement is what makes the notangle-then-lit bootstrap sound.
+        # Self-host (§13): the shipped lit must tangle every module to the same bytes
+        # as litSource, the tree it was compiled from. A fixed point of its own
+        # tangler — no second tangler, no noweb.
         selfhost = pkgs.runCommand "lit-selfhost" { } ''
           cd ${self}
           lit=${self.packages.${system}.lit}/bin/lit
-          export PATH="${pkgs.noweb}/bin:${pkgs.noweb}/lib/noweb:$PATH"
-          # notangle and lit must tangle every module to the same bytes. Each src/*.rs.nw
+          src=${self.packages.${system}.litSource}
+          # lit must reproduce litSource — the tree it was compiled from. Each src/*.rs.nw
           # has one root named for its target; templates/lit.css.nw has two.
           for nw in src/*.rs.nw; do
             root="''${nw%.nw}"
-            notangle -R"$root" "$nw" > $TMPDIR/nt
             $lit tangle -R "$root" "$nw" > $TMPDIR/lt
-            diff $TMPDIR/nt $TMPDIR/lt
+            diff "$src/$root" $TMPDIR/lt
           done
           for root in templates/lit.css templates/lit-syntax.css; do
-            notangle -R"$root" templates/lit.css.nw > $TMPDIR/nt
             $lit tangle -R "$root" templates/lit.css.nw > $TMPDIR/lt
-            diff $TMPDIR/nt $TMPDIR/lt
+            diff "$src/$root" $TMPDIR/lt
           done
           # Weave one Rust module to prove lit renders its own source: keywords and
           # strings colour, and the page carries no script but the nav-spy aid (§5.5/§6.3).

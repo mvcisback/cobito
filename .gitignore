@@ -4,9 +4,13 @@
 /_site
 /.lit-cache
 
-# Generated from the .nw sources (§13); the .nw files are the only authority.
-# notangle re-creates these on `nix develop`. flake.nix is the one exception:
-# Nix must read it, so it stays committed and the dogfood check guards it.
+# Generated from the .nw sources (§13); the .nw files are the only authority
+# on `main`. The devShell seeds these from the pinned `tangled` snapshot on a
+# fresh checkout; then `lit tangle` refreshes them. flake.nix is the one
+# committed generated file — Nix must read it — and the dogfood check guards it.
 /src/*.rs
 /templates/lit.css
 /templates/lit-syntax.css
+# The dist flake is tangled only into the `tangled` snapshot at release, never
+# committed on `main` (flake.nix is the committed one Nix reads here).
+/flake.dist.nix

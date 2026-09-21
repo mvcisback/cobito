@@ -55,8 +55,8 @@ parser encodes these facts (§4.2):
   these.
 - Inside a code chunk, the indentation before a chunk use arrives as its own
   `@text` token. This is how noweb propagates indentation.
-- On error, `markup` prints `file:line: message` to stderr, emits `@fatal` in
-  the stream, and exits nonzero. The wrapper checks both.
+- On error, `markup` emits an `@fatal` event in the stream. The parser preserves
+  it as `Event::Fatal`, so a frozen golden records the failure too.
 - An unescaped chunk-use bracket in a docs chunk is a fatal error. The at-escape
   (an `@` before each bracket) arrives as literal text.
 - A backslash-dollar in prose passes through untouched. That escape is lit's own
@@ -64,8 +64,8 @@ parser encodes these facts (§4.2):
 
 ## How the code implements this {#sec:nsvK}
 
-The module is the event type, a line parser, and the `markup` runner that ties
-them together.
+The module is the event type and a line parser that folds `markup` IR text into
+events.
 <<src/noweb.rs>>=
 <<the module banner>>
 
@@ -79,10 +79,6 @@ them together.
 
 <<parse one line>>
 
-<<the markup error>>
-
-<<run markup>>
-
 <<the tests>>
 @
 The banner records the noweb version and the three empirical quirks the parser must
@@ -90,16 +86,17 @@ respect.
 <<the module banner>>=
 //! Parser for noweb's `markup` pipeline format.
 //!
-//! Verified against noweb 2.13 (nixpkgs); see §4.2 for the empirical
-//! findings this encodes, notably: `markup` lives in `lib/noweb/` (not `bin/`),
-//! empty text lines arrive as `@text ` with a trailing space, and fatal errors
-//! appear both as a nonzero exit status and an `@fatal` event.
+//! lit reads `.nw` files with the native reader (`markup::read`, §4.1); this
+//! module only parses `markup` IR text into events, which the frozen
+//! `fixtures/*.markup` goldens and `lit dump-ir --from-markup` still use as the
+//! reader's oracle. Verified against noweb 2.13 (nixpkgs); see §4.2 for the
+//! findings this encodes, notably: empty text lines arrive as `@text ` with a
+//! trailing space, and an `@fatal` event marks a markup error.
 @
-Only formatting and process spawning — this module runs one external command and
-parses its text.
+Only formatting — this module parses `markup` IR text into events. It runs no
+process; the native reader (`markup::read`, §4.1) reads `.nw` files at run time.
 <<imports>>=
 use std::fmt;
-use std::process::Command;
 @
 Every line of markup IR maps to one `Event`. An unknown tag is not an error: it
 becomes `Other`, so a future noweb version surfaces as a failing test rather than a
@@ -226,76 +223,6 @@ fn parse_line(line: &str) -> Result<Event, String> {
         },
     };
     Ok(event)
-}
-@
-Four ways running `markup` fails: it will not spawn (a PATH problem), it exits
-nonzero, it emits an `@fatal` event, or its output does not parse. All are E002.
-<<the markup error>>=
-#[derive(Debug)]
-pub enum MarkupError {
-    Spawn(std::io::Error),
-    /// Nonzero exit; stderr carries noweb's own `file:line: message` diagnostic.
-    Failed {
-        stderr: String,
-    },
-    Fatal(String),
-    Parse(ParseError),
-}
-
-impl fmt::Display for MarkupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MarkupError::Spawn(e) => write!(
-                f,
-                "error[E002]: could not run `markup` ({e}); it lives in noweb's \
-                 lib/noweb directory — run inside the dev shell or the wrapped package"
-            ),
-            MarkupError::Failed { stderr } => {
-                write!(f, "error[E002]: markup failed:\n{}", stderr.trim_end())
-            }
-            MarkupError::Fatal(msg) => write!(f, "error[E002]: markup reported @fatal: {msg}"),
-            MarkupError::Parse(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl std::error::Error for MarkupError {}
-@
-Run `markup` over the given files and parse the result. The binary comes from PATH,
-overridable with `LIT_MARKUP`. A nonzero exit, or an `@fatal` anywhere in the
-events, is an error — `markup` sometimes exits zero alongside a fatal, so both are
-checked.
-
-The native reader (§4.1) now reads every file at run time, so no command needs this
-function on its default path. It stays as the reader's oracle: `lit dump-ir
---oracle` calls it, and the `reader` flake check diffs the two paths for every
-tracked `.nw`. Two independent readers that agree is what proves the native reader
-right, the same idea as the two-tangler self-host check (§13).
-<<run markup>>=
-/// Run noweb's `markup` over the given `.nw` files and parse its output.
-///
-/// This is the reader's oracle (`lit dump-ir --oracle`), not a run-time path: the
-/// native reader (`markup::read`) reads files for every command now.
-///
-/// The binary is found on `PATH` (override with `LIT_MARKUP`). Callers should
-/// pass paths relative to the project root so `@file` events stay portable.
-pub fn run_markup<S: AsRef<std::ffi::OsStr>>(files: &[S]) -> Result<Vec<Event>, MarkupError> {
-    let bin = std::env::var("LIT_MARKUP").unwrap_or_else(|_| "markup".to_string());
-    let output = Command::new(bin)
-        .args(files)
-        .output()
-        .map_err(MarkupError::Spawn)?;
-    if !output.status.success() {
-        return Err(MarkupError::Failed {
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        });
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let events = parse(&stdout).map_err(MarkupError::Parse)?;
-    if let Some(Event::Fatal(msg)) = events.iter().find(|e| matches!(e, Event::Fatal(_))) {
-        return Err(MarkupError::Fatal(msg.clone()));
-    }
-    Ok(events)
 }
 @
 The tests are the executable half of §4.2: they pin real `markup` output and the

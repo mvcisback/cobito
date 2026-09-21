@@ -92,6 +92,10 @@ kind = "section"
 id = "P3N3"
 kind = "section"
 
+["flake.nix.nw"."sec:TaAs"]
+id = "TaAs"
+kind = "section"
+
 ["flake.nix.nw"."sec:UIDl"]
 id = "UIDl"
 kind = "section"
@@ -106,6 +110,10 @@ kind = "section"
 
 ["flake.nix.nw"."sec:dNbo"]
 id = "dNbo"
+kind = "section"
+
+["flake.nix.nw"."sec:e9uc"]
+id = "e9uc"
 kind = "section"
 
 ["flake.nix.nw"."sec:hwLv"]
