@@ -14,7 +14,6 @@ use crate::noweb::Event;
 pub enum ProseSpan {
     Text(String),
     Nl,
-    Quote(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +82,6 @@ fn is_blank_docs(spans: &[ProseSpan]) -> bool {
     spans.iter().all(|s| match s {
         ProseSpan::Nl => true,
         ProseSpan::Text(t) => t.trim().is_empty(),
-        ProseSpan::Quote(_) => false,
     })
 }
 
@@ -154,8 +152,6 @@ struct Builder {
     file: String,
     line: u32,
     open: Option<Open>,
-    in_quote: bool,
-    quote_buf: String,
     /// The `Nl` right after `@defn` terminates the definition line, not the body.
     pending_defn_nl: bool,
 }
@@ -217,10 +213,6 @@ impl Builder {
     }
 
     fn text(&mut self, t: &str) {
-        if self.in_quote {
-            self.quote_buf.push_str(t);
-            return;
-        }
         let Some(open) = self.open.as_mut() else {
             return;
         };
@@ -268,23 +260,6 @@ pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
             Event::Text(t) => b.text(t),
             Event::Nl => b.newline(),
 
-            Event::Quote => {
-                b.in_quote = true;
-                b.quote_buf.clear();
-            }
-            Event::EndQuote => {
-                b.in_quote = false;
-                let quoted = std::mem::take(&mut b.quote_buf);
-                if let Some(open) = b.open.as_mut() {
-                    if open.code {
-                        // `[[ ]]` carries no meaning inside code; keep it literal.
-                        open.code_spans.push(CodeSpan::Text(quoted));
-                    } else {
-                        open.prose.push(ProseSpan::Quote(quoted));
-                    }
-                }
-            }
-
             Event::Defn(name) => {
                 b.pending_defn_nl = true;
                 // Continuation means *already defined*. A forward `@use` creates
@@ -321,8 +296,12 @@ pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
             }
             Event::IndexNl => b.line += 1,
 
-            // Parsed and preserved, but not yet part of the model (§19.2 step 6).
-            Event::IndexUse(_)
+            // Parsed and preserved, but not part of the model. `@quote`/`@endquote`
+            // are noweb IR the native reader never emits (§6.4 uses `\code{…}`); the
+            // parser still accepts them, so ignore them here.
+            Event::Quote
+            | Event::EndQuote
+            | Event::IndexUse(_)
             | Event::Line(_)
             | Event::Literal(_)
             | Event::Fatal(_)
@@ -396,14 +375,9 @@ mod tests {
     use crate::noweb::parse;
 
     const HELLO: &str = include_str!("../fixtures/hello.markup");
-    const QUOTE: &str = include_str!("../fixtures/quote.markup");
 
     fn hello() -> DocModel {
         build(&parse(HELLO).expect("fixture parses")).expect("fixture folds")
-    }
-
-    fn quote_doc() -> DocModel {
-        build(&parse(QUOTE).expect("fixture parses")).expect("fixture folds")
     }
 
     #[test]
@@ -509,28 +483,6 @@ mod tests {
         assert!(m.chunks["src/main.rs"].uses.is_empty());
         assert_eq!(m.roots(), vec!["src/main.rs"]);
         assert!(m.lints().is_empty(), "fixture should be lint-clean");
-    }
-
-    #[test]
-    fn quotes_become_prose_spans() {
-        let m = quote_doc();
-        let quoted: Vec<&str> = m
-            .sections
-            .iter()
-            .filter_map(|s| match &s.kind {
-                SectionKind::Docs { spans } => Some(spans),
-                _ => None,
-            })
-            .flatten()
-            .filter_map(|s| match s {
-                ProseSpan::Quote(q) => Some(q.as_str()),
-                _ => None,
-            })
-            .collect();
-        // The greedy match keeps inner brackets to the last `]]`.
-        assert!(quoted.contains(&"v[[0]]"));
-        // An empty quote makes an empty span.
-        assert!(quoted.iter().any(|q| q.is_empty()));
     }
 
     #[test]

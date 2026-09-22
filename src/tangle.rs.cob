@@ -1,64 +1,64 @@
 # Tangling (§11)
 
-This module is `cob tangle`. The prose is the specification. The chunks after it
-are the implementation. Tangle extracts compilable source from `.cob` files. It is
+This module is \code{cob tangle}. The prose is the specification. The chunks after it
+are the implementation. Tangle extracts compilable source from \code{.cob} files. It is
 the inverse of weave: it pulls a root chunk, and everything the root references,
 out as a plain source file.
 
 ## Three sub-commands {#sec:mtmH}
 
-`cob tangle <file.cob>…` writes every root chunk to the output directory (the
-current directory by default). `cob tangle -R 'name'` writes a single chunk to
-stdout. `cob tangle --check` tangles to memory, diffs the result against the disk,
-and exits nonzero on any drift. The `--check` form exists for CI and for the
+\code{cob tangle <file.cob>…} writes every root chunk to the output directory (the
+current directory by default). \code{cob tangle -R 'name'} writes a single chunk to
+stdout. \code{cob tangle --check} tangles to memory, diffs the result against the disk,
+and exits nonzero on any drift. The \code{--check} form exists for CI and for the
 self-hosting flip (§13) — it is what proves a committed artifact still matches its
-`.cob`.
+\code{.cob}.
 
 The roots are the path-shaped chunk names the model already detects. The files
 come from the CLI, the same as weave. Writes go through a temp file and a rename,
 and cob skips a write when the content is unchanged, so a build system that
-watches mtimes does not rebuild for no reason. noweb ships `cpif` for exactly this
+watches mtimes does not rebuild for no reason. noweb ships \code{cpif} for exactly this
 reason.
 
 ## cob tangles natively (§11) {#sec:dd8Y}
 
-cob tangles in its own code. It does not run `notangle`. The document model
+cob tangles in its own code. It does not run \code{notangle}. The document model
 already holds every chunk definition (in source order) and every chunk use, so
 tangle is a walk of that model — no second parse and no external process. This is
-what lets cob ship as one binary and lets `checks.selfhost` compare two cob passes
+what lets cob ship as one binary and lets \code{checks.selfhost} compare two cob passes
 rather than cob against noweb.
 
 The walk grew out of the §11 contingency list. Every one of these reasons now
 holds, so the native tangler is the plan, not a fallback:
 
-- A single binary for distribution needs no noweb on `PATH`.
+- A single binary for distribution needs no noweb on \code{PATH}.
 - Owning the tangler lets cob keep breadcrumbs noweb discards — the column-level
   chunk provenance that tangle-then-backout highlighting wants (§5.5).
-- A frozen set of `notangle` outputs (`fixtures/tangled/…`) is the correctness
+- A frozen set of \code{notangle} outputs (\code{fixtures/tangled/…}) is the correctness
   oracle, so cob no longer needs the live tool to stay honest.
 
 ## The expansion rule {#sec:9Fk2}
 
 A chunk expands to text. cob walks the chunk's definitions in source order and
 joins them; a chunk defined more than once (a continuation) contributes each
-definition, the same as `notangle`. Inside a definition, a `@<<use@>>` splices the
+definition, the same as \code{notangle}. Inside a definition, a \code{@<<use@>>} splices the
 used chunk in place.
 
-The one subtle part is indentation. The text before a `@<<use@>>` on its line sets
+The one subtle part is indentation. The text before a \code{@<<use@>>} on its line sets
 a column. The first line of the used chunk follows that text; every line after it
 gets that many spaces, so a multi-line chunk lines up under the column where it
 was used. A completely empty line is the one exception — it stays empty, so an
 indented chunk never grows a blank line of trailing spaces (a whitespace-only
 line is not empty, so it is indented like any other). The rule nests: a use
-inside a used chunk adds its own column to the one it inherits. `markup` already turned a leading tab into spaces (8-column
+inside a used chunk adds its own column to the one it inherits. \code{markup} already turned a leading tab into spaces (8-column
 stops) before the model saw it, so the column is a count of characters, not a
 mix of tabs and spaces.
 
-A used chunk drops its one trailing newline at the splice, so `let x = @<<c@>>;`
-keeps the `;` on the chunk's last line. The root keeps its own final newline, so
+A used chunk drops its one trailing newline at the splice, so \code{let x = @<<c@>>;}
+keeps the \code{;} on the chunk's last line. The root keeps its own final newline, so
 the file ends the way the source does.
 
-A `@<<use@>>` of a chunk that has no definition cannot reach tangle: `model::build`
+A \code{@<<use@>>} of a chunk that has no definition cannot reach tangle: \code{model::build}
 raises E010 first. A chunk that uses itself, directly or through others, is a
 cycle — E035, reported, never a hang.
 
@@ -93,7 +93,7 @@ against it without writing), and the disk helpers those drivers share.
 <<the tests>>
 @
 The banner records the inverse-of-weave relationship and the native-expansion
-rule: cob walks the model, and it never runs `notangle`.
+rule: cob walks the model, and it never runs \code{notangle}.
 <<the module banner>>=
 //! `cob tangle`: extract compilable source from `.cob` files (§11).
 //!
@@ -142,9 +142,9 @@ impl fmt::Display for TangleError {
 
 impl std::error::Error for TangleError {}
 @
-The expander is the core. `group_defs` maps each chunk name to its definitions'
-spans, in source order, so a continuation keeps every definition. `expand` walks
-one chunk: text and newlines pass through, and a `@<<use@>>` recurses, drops the
+The expander is the core. \code{group_defs} maps each chunk name to its definitions'
+spans, in source order, so a continuation keeps every definition. \code{expand} walks
+one chunk: text and newlines pass through, and a \code{@<<use@>>} recurses, drops the
 used chunk's one trailing newline, and indents every line after the first by the
 column of the use. A name already on the chain is a cycle.
 <<expand one chunk>>=
@@ -250,7 +250,7 @@ pub enum Wrote {
     Unchanged,
 }
 @
-Tangle every root and write each to `outdir`, skipping the ones already on disk.
+Tangle every root and write each to \code{outdir}, skipping the ones already on disk.
 The report keeps the given order, so output is deterministic. The definitions are
 grouped once and reused across roots.
 <<tangle every root to a directory>>=
@@ -272,7 +272,7 @@ pub fn tangle_to_dir(
     Ok(report)
 }
 @
-For `--check`: how one root disagrees with disk — missing, or present but different.
+For \code{--check}: how one root disagrees with disk — missing, or present but different.
 <<the drift outcome>>=
 /// One root's disagreement with what is on disk, for `--check`.
 #[derive(Debug, PartialEq, Eq)]
@@ -282,7 +282,7 @@ pub enum Drift {
 }
 @
 The same walk as writing, but it compares instead of writing. An empty result means
-the tree is in sync — the self-hosting invariant of §13, and what `checks.selfhost`
+the tree is in sync — the self-hosting invariant of §13, and what \code{checks.selfhost}
 asserts on every module ported here.
 <<check every root against the directory>>=
 /// Tangle every root and compare against `outdir` without writing anything.
@@ -305,8 +305,8 @@ pub fn check(
     Ok(drift)
 }
 @
-Split out from `check` so the comparison is unit-testable on its own. Identical is
-`None`; different is `Differs`; absent is `Missing`; any other read error is E028.
+Split out from \code{check} so the comparison is unit-testable on its own. Identical is
+\code{None}; different is \code{Differs}; absent is \code{Missing}; any other read error is E028.
 <<compare one root to disk>>=
 /// How `contents` differs from `path`, if at all. Split out so the comparison
 /// is unit-testable in isolation.
@@ -354,10 +354,10 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<Wrote, TangleError> {
     })
 }
 @
-The tests pin the native expander against a frozen `notangle` oracle, and the
-disk logic on its own. Each golden in `fixtures/tangled/<stem>/<root>` was made
-once by `notangle`; the expander must reproduce it byte for byte from the pinned
-`fixtures/<stem>.markup`. This is hermetic — no noweb on PATH — and it outlives
+The tests pin the native expander against a frozen \code{notangle} oracle, and the
+disk logic on its own. Each golden in \code{fixtures/tangled/<stem>/<root>} was made
+once by \code{notangle}; the expander must reproduce it byte for byte from the pinned
+\code{fixtures/<stem>.markup}. This is hermetic — no noweb on PATH — and it outlives
 noweb: the goldens are a record of the behavior, not a live dependency.
 <<the tests>>=
 #[cfg(test)]

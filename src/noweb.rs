@@ -125,7 +125,6 @@ mod tests {
     use super::*;
 
     const HELLO: &str = include_str!("../fixtures/hello.markup");
-    const QUOTE: &str = include_str!("../fixtures/quote.markup");
 
     #[test]
     fn parses_pinned_markup_output() {
@@ -164,23 +163,6 @@ mod tests {
 
         assert!(events.contains(&Event::IndexDefn("c".to_string())));
         assert!(!events.iter().any(|e| matches!(e, Event::Other { .. })));
-    }
-
-    #[test]
-    fn quote_content_is_preserved_verbatim() {
-        // [[v[[0]]]] matches greedily to the last ]] — content is v[[0]].
-        let events = parse(QUOTE).unwrap();
-        let mut in_quote = false;
-        let mut quoted = Vec::new();
-        for e in &events {
-            match e {
-                Event::Quote => in_quote = true,
-                Event::EndQuote => in_quote = false,
-                Event::Text(t) if in_quote => quoted.push(t.as_str()),
-                _ => {}
-            }
-        }
-        assert!(quoted.contains(&"v[[0]]"));
     }
 
     #[test]

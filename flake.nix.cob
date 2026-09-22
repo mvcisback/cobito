@@ -38,9 +38,13 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
   description = "cobito — a web-first literate programming system";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  # The `tangled` release branch, pinned by tag: the committed .rs/.css seed a
-  # build on `main` (§13). A release retags `tangled` and bumps this ref.
-  inputs.seed = { url = "git+file:.?ref=refs/tags/v0.1.0"; flake = false; };
+  # The `tangled` release branch on the forge, pinned by tag: the committed
+  # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
+  # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
+  inputs.seed = {
+    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.0";
+    flake = false;
+  };
 
   outputs = { self, nixpkgs, seed }:
     let
@@ -93,7 +97,7 @@ the whole point of a release snapshot: proof that these committed bytes build.
     {
       packages = eachSystem (system: pkgs: rec {
         # The tree is already tangled: compile the committed .rs directly.
-        cob = mkCob pkgs self;
+        cob = mkCob pkgs self ./Cargo.lock;
         default = cob;
       });
 
@@ -139,27 +143,51 @@ katexAssets = pkgs: pkgs.fetchzip {
 @
 ## The builder {#sec:Mh65}
 
-One function builds a \code{cob} from a source tree. It is a \code{buildRustPackage} with
-one special step. The \code{cob} binary reads and tangles \code{.cob} files natively (§4.1,
-§11), so it needs no noweb at run time — only the KaTeX assets for weave.
-\code{postFixup} wraps the binary to set \code{COB_KATEX_ASSETS}. The build of the package
-also runs the hermetic cargo tests. The function takes the source tree, so the
-flake can build the same crate from the committed seed and from the tangled
-\code{.cob} sources.
+Two builders, for the two deployment shapes (§6.3). \code{mkCob} is the Nix build:
+a \code{buildRustPackage} whose \code{postFixup} wraps the binary to set
+\code{COB_KATEX_ASSETS} at the pinned store path, so the small binary reads the dist
+from the store at run time. The \code{cob} binary reads and tangles \code{.cob} files
+natively (§4.1, §11), so it needs no noweb — only the KaTeX assets for weave. The
+build also runs the hermetic cargo tests. It takes the source tree, so the flake
+builds the same crate from the committed seed and from the tangled \code{.cob}.
 <<the cob builder>>=
 # One buildRustPackage, applied to two source trees (the committed seed and
 # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
-# needs no noweb — only the KaTeX assets for weave.
-mkCob = pkgs: src: pkgs.rustPlatform.buildRustPackage {
+# needs no noweb — only the KaTeX assets for weave, read from the store at run
+# time via the wrapper.
+mkCob = pkgs: src: lock: pkgs.rustPlatform.buildRustPackage {
   pname = "cob";
   version = "0.1.0";
   inherit src;
-  cargoLock.lockFile = ./Cargo.lock;
+  # Each source tree carries its own lock, so a dependency change on `main` does
+  # not force a seed refresh — stage 0 builds the seed with the seed's lock.
+  cargoLock.lockFile = lock;
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/cob \
       --set COB_KATEX_ASSETS ${katexAssets pkgs}
   '';
+};
+@
+\code{mkCobStatic} is the standalone build: a fully static musl binary
+(\code{pkgsStatic}) with the KaTeX dist baked in (feature \code{embed-assets}, from
+\code{COB_KATEX_ASSETS} at build time). It carries no wrapper and no store references,
+so the one file runs on any Linux box — this is the distribution artifact for
+non-Nix users. It skips the cargo tests; the Nix \code{build} check already runs them.
+<<the cob builder>>=
+# The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
+# dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
+# time). No wrapper, no store paths — one file that runs anywhere.
+mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+  pname = "cob";
+  version = "0.1.0";
+  inherit src;
+  cargoLock.lockFile = lock;
+  buildFeatures = [ "embed-assets" ];
+  # include_bytes! reads this at build time; the pin lives in the flake (§6.3).
+  COB_KATEX_ASSETS = katexAssets pkgs;
+  # Tests are covered by the Nix `build` check; keep the static build lean.
+  doCheck = false;
 };
 @
 ## The package: two stages {#sec:UIDl}
@@ -178,10 +206,12 @@ byte for byte, so cob is a fixed point of its own tangler and the loop is sound.
 <<the cob package>>=
 # Stage 0: build cob from the seed — the committed .rs of the pinned tangled
 # snapshot. This is why `main` needs no tangler of its own to start.
-cobBootstrap = mkCob pkgs seed;
+cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock");
 <<the tangled source tree>>
 # Stage 1: the default package, compiled from the cob-tangled .cob sources.
-cob = mkCob pkgs cobSource;
+cob = mkCob pkgs cobSource ./Cargo.lock;
+# The standalone single static binary (embedded KaTeX), from the same tree.
+static = mkCobStatic pkgs cobSource ./Cargo.lock;
 @
 Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
 names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
@@ -279,6 +309,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the dogfood check>>
 
 <<the selfhost check>>
+
+<<the modules check>>
 @
 ### build {#sec:9hJs}
 
@@ -718,9 +750,11 @@ stream in Rust, so cob reads its own source with no noweb process. The check run
 the native reader over each fixture and diffs its events against the frozen
 \code{markup} golden for that fixture — \code{cob dump-ir <file>.cob} against \code{cob dump-ir
 --from-markup <file>.markup}, which parses the committed IR. The two must be
-identical. The fixtures carry the edge cases (the cross-line quote and doubled
-brackets of \code{quote.cob}); the crate, \code{cobito.cob}, and the flake are read by the
-\code{selfhost} and \code{dogfood} checks, so a reader break there fails those too.
+identical for the noweb-era subset (a docs line, chunk uses, `%def`, indentation).
+The reader departs from noweb on `[[…]]`, which noweb quotes but cob reads as plain
+text (§6.4 uses \code{\code{…}}), so no fixture uses it. The crate, \code{cobito.cob},
+and the flake are read by the \code{selfhost} and \code{dogfood} checks, so a reader
+break there fails those too.
 <<the reader check>>=
 # Reader differential (§4.1): the native reader (`cob dump-ir`) must make
 # the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
@@ -850,4 +884,28 @@ for page in $TMPDIR/sh $TMPDIR/shcss; do
   fi
 done
 touch $out
+@
+### modules {#sec:5DHH}
+
+Every crate module is itself a literate document, so the whole crate reads as one
+book (§13). This check weaves each \code{src/*.rs.cob} under \code{--locked} and fails if
+any does not render — a guard against a module's prose drifting into a construct
+the dialect rejects (a bad fence, a bare brace, an unlocked label). The archival
+no-script rule (§6.3) holds for every module page too.
+<<the modules check>>=
+# Every module weaves on its own (§13), so the crate is one literate book. Guards
+# against prose that the dialect rejects (bad fence, bare brace, unlocked label).
+modules = pkgs.runCommand "cob-modules" { } ''
+  cd ${self}
+  cob=${self.packages.${system}.cob}/bin/cob
+  for m in src/*.rs.cob; do
+    if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
+      echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
+    fi
+    if grep '<script' $TMPDIR/m/*.html | grep -qv '<script id="nav-spy">'; then
+      echo "$m wove a script other than the nav-spy aid (§6.3)" >&2; exit 1
+    fi
+  done
+  touch $out
+'';
 @

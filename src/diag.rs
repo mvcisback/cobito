@@ -7,15 +7,14 @@
 pub fn explain(code: &str) -> Option<&'static str> {
     let code = code.to_ascii_uppercase();
     let text = match code.as_str() {
-        "E001" => "The `markup` IR contained a line cob could not parse. This means \
-                   the noweb version on PATH emits an IR shape cob was not built \
-                   against — check that the pinned noweb from the flake is in use.",
-        "E002" => "`markup` itself failed, emitted an `@fatal`, or could not be \
-                   found. It ships with noweb; run inside `nix develop` or the \
-                   wrapped package so noweb's pipeline tools are on PATH.",
+        "E001" => "cob could not parse a line of markup IR. cob parses IR only to read \
+                   a frozen `.markup` golden (§4.1); a parse error means the golden, or \
+                   the noweb that made it, has an IR shape cob was not built against.",
+        "E002" => "Retired. cob read source through a noweb `markup` process in v1; it \
+                   now reads `.cob` natively (§4.1), so this code is no longer emitted.",
         "E010" => "A code chunk used `<<name>>` for a chunk that is never defined. \
-                   Define the chunk, or fix the reference — notangle would fail on \
-                   the same input, so cob reports it before shelling out.",
+                   Define the chunk, or fix the reference. cob's tangler needs every use \
+                   to resolve, so it reports this before it tangles.",
         "E014" => "Two labels share one name (e.g. two `id=\"fig:x\"`). Labels must \
                    be unique across the whole document because cross-references and \
                    `site.json` key on them. Rename one.",

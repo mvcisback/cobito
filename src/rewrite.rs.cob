@@ -7,38 +7,38 @@ specification. The chunks after the prose are the implementation.
 ## Why cob needs an HTML parser {#sec:9k7W}
 
 An early draft claimed the pipeline format lets cob avoid a parser. That claim
-was wrong. This phase must find the `h1` boundaries for page splitting, add `id`
-attributes, number the figures and tables, rewrite the `data-ref` placeholders,
+was wrong. This phase must find the \code{h1} boundaries for page splitting, add \code{id}
+attributes, number the figures and tables, rewrite the \code{data-ref} placeholders,
 and hoist the aside margin content. Each of these operations is tree surgery on
 the prose. Prose is HTML by this point, so cob must read HTML as a tree.
 
-cob uses `lol_html`, a streaming rewriter with CSS-selector handlers. The numbers
+cob uses \code{lol_html}, a streaming rewriter with CSS-selector handlers. The numbers
 are document-global, but each single rewrite is node-local. So two passes are
 enough: one pass collects the answers, the second pass stamps them in. cob never
 builds a full DOM. This keeps the pass light.
 
-One wrinkle drives the shape of the code. `lol_html` fires a handler on the
+One wrinkle drives the shape of the code. \code{lol_html} fires a handler on the
 *start* tag. So cob computes a figure's number when the figure opens, then hands
 that number to the caption handler through a one-slot cell. The number must land
-on the caption element, because CSS `attr()` cannot read an ancestor's attribute
+on the caption element, because CSS \code{attr()} cannot read an ancestor's attribute
 (§7).
 
 ## The two-pass discipline {#sec:poyA}
 
-Two passes run over identical bytes. The first pass, `scan`, collects what the
+Two passes run over identical bytes. The first pass, \code{scan}, collects what the
 numbering and the cross-referencing must know about the whole document: the
 headings, the figure and table and equation labels in document order, their kind,
-and each `data-ref` site. It changes nothing. The resolver (§7) turns that into
-the global tables. The second pass, `apply`, walks each section a second time and
+and each \code{data-ref} site. It changes nothing. The resolver (§7) turns that into
+the global tables. The second pass, \code{apply}, walks each section a second time and
 stamps the results.
 
 Both passes walk the same input in the same order. So the counters and the
-per-site indices stay in lockstep. That agreement is what lets `apply` avoid a
+per-site indices stay in lockstep. That agreement is what lets \code{apply} avoid a
 re-derivation of anything.
 
 ## Identity is an attribute, never text {#sec:SAwZ}
 
-Identity lands in a `data-id` attribute — the frozen opaque id of §7.1 — never in
+Identity lands in a \code{data-id} attribute — the frozen opaque id of §7.1 — never in
 a text node. The stylesheet draws the kind-and-id label from that attribute. Only
 the cross-reference link text is real text, because a link with no text is no link
 at all.
@@ -52,25 +52,25 @@ still holds.
 ## The annotation contract (§9) {#sec:9p9p}
 
 Commenting is not cob's job. It belongs to a separate tool, specced in
-`ANNOTATIONS.md`. What cob owes that tool is HTML it can anchor to, plus room in
+\code{ANNOTATIONS.md}. What cob owes that tool is HTML it can anchor to, plus room in
 the layout to render. cob meets three obligations.
 
 First, provenance. Every rendered section element carries its identity and its
-source coordinates, so an annotation on the woven page maps back to the `.cob`
+source coordinates, so an annotation on the woven page maps back to the \code{.cob}
 source that a review agent must patch:
 
-```html
+```verbatim \lang{html}
 <section class="code" id="sec-4" data-nw-file="parser.cob" data-nw-line="47"
          data-chunk="lex a token">…</section>
 ```
 
-Second, stable anchors. A section id and a chunk slug come from `markup`'s chunk
+Second, stable anchors. A section id and a chunk slug come from \code{markup}'s chunk
 numbering and chunk names, never from the layout or the page assignment. So they
 survive a re-weave. KaTeX renders server-side (§6.3), so the text a selector sees
 is final at page load.
 
 Third, margin room. Every section renders an empty margin slot that an annotation
-overlay may mount into. `cob.toml` can also inject an embed snippet into every
+overlay may mount into. \code{cob.toml} can also inject an embed snippet into every
 page, so a hosted annotator needs no code change. The archival site stays fully
 readable with the overlay absent — annotation is progressive enhancement by
 construction.
@@ -137,7 +137,7 @@ use std::rc::Rc;
 use lol_html::html_content::ContentType;
 use lol_html::{element, text, ElementContentHandlers, HtmlRewriter, Selector, Settings};
 @
-A `Handler` pairs a selector with its content handlers — the unit both passes
+A \code{Handler} pairs a selector with its content handlers — the unit both passes
 assemble into lol_html settings.
 <<the handler type>>=
 type Handler<'h, 's> = (Cow<'s, Selector>, ElementContentHandlers<'h>);
@@ -155,8 +155,8 @@ impl fmt::Display for RewriteError {
 
 impl std::error::Error for RewriteError {}
 @
-`Kind` is a reference namespace. It maps to a display word, a lowercase
-`site.json` name, and — going the other way — from a label's prefix. An id with no
+\code{Kind} is a reference namespace. It maps to a display word, a lowercase
+\code{site.json} name, and — going the other way — from a label's prefix. An id with no
 known prefix is simply not a target.
 <<reference kinds>>=
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -240,9 +240,9 @@ pub fn slug(s: &str) -> String {
     out
 }
 @
-The scan's outputs. A `Heading` records its section, level, text, and any
-author-given id. A `LabelDef` is one labelled float. A `RefSite` is one
-cross-reference, noting whether the author wrote link text. `Scan` accumulates all
+The scan's outputs. A \code{Heading} records its section, level, text, and any
+author-given id. A \code{LabelDef} is one labelled float. A \code{RefSite} is one
+cross-reference, noting whether the author wrote link text. \code{Scan} accumulates all
 three across the document, plus each section's opening tag and the sections whose
 floats never got a caption.
 <<the scan outputs>>=
@@ -282,7 +282,7 @@ pub struct Scan {
     pub uncaptioned: Vec<usize>,
 }
 @
-`ScanState` is the per-section working state. Headings and refs accumulate
+\code{ScanState} is the per-section working state. Headings and refs accumulate
 incrementally — text arrives in pieces across nested tags — so each is flushed
 lazily when the next one starts or the section ends, which keeps the walk off
 lol_html's end-tag handlers.
@@ -341,7 +341,7 @@ fn run(html: &str, handlers: Vec<Handler>) -> Result<String, RewriteError> {
 Pass 1 walks a section and records its structure: the first tag (a page-boundary
 signal), every heading, every labelled float, every ref site, and a caption tally
 so uncaptioned floats surface. It mints no ids — that happens later — so it keeps
-no counter. Results append to the document-wide `Scan`.
+no counter. Results append to the document-wide \code{Scan}.
 <<pass 1: scan>>=
 /// Pass 1. Accumulates into `out` across sections. Records every labelled
 /// figure/table/equation so weave can mint/resolve its opaque id (§7.1); the id
@@ -461,7 +461,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
     Ok(())
 }
 @
-A `ResolvedRef` is what pass 1 concluded about one ref site: the href and, unless
+A \code{ResolvedRef} is what pass 1 concluded about one ref site: the href and, unless
 the author supplied their own, the link text to fill in.
 <<a resolved ref>>=
 /// What pass 1 concluded about one `data-ref` site, in document order.
@@ -472,7 +472,7 @@ pub struct ResolvedRef {
     pub text: Option<String>,
 }
 @
-`Plan` is the cursor carried across `apply` calls so the per-site heading and ref
+\code{Plan} is the cursor carried across \code{apply} calls so the per-site heading and ref
 indices keep advancing section to section. It holds the resolved anchors, the
 section opaque ids, the resolved refs, and the float id map.
 <<the plan cursor>>=
@@ -508,9 +508,9 @@ impl<'a> Plan<'a> {
 }
 @
 Pass 2 rewrites one section against the plan: it stamps heading anchors (and a
-clickable permalink prefix on a labelled section), sets a float's `data-id` and
+clickable permalink prefix on a labelled section), sets a float's \code{data-id} and
 carries it to the caption where CSS can draw the label, and fills each ref's href
-and generated text. The float id rides the caption because CSS `attr()` reads only
+and generated text. The float id rides the caption because CSS \code{attr()} reads only
 an element's own attributes. The plan's cursors are written back so the next
 section continues where this one left off.
 <<pass 2: apply>>=
@@ -733,7 +733,7 @@ fn scan_collects_labels_in_document_order() {
     assert_eq!(s.labels[2].section, 1);
 }
 @
-An equation marked `data-nonumber` is not labelled; a labelled one is.
+An equation marked \code{data-nonumber} is not labelled; a labelled one is.
 <<numbered and unnumbered equations>>=
 #[test]
 fn nonumber_equations_are_not_labelled_but_labelled_ones_are() {

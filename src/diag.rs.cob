@@ -62,20 +62,19 @@ pub fn explain(code: &str) -> Option<&'static str> {
     Some(text)
 }
 @
-These three codes are about the noweb boundary. E001 and E002 are the two ways
-\code{markup} itself can go wrong: a shape cob does not expect, or a failure to run.
-E010 is a chunk use whose name has no matching definition — cob catches it
-before it shells out to \code{notangle}, which would fail on the same input.
+These codes are about the markup IR. E001 is a line of IR that cob cannot parse.
+E002 is retired: cob read source through a noweb process in v1, but it reads
+\code{.cob} natively now (§4.1). E010 is a chunk use whose name has no matching
+definition — cob catches it before it tangles.
 <<markup and missing-chunk diagnostics>>=
-"E001" => "The `markup` IR contained a line cob could not parse. This means \
-           the noweb version on PATH emits an IR shape cob was not built \
-           against — check that the pinned noweb from the flake is in use.",
-"E002" => "`markup` itself failed, emitted an `@fatal`, or could not be \
-           found. It ships with noweb; run inside `nix develop` or the \
-           wrapped package so noweb's pipeline tools are on PATH.",
+"E001" => "cob could not parse a line of markup IR. cob parses IR only to read \
+           a frozen `.markup` golden (§4.1); a parse error means the golden, or \
+           the noweb that made it, has an IR shape cob was not built against.",
+"E002" => "Retired. cob read source through a noweb `markup` process in v1; it \
+           now reads `.cob` natively (§4.1), so this code is no longer emitted.",
 "E010" => "A code chunk used `@<<name@>>` for a chunk that is never defined. \
-           Define the chunk, or fix the reference — notangle would fail on \
-           the same input, so cob reports it before shelling out.",
+           Define the chunk, or fix the reference. cob's tangler needs every use \
+           to resolve, so it reports this before it tangles.",
 @
 These two codes guard the cross-reference system. Labels must be unique because
 references and \code{site.json} key on them (E014). A reference must point at a label

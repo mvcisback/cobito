@@ -1,18 +1,18 @@
 # The site.json contract (§5.3, §8)
 
 This module is the archival document model. The prose is the specification. The
-chunks after it are the implementation. Phase 1, this weaver, writes `site.json`.
+chunks after it are the implementation. Phase 1, this weaver, writes \code{site.json}.
 Phase 2, the annotation and review tooling, reads it unchanged. cob emits it only
-under `cob weave --archive`.
+under \code{cob weave --archive}.
 
 ## Page boundaries {#sec:pzpT}
 
 noweb has no starred-section concept. cweb's section levels do not exist here. So
-cob splits on the prose instead. A `[weave] spcob-at` key names the heading level
-to split on — a Markdown `#` and an HTML `h1` both count. A `nav-depth` key sets
+cob splits on the prose instead. A \code{[weave] spcob-at} key names the heading level
+to split on — a Markdown \code{#} and an HTML \code{h1} both count. A \code{nav-depth} key sets
 how deep the nav tree goes.
 
-```toml
+```verbatim \lang{toml}
 [weave]
 spcob-at = "h1"
 nav-depth = 3
@@ -24,12 +24,12 @@ page.
 
 ## The JSON is the single source of truth {#sec:Tjx4}
 
-`site.json` is the one contract between the two phases. Phase 1 writes it. Phase 2
+\code{site.json} is the one contract between the two phases. Phase 1 writes it. Phase 2
 reads it and writes nothing back — annotations live entirely outside it
-(`ANNOTATIONS.md`). The shape holds the metadata, the nav tree, the label tables,
+(\code{ANNOTATIONS.md}). The shape holds the metadata, the nav tree, the label tables,
 the chunk graph, and the pages:
 
-```jsonc
+```verbatim \lang{jsonc}
 {
   "schema": 2,
   "meta": { "id": "cob", "title": "…", "authors": ["…"] },
@@ -50,26 +50,26 @@ the chunk graph, and the pages:
 
 ## Why the shape looks like this {#sec:5Q9y}
 
-The `schema` field is versioned. Any consumer — the review agent, an external tool
+The \code{schema} field is versioned. Any consumer — the review agent, an external tool
 — checks it before use. A mismatch is a hard failure, not a runtime surprise.
-Schema 2 replaces each label's position-dependent number with the frozen `id` from
-`cob.lock` (§7.1). A reference's display text, such as "Figure k3f9", comes from
-`kind` plus `id`, so no numeric field is left in the contract.
+Schema 2 replaces each label's position-dependent number with the frozen \code{id} from
+\code{cob.lock} (§7.1). A reference's display text, such as "Figure k3f9", comes from
+\code{kind} plus \code{id}, so no numeric field is left in the contract.
 
-There is no `generated` timestamp. A wall-clock field would make the output
+There is no \code{generated} timestamp. A wall-clock field would make the output
 non-reproducible. That would defeat Nix caching and turn every re-weave into a
 noisy diff of the archival artifact. Weave must be a deterministic function of its
-inputs. So every map is a `BTreeMap` for a stable key order, and nothing reads the
+inputs. So every map is a \code{BTreeMap} for a stable key order, and nothing reads the
 clock.
 
-Per-page JSON is this same object with `pages` narrowed to one entry. The `nav`,
-`labels`, and `chunks` stay in full, so one page can render standalone.
+Per-page JSON is this same object with \code{pages} narrowed to one entry. The \code{nav},
+\code{labels}, and \code{chunks} stay in full, so one page can render standalone.
 
 ## How the code implements this {#sec:Cafo}
 
 This module also owns the sidenote hoist. The contract keeps a section's prose and
-its margin material disjoint, so each `sidenote` aside is lifted out of the
-rendered body into a structured `margin[]` entry with a stable `sn-N` id.
+its margin material disjoint, so each \code{sidenote} aside is lifted out of the
+rendered body into a structured \code{margin[]} entry with a stable \code{sn-N} id.
 
 The module is the JSON shape (a tree of serialize structs), the sidenote hoist,
 the document builder that fills the shape from the model, and the two serializers
@@ -147,7 +147,7 @@ position-dependent number with its frozen opaque id (§7.1).
 /// position-dependent `number` with its frozen opaque `id` (§7.1).
 pub const SCHEMA: u32 = 2;
 @
-`Meta` is the document header: its id, title, authors, and the source files it
+\code{Meta} is the document header: its id, title, authors, and the source files it
 was woven from.
 <<document metadata>>=
 #[derive(Serialize, Clone, Default)]
@@ -158,7 +158,7 @@ pub struct Meta {
     pub source_files: Vec<String>,
 }
 @
-`Nav` is one node of the table-of-contents tree. An empty `children` list is
+\code{Nav} is one node of the table-of-contents tree. An empty \code{children} list is
 dropped from the JSON so a leaf stays compact.
 <<the nav tree>>=
 #[derive(Serialize, Clone)]
@@ -170,10 +170,10 @@ struct Nav {
     children: Vec<Nav>,
 }
 @
-Three tables let a consumer resolve any cross reference. `Label` is a reference
-target — its page, anchor, kind, and (for a float) its frozen opaque id. `Def`
-and `Use` are the two ends of a chunk edge, each a page plus an anchor; a `Def`
-also records whether the chunk continues an earlier definition. `Chunk` gathers a
+Three tables let a consumer resolve any cross reference. \code{Label} is a reference
+target — its page, anchor, kind, and (for a float) its frozen opaque id. \code{Def}
+and \code{Use} are the two ends of a chunk edge, each a page plus an anchor; a \code{Def}
+also records whether the chunk continues an earlier definition. \code{Chunk} gathers a
 chunk's defs and uses under its slug.
 <<the cross-reference tables>>=
 #[derive(Serialize, Clone)]
@@ -207,10 +207,10 @@ struct Chunk {
     uses: Vec<Use>,
 }
 @
-The per-section shape. `Margin` is one hoisted sidenote. `Source` pins the
-section to its `.cob` file and line. `Section` is the rendered unit: docs sections
-carry a (possibly empty) `margin`, code sections carry a chunk `name`, a
-`continues` flag, and the chunk names they define and use. Absent optional fields
+The per-section shape. \code{Margin} is one hoisted sidenote. \code{Source} pins the
+section to its \code{.cob} file and line. \code{Section} is the rendered unit: docs sections
+carry a (possibly empty) \code{margin}, code sections carry a chunk \code{name}, a
+\code{continues} flag, and the chunk names they define and use. Absent optional fields
 are dropped so docs and code sections each serialize only what applies.
 <<the per-section shape>>=
 #[derive(Serialize, Clone)]
@@ -245,7 +245,7 @@ struct Section {
     uses: Vec<String>,
 }
 @
-`Page` is one output page with its neighbours for prev/next links; `SiteJson` is
+\code{Page} is one output page with its neighbours for prev/next links; \code{SiteJson} is
 the whole document — schema, metadata, nav, the two tables, and the pages.
 <<the page and the whole document>>=
 #[derive(Serialize, Clone)]
@@ -268,7 +268,7 @@ pub struct SiteJson {
 }
 @
 The page list is private, so this exposes just the page ids in document order —
-enough for a caller to drive `page_json` without reaching inside.
+enough for a caller to drive \code{page_json} without reaching inside.
 <<page ids for the caller>>=
 impl SiteJson {
     /// Page ids in document order — enough for a caller to drive `page_json`
@@ -278,7 +278,7 @@ impl SiteJson {
     }
 }
 @
-`RawSection` is what weave hands this module for one section: the rendered body
+\code{RawSection} is what weave hands this module for one section: the rendered body
 with sidenotes already hoisted, plus the margin material.
 <<a rendered section>>=
 /// One section's rendered body as weave produces it, ready for `site.json`:
@@ -288,8 +288,8 @@ pub struct RawSection {
     pub margins: Vec<Margin>,
 }
 @
-`Hoisted` is the split output of the hoist: the page body keeps each aside inline
-(now id-tagged), the JSON body drops asides entirely, and `margins` collects them
+\code{Hoisted} is the split output of the hoist: the page body keeps each aside inline
+(now id-tagged), the JSON body drops asides entirely, and \code{margins} collects them
 as structured entries. The page and JSON bodies share ids so a note lines up in
 both views.
 <<the hoist result>>=
@@ -305,7 +305,7 @@ pub struct Hoisted {
 @
 The hoist is deliberate string surgery, not a parse: the input is well-formed
 lol_html output, sidenote asides do not nest in authored prose, and any literal
-aside opener in prose text is entity-escaped so it cannot match. The `next`
+aside opener in prose text is entity-escaped so it cannot match. The \code{next}
 counter is document-global, so ids stay unique across sections. A non-sidenote
 aside is copied through untouched; an unbalanced aside stops the walk and copies
 the remainder verbatim.
@@ -370,8 +370,8 @@ pub fn hoist_sidenotes(body: &str, next: &mut usize) -> Hoisted {
 }
 @
 Finding an aside's close counts nesting, so an inner sidenote does not close the
-outer one early. It returns the index of the `<` that begins the balancing
-`</aside>`.
+outer one early. It returns the index of the \code{<} that begins the balancing
+\code{</aside>}.
 <<find the matching close>>=
 /// Index of the `<` beginning the `</aside>` that closes the aside whose body
 /// starts at `from`, accounting for nested asides.
@@ -399,7 +399,7 @@ fn matching_close(body: &str, mut pos: usize) -> Option<usize> {
 }
 @
 The builder fills the JSON shape from three inputs: the model, the resolution,
-and weave's per-section bodies aligned to `doc.sections`. It first indexes each
+and weave's per-section bodies aligned to \code{doc.sections}. It first indexes each
 section to its page and continues-flag, then maps the label table, the chunk
 table, the sections, and finally the pages — narrowing the flat section list to
 each page and wiring prev/next.
@@ -537,7 +537,7 @@ pub fn build(doc: &DocModel, res: &Resolution, raw: &[RawSection], meta: Meta) -
     }
 }
 @
-A code section's `uses` are the distinct chunk names it references, kept in
+A code section's \code{uses} are the distinct chunk names it references, kept in
 first-use order so the table reads the way the code does.
 <<a section's chunk uses>>=
 /// Distinct chunk names a code section references, in first-use order.
@@ -566,7 +566,7 @@ fn nav_of(n: &crate::resolve::NavNode) -> Nav {
 @
 The whole document serializes to pretty JSON with a trailing newline — pretty
 because a human diffs it, deterministic because serde walks fields and
-`BTreeMap`s in a fixed order.
+\code{BTreeMap}s in a fixed order.
 <<serialize the whole document>>=
 /// Pretty JSON with a trailing newline. Pretty because the archival artifact is
 /// read and diffed by humans; deterministic because serde walks fields and
@@ -577,7 +577,7 @@ pub fn to_json(site: &SiteJson) -> String {
     s
 }
 @
-The per-page JSON is the whole object with `pages` narrowed to one entry. Nav,
+The per-page JSON is the whole object with \code{pages} narrowed to one entry. Nav,
 labels, and chunks stay in full so a page stands alone (§8).
 <<serialize one page>>=
 /// The per-page JSON: the whole object with `pages` narrowed to one entry.

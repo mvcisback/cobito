@@ -25,8 +25,6 @@ impl std::error::Error for ReadError {}
 enum Seg {
     Text(String),
     Use(String),
-    Open,
-    Close,
 }
 
 enum Line {
@@ -68,52 +66,11 @@ peg::parser! {
         rule code_run() -> String = s:$(code_ch()*) { resolve_esc(s) }
         rule code_ch() = escape() / (!"<<" [_] {})
 
-        pub rule docs_out() -> (Vec<Seg>, bool)
-            = run:docs_run() rest:docs_block()* {
-                let mut v = vec![Seg::Text(run)];
-                let mut open = false;
-                for (segs, ended) in rest {
-                    v.extend(segs);
-                    open = ended;
-                }
-                (v, open)
-            }
-
-        pub rule docs_in() -> (Vec<Seg>, bool)
-            = content:docs_qrun() tail:docs_reopen()? {
-                match tail {
-                    Some((mut segs, ended)) => {
-                        let mut v = vec![Seg::Text(content), Seg::Close];
-                        v.append(&mut segs);
-                        (v, ended)
-                    }
-                    None => (vec![Seg::Text(content)], true),
-                }
-            }
-
-        rule docs_reopen() -> (Vec<Seg>, bool)
-            = docs_close() rest:docs_out() { rest }
-
-        rule docs_block() -> (Vec<Seg>, bool)
-            = "[[" content:docs_qrun() close:docs_close()? post:docs_run() {
-                let mut v = vec![Seg::Open, Seg::Text(content)];
-                match close {
-                    Some(()) => {
-                        v.push(Seg::Close);
-                        v.push(Seg::Text(post));
-                        (v, false)
-                    }
-                    None => (v, true),
-                }
-            }
-
-        rule docs_close() -> () = "]]" !"]" { () }
-
-        rule docs_run() -> String = s:$(docs_ch()*) { resolve_esc(s) }
-        rule docs_ch() = escape() / (!"[[" [_] {})
-
-        rule docs_qrun() -> String = s:$(qrun_ch()*) { resolve_esc(s) }
-        rule qrun_ch() = escape() / (!docs_close() [_] {})
+        // A documentation line is one text run. `[[` carries no special meaning
+        // (§6.4 uses `\code{…}` for inline code); only the `@<<`/`@>>` escapes
+        // are resolved.
+        pub rule docs_line() -> String = s:$(docs_ch()*) { resolve_esc(s) }
+        rule docs_ch() = escape() / [_]
 
         rule escape() = "@<<" / "@>>"
     }
@@ -151,7 +108,6 @@ struct Reader {
     open: Option<bool>,
     cur: u32,
     defs_pending: bool,
-    in_quote: bool,
 }
 
 impl Reader {
@@ -194,8 +150,6 @@ impl Reader {
                     }
                 }
                 Seg::Use(u) => self.out.push(Event::Use(u)),
-                Seg::Open => self.out.push(Event::Quote),
-                Seg::Close => self.out.push(Event::EndQuote),
             }
         }
         self.out.push(Event::Nl);
@@ -207,13 +161,11 @@ impl Reader {
     }
 
     fn docs_emit(&mut self, l: &str) {
-        let (segs, ended) = if self.in_quote {
-            nw::docs_in(l).expect("a docs line tokenizes")
-        } else {
-            nw::docs_out(l).expect("a docs line tokenizes")
-        };
-        self.in_quote = ended;
-        self.emit_segs(segs);
+        // A docs line is one text run (no uses, no quotes). Keep the last run even
+        // when empty, so the empty-text rule of §sec:read-rules holds.
+        let run = nw::docs_line(l).expect("a docs line tokenizes");
+        self.out.push(Event::Text(run));
+        self.out.push(Event::Nl);
     }
 
     fn index(&mut self, ids: &str, defn: bool) {
@@ -336,10 +288,5 @@ mod tests {
     #[test]
     fn matches_markup_for_txf() {
         same_as_oracle("fixtures/txf.cob", include_str!("../fixtures/txf.markup"));
-    }
-
-    #[test]
-    fn matches_markup_for_quote() {
-        same_as_oracle("fixtures/quote.cob", include_str!("../fixtures/quote.markup"));
     }
 }

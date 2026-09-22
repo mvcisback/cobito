@@ -28,18 +28,13 @@ pub fn escape(s: &str) -> String {
     out
 }
 
-/// Step 1. `@text`/`@nl` concatenated; `[[…]]` becomes escaped `<code>`.
+/// Step 1. `@text`/`@nl` spans concatenated into one prose string.
 pub fn reassemble(spans: &[ProseSpan]) -> String {
     let mut out = String::new();
     for span in spans {
         match span {
             ProseSpan::Text(t) => out.push_str(t),
             ProseSpan::Nl => out.push('\n'),
-            ProseSpan::Quote(q) => {
-                out.push_str("<code>");
-                out.push_str(&escape(q));
-                out.push_str("</code>");
-            }
         }
     }
     out
@@ -80,16 +75,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn quoted_code_is_escaped_at_reassembly() {
+    fn reassembly_joins_text_and_newlines() {
         let spans = vec![
-            ProseSpan::Text("see ".to_string()),
-            ProseSpan::Quote("<div> & \"x\"".to_string()),
+            ProseSpan::Text("a `b`".to_string()),
             ProseSpan::Nl,
+            ProseSpan::Text("c".to_string()),
         ];
-        assert_eq!(
-            reassemble(&spans),
-            "see <code>&lt;div&gt; &amp; &quot;x&quot;</code>\n"
-        );
+        assert_eq!(reassemble(&spans), "a `b`\nc");
     }
 
     #[test]

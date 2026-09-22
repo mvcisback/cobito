@@ -42,7 +42,6 @@ pub fn headings(doc: &DocModel) -> Vec<HeadingSite> {
         for span in spans {
             match span {
                 ProseSpan::Text(s) => buf.push_str(s),
-                ProseSpan::Quote(s) => buf.push_str(s),
                 ProseSpan::Nl => {
                     scan_line(&sec.file, line, &buf, &mut fenced, &mut out);
                     line += 1;

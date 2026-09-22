@@ -4,8 +4,8 @@ This module is the specification and the implementation of the shared ends of
 the prose pipeline. The prose is the specification. The chunks after it are the
 implementation.
 
-noweb does not solve the prose problem. Its `tohtml` passes prose through
-verbatim, because it assumes the author wrote HTML. Its `l2h` translates a fixed
+noweb does not solve the prose problem. Its \code{tohtml} passes prose through
+verbatim, because it assumes the author wrote HTML. Its \code{l2h} translates a fixed
 LaTeX subset, does not expand author macros, and shows math as italics. cob does
 its own prose layer instead.
 
@@ -14,26 +14,26 @@ its own prose layer instead.
 An author writes a docs chunk in one dialect: command Markdown (§6.4). Prose is
 CommonMark plus cob's command markers and fenced-float directives. Paragraphs,
 emphasis, lists, links, and headings become HTML. The fenced directives for
-math, figures, and tables become labelled, numbered floats, and `\ref{…}` is a
+math, figures, and tables become labelled, numbered floats, and \code{\ref{…}} is a
 cross-reference.
 
-The Markdown render is a post-`markup` transform on the reassembled prose
+The Markdown render is a post-\code{markup} transform on the reassembled prose
 (§6.4). It slots in between reassembly and the HTML rewrite. Everything after
-that step — numbering, references, math render, sidenote hoist, and `site.json`
+that step — numbering, references, math render, sidenote hoist, and \code{site.json}
 — is the same for every document.
 
 ## The pipeline (the order is load-bearing) {#sec:O0Sz}
 
 cob processes each docs chunk in this order:
 
-1. Reassemble. Join the `@text` and `@nl` spans. Turn each `@quote`…`@endquote`
-   into a `<code>` element with its contents HTML-escaped. This escape comes
-   first, so an inline quote of a tag such as `<div>` is safe.
+1. Reassemble. Join the \code{@text} and \code{@nl} spans. Turn each \code{@quote}…\code{@endquote}
+   into a \code{<code>} element with its contents HTML-escaped. This escape comes
+   first, so an inline quote of a tag such as \code{<div>} is safe.
 2. Render Markdown. The command-Markdown pass (§6.4) turns the prose into HTML.
    It extracts each math run into an opaque placeholder as it goes, so a formula
-   like `$a < b$` is never read as a broken tag.
+   like \code{$a < b$} is never read as a broken tag.
 3. Rewrite. Inject section ids, number the figures, tables, and equations,
-   resolve each `data-ref`, and hoist each sidenote aside into the section's
+   resolve each \code{data-ref}, and hoist each sidenote aside into the section's
    margin array.
 4. Serialize.
 5. Render math. Replace each placeholder with KaTeX output.
@@ -42,7 +42,7 @@ Steps 3 to 5 need document-global numbering, so cob runs the whole document
 through step 2 before any section reaches step 3. Weave cannot stream.
 
 cob does not sanitize prose. The author is the trusted party. A margin comment
-is the annotation layer's problem (`ANNOTATIONS.md`), never merged into cob's
+is the annotation layer's problem (\code{ANNOTATIONS.md}), never merged into cob's
 output.
 
 ## How the code implements this {#sec:bz51}
@@ -74,7 +74,7 @@ The banner states the two shared ends of the pipeline this module owns.
 //! (step 5). The Markdown render in between, which extracts math, is the
 //! markdown module.
 @
-The `ProseSpan` the model hands us.
+The \code{ProseSpan} the model hands us.
 <<imports>>=
 use crate::model::ProseSpan;
 @
@@ -106,21 +106,17 @@ pub fn escape(s: &str) -> String {
     out
 }
 @
-Step 1. Concatenate the text and newline spans; a quoted-code span becomes an
-escaped `<code>` element.
+Step 1. Concatenate the text and newline spans into one prose string. Inline code
+is \code{\code{…}} now (§6.4), lowered later by the Markdown pass, so reassembly is a
+plain join.
 <<step 1: reassemble>>=
-/// Step 1. `@text`/`@nl` concatenated; `[[…]]` becomes escaped `<code>`.
+/// Step 1. `@text`/`@nl` spans concatenated into one prose string.
 pub fn reassemble(spans: &[ProseSpan]) -> String {
     let mut out = String::new();
     for span in spans {
         match span {
             ProseSpan::Text(t) => out.push_str(t),
             ProseSpan::Nl => out.push('\n'),
-            ProseSpan::Quote(q) => {
-                out.push_str("<code>");
-                out.push_str(&escape(q));
-                out.push_str("</code>");
-            }
         }
     }
     out
@@ -160,31 +156,29 @@ pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     out
 }
 @
-The tests walk this module's two behaviors: escaping at reassembly, and math
-substitution back into serialized HTML.
+The tests walk this module's two behaviors: reassembling spans into prose, and
+math substitution back into serialized HTML.
 <<the tests>>=
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    <<quoted code is escaped at reassembly>>
+    <<reassembly joins spans>>
 
     <<substitution round-trips>>
 }
 @
-Quoted code becomes an escaped `<code>` element at reassembly.
-<<quoted code is escaped at reassembly>>=
+Reassembly joins the text and newline spans verbatim; inline code is \code{\code{…}}
+now, lowered later by the Markdown pass, so reassembly does no escaping.
+<<reassembly joins spans>>=
 #[test]
-fn quoted_code_is_escaped_at_reassembly() {
+fn reassembly_joins_text_and_newlines() {
     let spans = vec![
-        ProseSpan::Text("see ".to_string()),
-        ProseSpan::Quote("<div> & \"x\"".to_string()),
+        ProseSpan::Text("a `b`".to_string()),
         ProseSpan::Nl,
+        ProseSpan::Text("c".to_string()),
     ];
-    assert_eq!(
-        reassemble(&spans),
-        "see <code>&lt;div&gt; &amp; &quot;x&quot;</code>\n"
-    );
+    assert_eq!(reassemble(&spans), "a `b`\nc");
 }
 @
 Rendered fragments substitute back into their placeholders by index; a

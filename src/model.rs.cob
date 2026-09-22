@@ -2,38 +2,38 @@
 
 This module is the specification and the implementation of the document model.
 The prose is the specification. The chunks after it are the implementation. The
-model folds `markup`'s IR (§4.1) into the types the weaver and the tangler read.
+model folds \code{markup}'s IR (§4.1) into the types the weaver and the tangler read.
 
 ## Chunk continuation {#sec:jijh}
 
 noweb lets a chunk name be defined more than once. A later definition appends to
 the earlier one. This matters in three places, and it is easy to get wrong:
 
-- Tangle joins the definitions in source order. `notangle` does this.
-- The JSON model keeps `chunks[name].defs` as an ordered list. Each section
-  after the first carries `continues: true`.
-- The render shows a continuation with a `+=` marker, the noweb convention, and
+- Tangle joins the definitions in source order. cob's tangler does this (§11).
+- The JSON model keeps \code{chunks[name].defs} as an ordered list. Each section
+  after the first carries \code{continues: true}.
+- The render shows a continuation with a \code{+=} marker, the noweb convention, and
   links it back to the first definition.
 
 ## Root chunks {#sec:Ugl4}
 
 A chunk whose name is path-shaped is a root. A name is path-shaped when it holds
-a `/`, or when it ends in a file extension, such as `src/lexer.rs`. A root is the
-entry point that tangle writes to a file. `cob.toml` can override the set of
+a \code{/}, or when it ends in a file extension, such as \code{src/lexer.rs}. A root is the
+entry point that tangle writes to a file. \code{cob.toml} can override the set of
 roots and set the line-pragma format for each one. The tangler owns that format
 (§5.2, §11), so the model only decides which names are roots.
 
 ## The line counter {#sec:m7n3}
 
-The line counter is the subtle part of the build. It advances on both `Nl` and
-`IndexNl`, because an `@ %def` line is a source line whose newline reaches cob as
-`IndexNl` (§4.2). A wrong count silently shifts every provenance attribute after
-the first `%def` in a file.
+The line counter is the subtle part of the build. It advances on both \code{Nl} and
+\code{IndexNl}, because an \code{@ %def} line is a source line whose newline reaches cob as
+\code{IndexNl} (§4.2). A wrong count silently shifts every provenance attribute after
+the first \code{%def} in a file.
 
 ## How the code implements this {#sec:N3uM}
 
 The module is the model's data types, two classification helpers, the error and
-lint types, a stateful `Builder` that walks the event stream, the `build` entry
+lint types, a stateful \code{Builder} that walks the event stream, the \code{build} entry
 point, and the queries a built model answers.
 <<src/model.rs>>=
 <<the module banner>>
@@ -65,7 +65,7 @@ point, and the queries a built model answers.
 <<the tests>>
 @
 The banner records the one subtle invariant: the line counter advances on
-`IndexNl` too.
+\code{IndexNl} too.
 <<the module banner>>=
 //! Fold `markup`'s IR into cob's document model (§19.2).
 //!
@@ -81,15 +81,14 @@ use std::fmt;
 
 use crate::noweb::Event;
 @
-A section's content is a list of spans. Prose spans are text, a newline, or a
-quoted run; code spans are text, a newline, or a chunk use. Keeping the two
-distinct lets weave treat prose and code differently downstream.
+A section's content is a list of spans. Prose spans are text or a newline; code
+spans are text, a newline, or a chunk use. Keeping the two distinct lets weave
+treat prose and code differently downstream.
 <<the span types>>=
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProseSpan {
     Text(String),
     Nl,
-    Quote(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,8 +99,8 @@ pub enum CodeSpan {
 }
 @
 A section is either docs or code. A code section carries its chunk name, whether
-it continues an earlier definition, its spans, and any `@index defn` names. A
-`Section` wraps a kind with its id and source provenance.
+it continues an earlier definition, its spans, and any \code{@index defn} names. A
+\code{Section} wraps a kind with its id and source provenance.
 <<a section and its kind>>=
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SectionKind {
@@ -125,8 +124,8 @@ pub struct Section {
     pub kind: SectionKind,
 }
 @
-`ChunkInfo` gathers every definition and use of one chunk name; more than one def
-means the chunk is continued. `DocModel` is the whole document: the source files,
+\code{ChunkInfo} gathers every definition and use of one chunk name; more than one def
+means the chunk is continued. \code{DocModel} is the whole document: the source files,
 the sections in order, and the chunk table.
 <<chunk info and the whole model>>=
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -167,13 +166,12 @@ fn is_root_name(name: &str) -> bool {
 }
 @
 The blank lines noweb emits between chunks arrive as empty docs chunks. This
-recognizes them so `finish` can drop them.
+recognizes them so \code{finish} can drop them.
 <<is a docs chunk blank>>=
 fn is_blank_docs(spans: &[ProseSpan]) -> bool {
     spans.iter().all(|s| match s {
         ProseSpan::Nl => true,
         ProseSpan::Text(t) => t.trim().is_empty(),
-        ProseSpan::Quote(_) => false,
     })
 }
 @
@@ -233,11 +231,11 @@ impl fmt::Display for Lint {
     }
 }
 @
-The builder holds the walk's state. `UseSite` remembers where each `@use`
-appeared so E010 can point at it. `Builder` accumulates files, sections, and the
+The builder holds the walk's state. \code{UseSite} remembers where each \code{@use}
+appeared so E010 can point at it. \code{Builder} accumulates files, sections, and the
 chunk table alongside the current file, line, open section, and the two quirks the
-walk must track: whether we are inside a quote, and whether the next `Nl`
-terminates a `@defn` line rather than the body. `Open` is the section under
+walk must track: whether we are inside a quote, and whether the next \code{Nl}
+terminates a \code{@defn} line rather than the body. \code{Open} is the section under
 construction.
 <<the builder state>>=
 /// Where a `@use` appeared, kept during the walk so E010 can be located.
@@ -257,8 +255,6 @@ struct Builder {
     file: String,
     line: u32,
     open: Option<Open>,
-    in_quote: bool,
-    quote_buf: String,
     /// The `Nl` right after `@defn` terminates the definition line, not the body.
     pending_defn_nl: bool,
 }
@@ -275,11 +271,11 @@ struct Open {
     index_defs: Vec<String>,
 }
 @
-Four methods drive the section under construction: `begin` opens one, `finish`
-closes it (recording the chunk def, or dropping a blank docs chunk), `text`
-appends a text span (buffering instead when inside a quote), and `newline`
+Four methods drive the section under construction: \code{begin} opens one, \code{finish}
+closes it (recording the chunk def, or dropping a blank docs chunk), \code{text}
+appends a text span (buffering instead when inside a quote), and \code{newline}
 advances the line and appends a newline span (swallowing the one that ends a
-`@defn` line).
+\code{@defn} line).
 <<the builder methods>>=
 impl Builder {
     <<begin a section>>
@@ -291,7 +287,7 @@ impl Builder {
     <<advance a line>>
 }
 @
-Opening a section stamps it with `sec-N`, the current file and line, and empty
+Opening a section stamps it with \code{sec-N}, the current file and line, and empty
 buffers.
 <<begin a section>>=
 fn begin(&mut self, n: u32, code: bool) {
@@ -340,14 +336,9 @@ fn finish(&mut self) {
     });
 }
 @
-Text goes to the quote buffer while a quote is open, otherwise to the current
-section's code or prose spans.
+Text goes to the current section's code or prose spans.
 <<append text>>=
 fn text(&mut self, t: &str) {
-    if self.in_quote {
-        self.quote_buf.push_str(t);
-        return;
-    }
     let Some(open) = self.open.as_mut() else {
         return;
     };
@@ -358,7 +349,7 @@ fn text(&mut self, t: &str) {
     }
 }
 @
-A newline always advances the counter. The one right after `@defn` ends the
+A newline always advances the counter. The one right after \code{@defn} ends the
 definition line and is swallowed; otherwise it is appended as a span.
 <<advance a line>>=
 fn newline(&mut self) {
@@ -377,11 +368,11 @@ fn newline(&mut self) {
     }
 }
 @
-The entry point walks the events, driving the builder. A `@file` finishes the
-open section and resets the line counter. Quotes buffer between `@quote` and
-`@endquote`, then attach as a prose quote or, inside code, as literal text.
-`@defn` sets the chunk name and arms the defn-newline swallow; `@use` records the
-edge and remembers the site. `IndexNl` advances the line but adds no span. After
+The entry point walks the events, driving the builder. A \code{@file} finishes the
+open section and resets the line counter. Quotes buffer between \code{@quote} and
+\code{@endquote}, then attach as a prose quote or, inside code, as literal text.
+\code{@defn} sets the chunk name and arms the defn-newline swallow; \code{@use} records the
+edge and remembers the site. \code{IndexNl} advances the line but adds no span. After
 the walk, any use whose chunk was never defined is collected into E010.
 <<build the model>>=
 pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
@@ -403,23 +394,6 @@ pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
 
             Event::Text(t) => b.text(t),
             Event::Nl => b.newline(),
-
-            Event::Quote => {
-                b.in_quote = true;
-                b.quote_buf.clear();
-            }
-            Event::EndQuote => {
-                b.in_quote = false;
-                let quoted = std::mem::take(&mut b.quote_buf);
-                if let Some(open) = b.open.as_mut() {
-                    if open.code {
-                        // `[[ ]]` carries no meaning inside code; keep it literal.
-                        open.code_spans.push(CodeSpan::Text(quoted));
-                    } else {
-                        open.prose.push(ProseSpan::Quote(quoted));
-                    }
-                }
-            }
 
             Event::Defn(name) => {
                 b.pending_defn_nl = true;
@@ -457,8 +431,12 @@ pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
             }
             Event::IndexNl => b.line += 1,
 
-            // Parsed and preserved, but not yet part of the model (§19.2 step 6).
-            Event::IndexUse(_)
+            // Parsed and preserved, but not part of the model. `@quote`/`@endquote`
+            // are noweb IR the native reader never emits (§6.4 uses `\code{…}`); the
+            // parser still accepts them, so ignore them here.
+            Event::Quote
+            | Event::EndQuote
+            | Event::IndexUse(_)
             | Event::Line(_)
             | Event::Literal(_)
             | Event::Fatal(_)
@@ -493,8 +471,8 @@ pub fn build(events: &[Event]) -> Result<DocModel, ModelError> {
     })
 }
 @
-A built model answers two queries: `lints` reports each non-root chunk nothing
-uses (W102, dead code), and `roots` lists the tangle roots.
+A built model answers two queries: \code{lints} reports each non-root chunk nothing
+uses (W102, dead code), and \code{roots} lists the tangle roots.
 <<queries on the model>>=
 impl DocModel {
     /// W102: a non-root chunk that nothing uses is dead code.
@@ -529,9 +507,9 @@ impl DocModel {
     }
 }
 @
-The tests fold the pinned `hello` fixture and assert the model's shape: blank
+The tests fold the pinned \code{hello} fixture and assert the model's shape: blank
 docs dropped, code sections and continuation, line numbers that only line up if
-`IndexNl` advanced the counter, the swallowed defn newline, indentation as its own
+\code{IndexNl} advanced the counter, the swallowed defn newline, indentation as its own
 span, uses and roots, quotes as prose spans, and the two diagnostics E010 and
 W102, plus the root-name classifier.
 <<the tests>>=
@@ -541,14 +519,9 @@ mod tests {
     use crate::noweb::parse;
 
     const HELLO: &str = include_str!("../fixtures/hello.markup");
-    const QUOTE: &str = include_str!("../fixtures/quote.markup");
 
     fn hello() -> DocModel {
         build(&parse(HELLO).expect("fixture parses")).expect("fixture folds")
-    }
-
-    fn quote_doc() -> DocModel {
-        build(&parse(QUOTE).expect("fixture parses")).expect("fixture folds")
     }
 
     <<blank docs chunks are dropped>>
@@ -563,8 +536,6 @@ mod tests {
 
     <<uses and roots>>
 
-    <<quotes become prose spans>>
-
     <<an undefined chunk is e010>>
 
     <<an unused non-root chunk is w102>>
@@ -572,7 +543,7 @@ mod tests {
     <<root names>>
 }
 @
-markup emits seven docs chunks for `hello`, but only four carry prose; the rest
+markup emits seven docs chunks for \code{hello}, but only four carry prose; the rest
 are inter-chunk blanks and are dropped.
 <<blank docs chunks are dropped>>=
 #[test]
@@ -592,7 +563,7 @@ fn blank_docs_chunks_are_dropped() {
 }
 @
 The code sections come out in order with the right names, and the second
-definition of `lex a token` is marked a continuation.
+definition of \code{lex a token} is marked a continuation.
 <<code sections and continuation>>=
 #[test]
 fn code_sections_and_continuation() {
@@ -619,8 +590,8 @@ fn code_sections_and_continuation() {
     assert_eq!(m.chunks["lex a token"].defs, vec!["sec-2", "sec-5"]);
 }
 @
-Section line numbers match `fixtures/hello.cob` — and `sec-4` lands on 11 only if
-the `@ %def c` line's `IndexNl` advanced the counter.
+Section line numbers match \code{fixtures/hello.cob} — and \code{sec-4} lands on 11 only if
+the \code{@ %def c} line's \code{IndexNl} advanced the counter.
 <<line numbers track indexnl>>=
 #[test]
 fn line_numbers_track_indexnl() {
@@ -637,7 +608,7 @@ fn line_numbers_track_indexnl() {
     assert!(m.sections.iter().all(|s| s.file == "fixtures/hello.cob"));
 }
 @
-The newline that ends a `@defn` line is not part of the body: `sec-8`'s spans are
+The newline that ends a \code{@defn} line is not part of the body: \code{sec-8}'s spans are
 its one text run and a single trailing newline.
 <<the defn newline is not body>>=
 #[test]
@@ -682,7 +653,7 @@ fn indentation_before_use_is_its_own_span() {
     );
 }
 @
-The use edges point the right way, `src/main.rs` is the sole root, and the fixture
+The use edges point the right way, \code{src/main.rs} is the sole root, and the fixture
 is lint-clean.
 <<uses and roots>>=
 #[test]
@@ -693,30 +664,6 @@ fn uses_and_roots() {
     assert!(m.chunks["src/main.rs"].uses.is_empty());
     assert_eq!(m.roots(), vec!["src/main.rs"]);
     assert!(m.lints().is_empty(), "fixture should be lint-clean");
-}
-@
-Quoted runs in prose become `Quote` spans, verbatim.
-<<quotes become prose spans>>=
-#[test]
-fn quotes_become_prose_spans() {
-    let m = quote_doc();
-    let quoted: Vec<&str> = m
-        .sections
-        .iter()
-        .filter_map(|s| match &s.kind {
-            SectionKind::Docs { spans } => Some(spans),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|s| match s {
-            ProseSpan::Quote(q) => Some(q.as_str()),
-            _ => None,
-        })
-        .collect();
-    // The greedy match keeps inner brackets to the last `]]`.
-    assert!(quoted.contains(&"v[[0]]"));
-    // An empty quote makes an empty span.
-    assert!(quoted.iter().any(|q| q.is_empty()));
 }
 @
 A use with no matching definition is E010, located at the use site.

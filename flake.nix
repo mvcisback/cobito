@@ -21,23 +21,40 @@
 
       # One buildRustPackage, applied to two source trees (the committed seed and
       # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
-      # needs no noweb — only the KaTeX assets for weave.
-      mkCob = pkgs: src: pkgs.rustPlatform.buildRustPackage {
+      # needs no noweb — only the KaTeX assets for weave, read from the store at run
+      # time via the wrapper.
+      mkCob = pkgs: src: lock: pkgs.rustPlatform.buildRustPackage {
         pname = "cob";
         version = "0.1.0";
         inherit src;
-        cargoLock.lockFile = ./Cargo.lock;
+        # Each source tree carries its own lock, so a dependency change on `main` does
+        # not force a seed refresh — stage 0 builds the seed with the seed's lock.
+        cargoLock.lockFile = lock;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postFixup = ''
           wrapProgram $out/bin/cob \
             --set COB_KATEX_ASSETS ${katexAssets pkgs}
         '';
       };
+      # The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
+      # dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
+      # time). No wrapper, no store paths — one file that runs anywhere.
+      mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+        pname = "cob";
+        version = "0.1.0";
+        inherit src;
+        cargoLock.lockFile = lock;
+        buildFeatures = [ "embed-assets" ];
+        # include_bytes! reads this at build time; the pin lives in the flake (§6.3).
+        COB_KATEX_ASSETS = katexAssets pkgs;
+        # Tests are covered by the Nix `build` check; keep the static build lean.
+        doCheck = false;
+      };
     in
     {
       packages = eachSystem (system: pkgs: rec {
         # The tree is already tangled: compile the committed .rs directly.
-        cob = mkCob pkgs self;
+        cob = mkCob pkgs self ./Cargo.lock;
         default = cob;
       });
 

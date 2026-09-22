@@ -600,18 +600,55 @@ fn links_context(links: &[transclude::Link]) -> Vec<minijinja::Value> {
         .collect()
 }
 
+/// The pinned KaTeX dist, baked in at build time from `COB_KATEX_ASSETS` for a
+/// standalone binary. Kept sorted for deterministic output (§8).
+#[cfg(feature = "embed-assets")]
+mod embedded_katex {
+    macro_rules! font {
+        ($n:literal) => {
+            (
+                concat!("fonts/", $n),
+                include_bytes!(concat!(env!("COB_KATEX_ASSETS"), "/fonts/", $n)) as &[u8],
+            )
+        };
+    }
+    pub static FILES: &[(&str, &[u8])] = &[
+        (
+            "katex.min.css",
+            include_bytes!(concat!(env!("COB_KATEX_ASSETS"), "/katex.min.css")) as &[u8],
+        ),
+        font!("KaTeX_AMS-Regular.woff2"),
+        font!("KaTeX_Caligraphic-Bold.woff2"),
+        font!("KaTeX_Caligraphic-Regular.woff2"),
+        font!("KaTeX_Fraktur-Bold.woff2"),
+        font!("KaTeX_Fraktur-Regular.woff2"),
+        font!("KaTeX_Main-Bold.woff2"),
+        font!("KaTeX_Main-BoldItalic.woff2"),
+        font!("KaTeX_Main-Italic.woff2"),
+        font!("KaTeX_Main-Regular.woff2"),
+        font!("KaTeX_Math-BoldItalic.woff2"),
+        font!("KaTeX_Math-Italic.woff2"),
+        font!("KaTeX_SansSerif-Bold.woff2"),
+        font!("KaTeX_SansSerif-Italic.woff2"),
+        font!("KaTeX_SansSerif-Regular.woff2"),
+        font!("KaTeX_Script-Regular.woff2"),
+        font!("KaTeX_Size1-Regular.woff2"),
+        font!("KaTeX_Size2-Regular.woff2"),
+        font!("KaTeX_Size3-Regular.woff2"),
+        font!("KaTeX_Size4-Regular.woff2"),
+        font!("KaTeX_Typewriter-Regular.woff2"),
+    ];
+}
+
 /// KaTeX's CSS and fonts are mandatory, not decorative: without the stylesheet
 /// the MathML and HTML layers both render and every equation appears twice.
-/// They are copied in, never CDN-linked, so the site stays a sealed artifact.
+/// They are written in, never CDN-linked, so the site stays a sealed artifact.
+///
+/// The dist comes from one of two places. `COB_KATEX_ASSETS` (a directory, set by
+/// the Nix wrapper/devShell) wins when present — a Nix deployment points it at the
+/// pinned store path. Otherwise a standalone binary uses the copy baked in at
+/// build time (feature `embed-assets`). A build with neither is an error (E023).
 fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
-    let src = std::env::var("COB_KATEX_ASSETS").map_err(|_| {
-        WeaveError::Assets(
-            "COB_KATEX_ASSETS is unset; it points at the pinned KaTeX dist and is \
-             set by the devShell and the wrapped package — run inside `nix develop`"
-                .to_string(),
-        )
-    })?;
-    let src = PathBuf::from(src);
     let dst = out.join("katex");
     // Files copied from the read-only Nix store keep their read-only mode, so a
     // second weave into the same directory can't overwrite them. Clear first.
@@ -622,6 +659,14 @@ fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
     }
     std::fs::create_dir_all(dst.join("fonts")).map_err(WeaveError::Io)?;
 
+    match std::env::var("COB_KATEX_ASSETS") {
+        Ok(src) => copy_katex_from(&PathBuf::from(src), &dst),
+        Err(_) => write_embedded_katex(&dst),
+    }
+}
+
+/// Copy the dist out of a directory (the Nix store path in `COB_KATEX_ASSETS`).
+fn copy_katex_from(src: &Path, dst: &Path) -> Result<(), WeaveError> {
     let css = src.join("katex.min.css");
     std::fs::copy(&css, dst.join("katex.min.css"))
         .map_err(|e| WeaveError::Assets(format!("copying {}: {e}", css.display())))?;
@@ -643,6 +688,29 @@ fn copy_katex_assets(out: &Path) -> Result<(), WeaveError> {
         }
     }
     Ok(())
+}
+
+/// Write the dist baked into the binary. `FILES` is sorted, so output stays
+/// deterministic (§8). Only compiled with the `embed-assets` feature.
+#[cfg(feature = "embed-assets")]
+fn write_embedded_katex(dst: &Path) -> Result<(), WeaveError> {
+    for (name, bytes) in embedded_katex::FILES {
+        std::fs::write(dst.join(name), bytes).map_err(WeaveError::Io)?;
+    }
+    Ok(())
+}
+
+/// Without `embed-assets` there is nothing baked in, so an unset
+/// `COB_KATEX_ASSETS` is E023 — the same as before embedding existed.
+#[cfg(not(feature = "embed-assets"))]
+fn write_embedded_katex(_dst: &Path) -> Result<(), WeaveError> {
+    Err(WeaveError::Assets(
+        "COB_KATEX_ASSETS is unset and this build embeds no KaTeX dist; it points \
+         at the pinned dist and is set by the devShell and the wrapped package — \
+         run inside `nix develop`, or build with `--features embed-assets` for a \
+         standalone binary"
+            .to_string(),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]

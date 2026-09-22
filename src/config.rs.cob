@@ -1,17 +1,17 @@
 # The project manifest (§5.2, §6.1)
 
-This module is `cob.toml`, the project manifest. The prose is the specification.
+This module is \code{cob.toml}, the project manifest. The prose is the specification.
 The chunks after it are the implementation. Every table is optional, so an absent
 or empty file is valid — the CLI then falls back to its argument-derived defaults.
 
 ## What the manifest declares {#sec:TLsr}
 
-A `[[document]]` table names the document: its id, title, authors, and the `.cob`
-files in order. A `[tangle]` table sets the default output directory, and a
-`[[tangle.root]]` table per root sets that root's line-pragma format. A `[weave]`
+A \code{[[document]]} table names the document: its id, title, authors, and the \code{.cob}
+files in order. A \code{[tangle]} table sets the default output directory, and a
+\code{[[tangle.root]]} table per root sets that root's line-pragma format. A \code{[weave]}
 table holds the highlight language keys (§5.5).
 
-```toml
+```verbatim \lang{toml}
 [[document]]
 id = "cob"
 title = "cob: a literate programming system"
@@ -27,13 +27,13 @@ line-pragma = '# %L "%F"%N'
 
 ## Root chunks and the line pragma {#sec:E4N0}
 
-A chunk whose name is path-shaped — it contains a `/`, or it matches a file
-extension — is a root. `notangle -L` takes a printf-ish format for its line
+A chunk whose name is path-shaped — it contains a \code{/}, or it matches a file
+extension — is a root. \code{notangle -L} takes a printf-ish format for its line
 pragma, and the correct format is language-specific: its own default is C's
-`#line`. So a single boolean would be wrong — it would emit `#line` into Python
+\code{#line}. So a single boolean would be wrong — it would emit \code{#line} into Python
 and Rust. cob takes a per-root format string instead, and it defaults to *off*.
 
-There is a verified caveat. The `-L` flag disables indentation propagation, so an
+There is a verified caveat. The \code{-L} flag disables indentation propagation, so an
 inner chunk's lines land at column 0, and it splits the code around a chunk use
 onto separate lines with column-preserving padding. So pragma'd output is a
 different shape, not just annotated text. This is acceptable for generated code,
@@ -42,19 +42,19 @@ and it is why the default is off.
 ## One prose dialect {#sec:ZZAp}
 
 A docs chunk is authored in one dialect (§6.4): the command Markdown. Paragraphs,
-emphasis, lists, links, and headings become HTML; a `\code{…}`/`\emph{…}`/`\strong{…}`
-command marks an inline span; and a fenced block is a grammar-owned kind — `math`,
-`figure`, `table`, `verbatim`, or `html-escape`. The escape hatch is per fence, not
-per document: an `html-escape` fence is the one door for raw HTML — a sidenote aside,
-for example, is an `html-escape` fence. So the manifest needs no dialect key.
+emphasis, lists, links, and headings become HTML; a \code{\code{…}}/\code{\emph{…}}/\code{\strong{…}}
+command marks an inline span; and a fenced block is a grammar-owned kind — \code{math},
+\code{figure}, \code{table}, \code{verbatim}, or \code{html-escape}. The escape hatch is per fence, not
+per document: an \code{html-escape} fence is the one door for raw HTML — a sidenote aside,
+for example, is an \code{html-escape} fence. So the manifest needs no dialect key.
 
-The dialect is a post-`markup` transform (§6.2) on the already-reassembled prose.
+The dialect is a post-\code{markup} transform (§6.2) on the already-reassembled prose.
 Everything downstream — the numbering, the refs, the math render, the sidenote hoist,
-`site.json` — reads the same rendered HTML.
+\code{site.json} — reads the same rendered HTML.
 
 ## How the code implements this {#sec:Er9s}
 
-This module is a set of serde structs, one per manifest table, plus one `impl`
+This module is a set of serde structs, one per manifest table, plus one \code{impl}
 block that loads the file and answers the questions the rest of cob asks of it:
 which document, and which tangle roots carry a line-pragma format. The file is
 laid out the way a reader meets it: the module banner, the imports, the error
@@ -84,7 +84,7 @@ then the tests.
 <<the tests>>
 @
 The banner records how much of the manifest is live today. M4 reads a small slice;
-the `[weave.annotate]` keys of §5.3 and §10 parse leniently now and gain meaning
+the \code{[weave.annotate]} keys of §5.3 and §10 parse leniently now and gain meaning
 with their milestones.
 <<the module banner>>=
 //! `cob.toml`, the project manifest (§5.2). M4 reads a deliberately
@@ -93,8 +93,8 @@ with their milestones.
 //! keys of §5.3/§10 are parsed leniently (unknown keys ignored) but not yet
 //! acted on — they arrive with the milestones that need them.
 @
-Three std imports and serde. Every deserialized map is a `BTreeMap`, not a
-`HashMap`, so iteration order is deterministic and weaves stay byte-stable — a
+Three std imports and serde. Every deserialized map is a \code{BTreeMap}, not a
+\code{HashMap}, so iteration order is deterministic and weaves stay byte-stable — a
 project-wide rule, not a local taste.
 <<imports>>=
 use std::collections::BTreeMap;
@@ -105,7 +105,7 @@ use serde::Deserialize;
 @
 Reading the manifest fails two ways: the file parsed wrong, or the read itself
 failed for a reason other than absence. Both surface as E029. Absence is *not* an
-error here — the loader turns it into `Ok(None)`, because a missing manifest is
+error here — the loader turns it into \code{Ok(None)}, because a missing manifest is
 the normal case.
 <<the config error>>=
 #[derive(Debug)]
@@ -131,8 +131,8 @@ impl fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 @
-`Config` is the whole file. Because every field defaults, `#[derive(Default)]`
-gives a valid empty manifest, and each `#[serde(default)]` lets its table be
+\code{Config} is the whole file. Because every field defaults, \code{#[derive(Default)]}
+gives a valid empty manifest, and each \code{#[serde(default)]} lets its table be
 omitted entirely.
 <<the manifest root>>=
 /// The whole manifest. Every section is optional so a bare or absent `cob.toml`
@@ -147,9 +147,9 @@ pub struct Config {
     pub weave: Weave,
 }
 @
-`[weave]` carries the syntax-highlighting configuration (§5.5). `lang` is the
-document-wide default (tier 2); `chunk-lang` is the per-chunk override map (tier
-1) that beats it. The map is out-of-band config, so it survives `markup` — an
+\code{[weave]} carries the syntax-highlighting configuration (§5.5). \code{lang} is the
+document-wide default (tier 2); \code{chunk-lang} is the per-chunk override map (tier
+1) that beats it. The map is out-of-band config, so it survives \code{markup} — an
 inline language tag on the chunk definition line would be tokenized as source and
 lost.
 <<the weave table>>=
@@ -171,7 +171,7 @@ pub struct Weave {
     pub chunk_lang: BTreeMap<String, String>,
 }
 @
-A `[[document]]` is one document's identity and its file set. A project may
+A \code{[[document]]} is one document's identity and its file set. A project may
 declare several; the single-document CLI uses the first.
 <<a declared document>>=
 /// One document's identity and file set (§5.2). A project may declare several;
@@ -188,7 +188,7 @@ pub struct Document {
     pub files: Vec<String>,
 }
 @
-`[tangle]` sets the output directory and the per-root overrides.
+\code{[tangle]} sets the output directory and the per-root overrides.
 <<the tangle table>>=
 #[derive(Deserialize, Default)]
 pub struct Tangle {
@@ -198,7 +198,7 @@ pub struct Tangle {
     pub roots: Vec<Root>,
 }
 @
-Each `[[tangle.root]]` names a chunk that is a tangle root and, optionally, the
+Each \code{[[tangle.root]]} names a chunk that is a tangle root and, optionally, the
 line-pragma format to emit for it.
 <<a tangle root>>=
 /// A per-root override. Only `line-pragma` matters in M4; `chunk` names the root
@@ -210,10 +210,10 @@ pub struct Root {
     pub line_pragma: LinePragma,
 }
 @
-The correct `-L` format is language-specific, so a bare boolean can only turn
+The correct \code{-L} format is language-specific, so a bare boolean can only turn
 pragmas *off* — turning them on needs the format string itself. The untagged enum
-therefore accepts either `false` or a format string. The bool variant carries no
-information beyond "off", and `format()` collapses it to `None`.
+therefore accepts either \code{false} or a format string. The bool variant carries no
+information beyond "off", and \code{format()} collapses it to \code{None}.
 <<the line-pragma format>>=
 /// `notangle -L` format for a root, or `false` for none. The correct format is
 /// language-specific, so a plain boolean can only *disable* pragmas — enabling
@@ -243,7 +243,7 @@ impl LinePragma {
     }
 }
 @
-`load` reads `dir/cob.toml`. Absence returns `Ok(None)` so the caller keeps its
+\code{load} reads \code{dir/cob.toml}. Absence returns \code{Ok(None)} so the caller keeps its
 defaults; any other read error, or a parse error, becomes E029. The two query
 methods answer exactly what the rest of cob needs: the first document, and the
 root-name → format map for the roots that configure one.
@@ -288,7 +288,7 @@ impl Config {
 @
 The tests pin the contract: absence is not an error, document metadata
 round-trips, a line-pragma is off unless a format string is given, and both
-`[weave]` keys are read.
+\code{[weave]} keys are read.
 <<the tests>>=
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,61 @@
 # cob.lock — generated (§7.1). label → frozen opaque id.
 # Edit only to retire a label; ids never change once minted.
+["cobito.cob"."sec:4y6v"]
+id = "4y6v"
+kind = "section"
+
+["cobito.cob"."sec:68J6"]
+id = "68J6"
+kind = "section"
+
+["cobito.cob"."sec:7p6J"]
+id = "7p6J"
+kind = "section"
+
+["cobito.cob"."sec:8GfD"]
+id = "8GfD"
+kind = "section"
+
+["cobito.cob"."sec:Fv9U"]
+id = "Fv9U"
+kind = "section"
+
+["cobito.cob"."sec:JPcq"]
+id = "JPcq"
+kind = "section"
+
+["cobito.cob"."sec:LEQV"]
+id = "LEQV"
+kind = "section"
+
+["cobito.cob"."sec:QznE"]
+id = "QznE"
+kind = "section"
+
+["cobito.cob"."sec:UnND"]
+id = "UnND"
+kind = "section"
+
+["cobito.cob"."sec:av7Q"]
+id = "av7Q"
+kind = "section"
+
+["cobito.cob"."sec:lxbi"]
+id = "lxbi"
+kind = "section"
+
+["cobito.cob"."sec:oXEK"]
+id = "oXEK"
+kind = "section"
+
+["cobito.cob"."sec:teiT"]
+id = "teiT"
+kind = "section"
+
+["cobito.cob"."sec:zBDS"]
+id = "zBDS"
+kind = "section"
+
 ["examples/ring.cob"."eq:wrap"]
 id = "5lYN"
 kind = "equation"
@@ -62,6 +118,10 @@ kind = "section"
 
 ["flake.nix.cob"."sec:3OSt"]
 id = "3OSt"
+kind = "section"
+
+["flake.nix.cob"."sec:5DHH"]
+id = "5DHH"
 kind = "section"
 
 ["flake.nix.cob"."sec:9hJs"]
@@ -130,62 +190,6 @@ kind = "section"
 
 ["flake.nix.cob"."sec:zQ5K"]
 id = "zQ5K"
-kind = "section"
-
-["cobito.cob"."sec:4y6v"]
-id = "4y6v"
-kind = "section"
-
-["cobito.cob"."sec:68J6"]
-id = "68J6"
-kind = "section"
-
-["cobito.cob"."sec:7p6J"]
-id = "7p6J"
-kind = "section"
-
-["cobito.cob"."sec:8GfD"]
-id = "8GfD"
-kind = "section"
-
-["cobito.cob"."sec:Fv9U"]
-id = "Fv9U"
-kind = "section"
-
-["cobito.cob"."sec:JPcq"]
-id = "JPcq"
-kind = "section"
-
-["cobito.cob"."sec:LEQV"]
-id = "LEQV"
-kind = "section"
-
-["cobito.cob"."sec:QznE"]
-id = "QznE"
-kind = "section"
-
-["cobito.cob"."sec:UnND"]
-id = "UnND"
-kind = "section"
-
-["cobito.cob"."sec:av7Q"]
-id = "av7Q"
-kind = "section"
-
-["cobito.cob"."sec:lxbi"]
-id = "lxbi"
-kind = "section"
-
-["cobito.cob"."sec:oXEK"]
-id = "oXEK"
-kind = "section"
-
-["cobito.cob"."sec:teiT"]
-id = "teiT"
-kind = "section"
-
-["cobito.cob"."sec:zBDS"]
-id = "zBDS"
 kind = "section"
 
 ["src/config.rs.cob"."sec:E4N0"]
@@ -288,12 +292,32 @@ kind = "section"
 id = "k8T0"
 kind = "section"
 
+["src/markdown.rs.cob"."sec:k8T1"]
+id = "Hj00"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:k8T2"]
+id = "X8HR"
+kind = "section"
+
 ["src/markdown.rs.cob"."sec:lisV"]
 id = "lisV"
 kind = "section"
 
 ["src/markdown.rs.cob"."sec:xZ8V"]
 id = "xZ8V"
+kind = "section"
+
+["src/markup.rs.cob"."sec:read-code"]
+id = "ZzPB"
+kind = "section"
+
+["src/markup.rs.cob"."sec:read-grammar"]
+id = "oPoT"
+kind = "section"
+
+["src/markup.rs.cob"."sec:read-rules"]
+id = "qSFH"
 kind = "section"
 
 ["src/math.rs.cob"."sec:1uIU"]
@@ -408,6 +432,10 @@ kind = "section"
 id = "pzpT"
 kind = "section"
 
+["src/tangle.rs.cob"."sec:9Fk2"]
+id = "BIJ7"
+kind = "section"
+
 ["src/tangle.rs.cob"."sec:TXnD"]
 id = "TXnD"
 kind = "section"
@@ -418,6 +446,30 @@ kind = "section"
 
 ["src/tangle.rs.cob"."sec:mtmH"]
 id = "mtmH"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:7qWt"]
+id = "LOLg"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:9dZ2"]
+id = "Bebu"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:Fx3r"]
+id = "DyiC"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:K4mP"]
+id = "6ELf"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:Lm2S"]
+id = "wVXB"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:node-pages"]
+id = "VrhH"
 kind = "section"
 
 ["src/weave.rs.cob"."sec:A00S"]

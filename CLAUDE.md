@@ -27,7 +27,15 @@ cargo run -- labels fixtures/book.cob     # list the file's label → id map fro
 cargo run -- tangle fixtures/hello.cob    # extract roots natively (--out, -R, --check)
 cargo run -- --explain E014              # long form of a diagnostic (§12)
 nix flake check                          # build + tests + drift + determinism + tangle
+nix build .#static                       # portable single static binary (musl, KaTeX embedded)
 ```
+
+Two build shapes from one codebase (§6.3): the default `cob` package reads the
+KaTeX dist from the store via `COB_KATEX_ASSETS` (Nix deployment, small binary);
+`nix build .#static` is a fully static musl binary with the pinned dist baked in
+(Cargo feature `embed-assets`, `include_bytes!` from `COB_KATEX_ASSETS` at build
+time) — one file that weaves math anywhere with no env var. `static` is a package,
+not a `nix flake check` (kept out to keep checks fast); build it on release.
 
 Flakes only see tracked files: a new non-ignored file is auto-tracked by jj on
 the next snapshot, but a generated/gitignored file is invisible to `nix` — that is
@@ -97,7 +105,8 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   **cob reads and tangles `.cob` natively — no noweb at build or run time** (the M15
   removal; noweb is fully gone from the flake and the runtime closure). The build
   seeds from the **`tangled` release branch**, which *does* commit the generated
-  tree: the `seed` flake input pins it by tag (`v0.1.0`, `git+file:.?ref=…`), and
+  tree: the `seed` flake input pins it by tag on the forge (`v0.1.0`,
+  `git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=…`), and
   `builtins.pathExists src/main.rs` makes the one generated `flake.nix` adapt — on
   `tangled` it builds the tracked `.rs` directly, on `main` it seeds from the pinned
   snapshot. The flake still builds in **two stages**: `packages.cobBootstrap` (stage
@@ -106,8 +115,10 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `checks.selfhost` proves `cob tangle` reproduces `cobSource` byte-for-byte (cob is
   a fixed point of its own tangler). On a fresh `main` checkout the devShell
   `shellHook` seeds the `.rs`/`.css` from the pinned snapshot; then `cob tangle`
-  refreshes them. **Release procedure:** retangle `main` into `tangled`, tag a new
-  semantic version, bump the `seed` ref + `nix flake update seed`, commit. A tangler
+  refreshes them. **Release procedure:** rebuild the orphan `tangled` snapshot from
+  `main` (generated tree tracked, `flake.nix` = the dist flake), **push `tangled` +
+  the new semantic-version tag to the forge**, bump the `seed` ref in `flake.nix.cob`
+  + `nix flake update seed` (fetches over ssh — needs your key), commit. A tangler
   change needs a re-release before the seed catches up, or `selfhost` flags drift.
   The correctness oracle is now frozen goldens — `fixtures/*.markup` (reader, via
   `cob dump-ir --from-markup`) and `fixtures/tangled/` (tangler) — no live noweb.

@@ -1,20 +1,20 @@
 # Source-side section anchors (§7.1)
 
 This module gives every section a stable identity. §7.1 makes a labelled float
-and a `sec:`-labelled heading earn a frozen opaque id. This module removes the
-"labelled" precondition for a heading: `cob lock` finds every unlabelled `h2`/`h3`
-heading and writes a `sec:` anchor into the `.cob` source, so the heading joins the
+and a \code{sec:}-labelled heading earn a frozen opaque id. This module removes the
+"labelled" precondition for a heading: \code{cob lock} finds every unlabelled \code{h2}/\code{h3}
+heading and writes a \code{sec:} anchor into the \code{.cob} source, so the heading joins the
 same id scheme without the author's hand. The id is source-anchored — it lives on
 the heading line, not in a slug — so it survives a reword of the heading text.
 
 The module has one job on each side of the round trip. It finds the source line of
-every heading, so `cob lock` knows which line to anchor. It writes the Markdown
+every heading, so \code{cob lock} knows which line to anchor. It writes the Markdown
 anchor into that line. And it renames the anchor when the author gives the id a
-human name with `cob rename-label`.
+human name with \code{cob rename-label}.
 
-The weaver needs no change. Once a heading carries a `sec:` anchor, the existing
+The weaver needs no change. Once a heading carries a \code{sec:} anchor, the existing
 resolve and rewrite passes (§7.1) mint its id, draw its permalink, and answer a
-`\ref` — an auto-anchored heading is a normal `sec:` heading, so it flows through
+\code{\ref} — an auto-anchored heading is a normal \code{sec:} heading, so it flows through
 the same path an author-written one does.
 <<src/section.rs>>=
 <<the module banner>>
@@ -50,8 +50,8 @@ use std::path::Path;
 
 use crate::model::{DocModel, ProseSpan, SectionKind};
 @
-A heading and the source line that carries it. `anchored` is true when the heading
-already has an id — an author `sec:` label or an anchor a past `cob lock` wrote — so
+A heading and the source line that carries it. \code{anchored} is true when the heading
+already has an id — an author \code{sec:} label or an anchor a past \code{cob lock} wrote — so
 the caller skips it and never anchors a heading twice.
 <<a heading site>>=
 /// A heading found in a docs chunk, with the `.cob` line that carries it. `anchored`
@@ -68,7 +68,7 @@ pub struct HeadingSite {
 The finder walks the model's docs sections in document order. A section starts at a
 known source line, and each newline advances the line by one, so the finder tracks
 the absolute source line of every prose line. It rebuilds each line from the spans,
-then tests it for a heading. A code fence in Markdown hides its lines, so a `#`
+then tests it for a heading. A code fence in Markdown hides its lines, so a \code{#}
 inside a fenced block is not a false heading; the fence state carries across the
 sections of one file, because a fence can span a code chunk.
 <<find every heading in the source>>=
@@ -93,7 +93,6 @@ pub fn headings(doc: &DocModel) -> Vec<HeadingSite> {
         for span in spans {
             match span {
                 ProseSpan::Text(s) => buf.push_str(s),
-                ProseSpan::Quote(s) => buf.push_str(s),
                 ProseSpan::Nl => {
                     scan_line(&sec.file, line, &buf, &mut fenced, &mut out);
                     line += 1;
@@ -126,10 +125,10 @@ fn scan_line(file: &str, line: u32, text: &str, fenced: &mut bool, out: &mut Vec
     }
 }
 @
-One line to a heading. A Markdown heading is one to three `#` characters, then a
+One line to a heading. A Markdown heading is one to three \code{#} characters, then a
 space; up to three leading spaces are allowed. An id already present makes the
-heading anchored — a trailing `{#…}` attribute. The weaver only makes a permalink
-for `h1`..`h3`, so deeper headings are ignored.
+heading anchored — a trailing \code{{#…}} attribute. The weaver only makes a permalink
+for \code{h1}..\code{h3}, so deeper headings are ignored.
 <<detect a heading in one line>>=
 /// A Markdown ATX heading (`#`..`###` then a space) → its level and whether it
 /// already carries a `{#…}` id.
@@ -151,8 +150,8 @@ fn md_heading(text: &str) -> Option<(u8, bool)> {
 @
 The writer takes the lines to anchor and the id to write on each, and edits the file
 once. It reads the whole source, keeps every newline, and rewrites only the given
-lines. A Markdown anchor is a trailing `{#sec:<id>}`. The label the anchor carries
-is `sec:<id>` — the id doubles as its own name until `cob rename-label` gives it a
+lines. A Markdown anchor is a trailing \code{{#sec:<id>}}. The label the anchor carries
+is \code{sec:<id>} — the id doubles as its own name until \code{cob rename-label} gives it a
 human one.
 <<write anchors into the source>>=
 /// Write a `sec:<id>` anchor into the heading on each `(line, id)` of `path`. Edits
@@ -180,8 +179,8 @@ fn split_nl(line: &str) -> (&str, &str) {
     }
 }
 @
-The renamer swaps one anchor for another. `cob rename-label` gives an id a human
-name, so the source anchor changes from `sec:<old>` to `sec:<new>` while the frozen
+The renamer swaps one anchor for another. \code{cob rename-label} gives an id a human
+name, so the source anchor changes from \code{sec:<old>} to \code{sec:<new>} while the frozen
 id stays the same. The names are unique strings, so a plain replace hits only the
 one anchor. It returns whether it changed the source, so the caller can report a
 miss instead of a silent no-op.
@@ -200,7 +199,7 @@ pub fn rename_anchor(path: &Path, old: &str, new: &str) -> io::Result<bool> {
 }
 @
 The tests pin the round trip. The finder reports the right level, source line, and
-anchored state, skips a `#` inside a fence, and carries a fence across a code chunk.
+anchored state, skips a \code{#} inside a fence, and carries a fence across a code chunk.
 The writer adds an anchor without disturbing the rest of the line. The renamer swaps
 a named anchor and reports a miss.
 <<the tests>>=

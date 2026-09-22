@@ -5,11 +5,13 @@ prose is the specification. The chunks after it are the implementation.
 
 ## What the parser reads {#sec:0AwF}
 
-cob does not drive `noweave`. It reads the IR that noweb's `markup` stage emits,
-and it shells out to `notangle` for tangle. `markup` writes one tagged line per
-token. A short example:
+cob reads and tangles a \code{.cob} file with its own code now (§4.1, §11). It runs
+no noweb tool. This parser stays for one job: it decodes the frozen
+\code{fixtures/*.markup} goldens, so a test can compare the native reader with real
+noweb output (§15). noweb's \code{markup} stage made those goldens. \code{markup} writes
+one tagged line per token. A short example:
 
-```
+```verbatim
 @file lexer.cob
 @begin docs 3
 @text <p>The lexer emits one token per call.</p>
@@ -24,47 +26,50 @@ token. A short example:
 @end code 4
 ```
 
-cob consumes these tags: `@file`, `@line`, `@begin`/`@end docs|code`, `@text`,
-`@nl`, `@defn`, `@use`, `@quote`/`@endquote` (from an inline prose quote),
-`@literal`, `@index defn`, and `@fatal`.
+The parser reads these tags: \code{@file}, \code{@line}, \code{@begin}/\code{@end docs|code},
+\code{@text}, \code{@nl}, \code{@defn}, \code{@use}, \code{@quote}/\code{@endquote}, \code{@literal},
+\code{@index defn}, and \code{@fatal}. The parser keeps \code{@quote}/\code{@endquote} as valid
+noweb IR, but cob's own reader never makes them: inline code is \code{\code{…}} now
+(§6.4), not a \code{[[…]]} quote.
 
-Chunk structure is reliable with no extra filter. `markup` must emit `@defn` and
-`@use` for each definition and reference, because `notangle` is itself
-`markup | nt`, and `nt` reads exactly those tags. cob v1 skips `finduses` and
-`noidx`, which serve the identifier index, not chunk structure. So cob ships no
-identifier index in v1; it can come back later.
+noweb's \code{markup} makes \code{@defn} and \code{@use} for each definition and reference,
+because \code{notangle} is \code{markup | nt} and \code{nt} reads those tags. So chunk
+structure is reliable with no extra filter. The goldens skip \code{finduses} and
+\code{noidx}, which serve the identifier index, not chunk structure. cob ships no
+identifier index yet; it can come back later.
 
 ## Verified against noweb 2.13 {#sec:Kt8c}
 
-R1 is retired. cob probed the real toolchain with `fixtures/hello.cob` and the
+R1 is retired. cob probed the real toolchain with \code{fixtures/hello.cob} and the
 parser encodes these facts (§4.2):
 
-- The pipeline tools are not on `bin`. `markup`, `nt`, `tohtml`, and the rest
-  live in `lib/noweb`. Only the `notangle`/`noweave`/`noroots` drivers are on
-  `bin`. The Nix wrapper must add `lib/noweb` to the PATH.
-- `markup` emits no `@line` markers by default. cob counts each `@nl` since the
-  last `@file` to get a line number, the same way `nt` does for `-L`. The parser
+- noweb's pipeline tools live in \code{lib/noweb}, not \code{bin}. Only the
+  \code{notangle}/\code{noweave}/\code{noroots} drivers are on \code{bin}. You need this fact
+  only to remake a golden: run \code{markup} from \code{\${noweb}/lib/noweb} by hand.
+  The build and the run time use no noweb.
+- \code{markup} emits no \code{@line} markers by default. cob counts each \code{@nl} since the
+  last \code{@file} to get a line number, the same way \code{nt} does for \code{-L}. The parser
   tracks this count for diagnostics (§12).
-- `@ %def c` becomes `@index defn c` and makes no docs chunk.
-- A continued chunk arrives as separate `@begin code` blocks that share one
-  `@defn` name, in source order.
-- An inline prose quote matches greedily to its last closing bracket pair, so a
-  nested quote keeps its inner brackets.
+- \code{@ %def c} becomes \code{@index defn c} and makes no docs chunk.
+- A continued chunk arrives as separate \code{@begin code} blocks that share one
+  \code{@defn} name, in source order.
+- noweb reads a \code{[[…]]} prose quote greedily, to the last bracket pair. cob's
+  reader does not: it makes a \code{[[…]]} run literal text (§6.4). No fixture uses one.
 - A blank line between chunks becomes an empty docs chunk, and the stream also
   opens with a leading empty docs chunk. The section builder merges or drops
   these.
 - Inside a code chunk, the indentation before a chunk use arrives as its own
-  `@text` token. This is how noweb propagates indentation.
-- On error, `markup` emits an `@fatal` event in the stream. The parser preserves
-  it as `Event::Fatal`, so a frozen golden records the failure too.
+  \code{@text} token. This is how noweb propagates indentation.
+- On error, \code{markup} emits an \code{@fatal} event in the stream. The parser preserves
+  it as \code{Event::Fatal}, so a frozen golden records the failure too.
 - An unescaped chunk-use bracket in a docs chunk is a fatal error. The at-escape
-  (an `@` before each bracket) arrives as literal text.
+  (an \code{@} before each bracket) arrives as literal text.
 - A backslash-dollar in prose passes through untouched. That escape is cob's own
   convention (§6.2), not a noweb feature.
 
 ## How the code implements this {#sec:nsvK}
 
-The module is the event type and a line parser that folds `markup` IR text into
+The module is the event type and a line parser that folds \code{markup} IR text into
 events.
 <<src/noweb.rs>>=
 <<the module banner>>
@@ -93,13 +98,13 @@ respect.
 //! findings this encodes, notably: empty text lines arrive as `@text ` with a
 //! trailing space, and an `@fatal` event marks a markup error.
 @
-Only formatting — this module parses `markup` IR text into events. It runs no
-process; the native reader (`markup::read`, §4.1) reads `.cob` files at run time.
+Only formatting — this module parses \code{markup} IR text into events. It runs no
+process; the native reader (\code{markup::read}, §4.1) reads \code{.cob} files at run time.
 <<imports>>=
 use std::fmt;
 @
-Every line of markup IR maps to one `Event`. An unknown tag is not an error: it
-becomes `Other`, so a future noweb version surfaces as a failing test rather than a
+Every line of markup IR maps to one \code{Event}. An unknown tag is not an error: it
+becomes \code{Other}, so a future noweb version surfaces as a failing test rather than a
 panic.
 <<the event type>>=
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,9 +173,9 @@ pub fn parse(input: &str) -> Result<Vec<Event>, ParseError> {
         .collect()
 }
 @
-One line to one event. Strip the leading `@`, split off the tag, then dispatch.
-`begin` and `end` carry a `docs|code N` argument; `index` has its own sub-grammar;
-everything unrecognized falls through to `Other` rather than failing, so version
+One line to one event. Strip the leading \code{@}, split off the tag, then dispatch.
+\code{begin} and \code{end} carry a \code{docs|code N} argument; \code{index} has its own sub-grammar;
+everything unrecognized falls through to \code{Other} rather than failing, so version
 drift is visible but never fatal.
 <<parse one line>>=
 fn parse_line(line: &str) -> Result<Event, String> {
@@ -225,7 +230,7 @@ fn parse_line(line: &str) -> Result<Event, String> {
     Ok(event)
 }
 @
-The tests are the executable half of §4.2: they pin real `markup` output and the
+The tests are the executable half of §4.2: they pin real \code{markup} output and the
 parser's handling of each event shape.
 <<the tests>>=
 #[cfg(test)]
@@ -233,11 +238,8 @@ mod tests {
     use super::*;
 
     const HELLO: &str = include_str!("../fixtures/hello.markup");
-    const QUOTE: &str = include_str!("../fixtures/quote.markup");
 
     <<parsing the pinned fixture>>
-
-    <<quotes are verbatim>>
 
     <<text forms>>
 
@@ -246,8 +248,8 @@ mod tests {
     <<unknown tags survive>>
 }
 @
-The pinned `hello.markup` fixture parses, its code-chunk numbers and defn/use names
-come out as expected, and nothing degrades to `Other`.
+The pinned \code{hello.markup} fixture parses, its code-chunk numbers and defn/use names
+come out as expected, and nothing degrades to \code{Other}.
 <<parsing the pinned fixture>>=
 #[test]
 fn parses_pinned_markup_output() {
@@ -288,28 +290,8 @@ fn parses_pinned_markup_output() {
     assert!(!events.iter().any(|e| matches!(e, Event::Other { .. })));
 }
 @
-Quoted code inside prose is preserved exactly, including noweb's greedy match to the
-final closing bracket.
-<<quotes are verbatim>>=
-#[test]
-fn quote_content_is_preserved_verbatim() {
-    // [[v[[0]]]] matches greedily to the last ]] — content is v[[0]].
-    let events = parse(QUOTE).unwrap();
-    let mut in_quote = false;
-    let mut quoted = Vec::new();
-    for e in &events {
-        match e {
-            Event::Quote => in_quote = true,
-            Event::EndQuote => in_quote = false,
-            Event::Text(t) if in_quote => quoted.push(t.as_str()),
-            _ => {}
-        }
-    }
-    assert!(quoted.contains(&"v[[0]]"));
-}
-@
-Empty text is `@text ` with a trailing space, but the parser is liberal and also
-accepts a bare `@text`. Spaces inside content are significant.
+Empty text is \code{@text } with a trailing space, but the parser is liberal and also
+accepts a bare \code{@text}. Spaces inside content are significant.
 <<text forms>>=
 #[test]
 fn text_forms() {
@@ -341,8 +323,8 @@ fn structural_lines() {
     );
 }
 @
-An unknown tag becomes `Other` rather than an error, and a line without a leading
-`@` is rejected.
+An unknown tag becomes \code{Other} rather than an error, and a line without a leading
+\code{@} is rejected.
 <<unknown tags survive>>=
 #[test]
 fn unknown_tags_are_preserved_not_fatal() {

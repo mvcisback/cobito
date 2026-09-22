@@ -19,8 +19,8 @@ cob has six goals.
 
 1. Web-first. The primary woven artifact is a multi-page website, not a PDF. Print
    is not a v1 concern.
-2. noweb-compatible. Source files are genuine \code{.cob} files. \code{notangle} consumes
-   them unchanged. cob is language-agnostic because noweb is.
+2. noweb-compatible. A \code{.cob} file uses noweb's chunk syntax, so noweb's
+   \code{notangle} can read it unchanged. cob is language-agnostic because the format is.
 3. Static generator only. cob is the weaver and the tangler. It ships no server.
    Margin commenting is a separate tool with its own spec, \code{ANNOTATIONS.md}; cob's
    sole obligation to it is annotation-ready HTML (\code{rewrite.rs}).
@@ -66,16 +66,18 @@ resolution are all document-wide.
 
 ## Architecture {#sec:8GfD}
 
-cob shells out to noweb's front end, not its back end. \code{markup} converts a \code{.cob}
-file into noweb's line-oriented pipeline format. cob consumes that as its IR and
-owns everything downstream. cob never uses \code{noweave}: it owns prose-to-HTML
-regardless, and the pipeline format hands it the chunk structure as data rather
-than as generated markup it would have to scrape back.
+cob reads and tangles a \code{.cob} file with its own Rust code. It runs no external
+tool. The native reader (\code{src/markup.rs}) folds a \code{.cob} file into noweb's
+line-oriented IR — the same events noweb's \code{markup} makes — and cob owns
+everything downstream. cob never used \code{noweave}: it makes prose-to-HTML itself,
+and the IR hands it the chunk structure as data, not as generated markup it must
+read back. noweb stays only as a test oracle: a frozen set of \code{markup} outputs
+proves the native reader right (§4.1, §15).
 
 ```verbatim
   PHASE 1 — static generator (no Python, no server)
 
-  *.cob ──> markup ──> pipeline IR ──┐
+  *.cob ──> cob reader ──> IR ──────┐
                                     │
    ┌────────────────────────────────┴───────────────────────────┐
    │ Rust                                                        │
@@ -90,7 +92,7 @@ than as generated markup it would have to scrape back.
                                     │
                               _site/{*.html,*.json,static/}
 
-  *.cob ──> notangle -R'src/main.rs' ──> src/main.rs
+  *.cob ──> cob tangle -R'src/main.rs' ──> src/main.rs
 
 
   ANNOTATION LAYER — separate tool, separate spec (ANNOTATIONS.md)
@@ -109,7 +111,8 @@ Each module carries the specification for its own job. This is the reading order
 \caption{Each concern and the module that owns it.}
 | Concern | Module |
 |---|---|
-| The noweb boundary: the IR, verified noweb behavior, \code{markup} | \code{src/noweb.rs.cob} |
+| The native reader: a \code{.cob} file to the IR event stream | \code{src/markup.rs.cob} |
+| The IR event type and its parser; verified noweb behavior; the oracle | \code{src/noweb.rs.cob} |
 | The document model: chunk continuation, roots, line counting | \code{src/model.rs.cob} |
 | The project manifest, the prose dialect, config keys | \code{src/config.rs.cob} |
 | The prose pipeline: reassembly, math substitution, ordering | \code{src/prose.rs.cob} |
@@ -159,23 +162,22 @@ into a \code{.cob} file that tangles into the existing tree; CI ran \code{cob ta
 to assert the committed \code{.rs} matched what the literate source made. Third, the
 flip: the \code{.cob} files became the only source of truth.
 
-The flip is done. The whole Rust crate and the stylesheet are literate, and no
-\code{.rs} or \code{.css} is committed — each one comes from a \code{.cob}. The one authority is the
-set of \code{.cob} files. The flake build is two stages. A tangler must exist before
-anything can be tangled, so stage 0 uses \code{notangle}, noweb's own tangler, which
-needs no \code{cob}. \code{notangle} tangles every \code{.cob} into a tree that \code{cargo} builds, and
-stage 1's \code{cob} tangles every \code{.cob} again. Both trees compile to a working \code{cob}.
+The flip is done. On \code{main} the whole Rust crate and the stylesheet are literate,
+and no \code{.rs} or \code{.css} is committed — each one comes from a \code{.cob}. The one
+authority is the set of \code{.cob} files. The flake build is two stages. A tangler must
+exist before anything can be tangled, and cob's tangler is native now (§11) — there
+is no noweb to seed with. So the build seeds from the \code{tangled} release branch,
+which does commit the \code{.rs}/\code{.css}. Stage 0 builds \code{cob} from that seed. Stage 1
+uses that \code{cob} to tangle every \code{.cob} again, then builds from the result. Both
+trees compile to a working \code{cob}.
 
-With no committed \code{.rs} to check a tangle against, \code{checks.selfhost} proves the
-bootstrap another way: \code{notangle} and \code{cob tangle} must make byte-identical output
-for every module. The tangle differential (§15) already proves the two agree on a
-fixture; self-host extends it to the whole crate. Their agreement is the whole
-safety of the loop — because the two tanglers make the same source, the shipped
-binary is the same whichever one built stage 0.
+\code{checks.selfhost} proves the loop: the shipped \code{cob} must tangle every module to
+the same bytes as the tree it was built from. cob is a fixed point of its own
+tangler — the source it makes is the source it is made of. No second tangler runs.
 
-Removing the committed seed also removes the one risk self-hosting used to add: a
-weaver bug can no longer poison a committed artifact, because there is none. The
-bootstrap rests on \code{notangle}, a stable external tool, not on cob itself.
+The \code{tangled} branch is the one reseed point. A build on \code{main} pins it by tag,
+and a release pushes a new snapshot and bumps the pin. noweb is gone from the build
+and the run time; it stays only as a frozen test oracle (§4.1, §15).
 
 The one file that stays committed is \code{flake.nix}, because Nix must read it before
 any tangle can run. \code{flake.nix.cob} is cob's own build file told as a literate
@@ -186,18 +188,21 @@ highlighter, which is why Nix is the second grammar.
 
 ## Nix {#sec:JPcq}
 
-The build is flake-based. \code{pkgs.noweb} is a genuine runtime dependency in phase 1,
-not merely a test oracle, so the CLI is wrapped to put both \code{\${noweb}/bin} and
-\code{\${noweb}/lib/noweb} on PATH — the pipeline stages are not on \code{bin/}. The shape is
-deliberately minimal: a plain \code{rustPlatform.buildRustPackage}, no extra flake
-inputs, with crane or a rust overlay held back until a concrete need appears.
+The build is flake-based, and it runs no noweb. cob reads and tangles \code{.cob}
+natively (§4.1, §11), so the CLI wrapper only sets the KaTeX asset path for weave
+(§6.3). The \code{main} flake seeds the build from the \code{tangled} branch, pinned as a
+flake input. The \code{tangled} branch carries a build-only flake that compiles its
+committed tree straight. Both share one builder, so there is one source of truth for
+the parts that do not differ. A second package, \code{cob-static}, is a standalone
+static binary with the KaTeX dist baked in (§6.3).
 
 The flake carries the checks that guard cob's invariants: a build with the hermetic
-cargo tests, a noweb-drift check that diffs \code{markup} output against the pinned
-fixtures, a determinism check that weaves twice and byte-diffs, a tangle
-differential against \code{notangle}, and the self-host and dogfood checks above. Because
-a flake sees only git-tracked files, a new file must be added to git before any
-\code{nix} command will see it. The full build lives in \code{flake.nix.cob}.
+cargo tests, a determinism check that weaves twice and byte-diffs, a reader check
+that diffs the native reader against the frozen \code{markup} goldens, a tangle check
+against the frozen \code{notangle} goldens, a modules check that weaves every module,
+and the self-host and dogfood checks above. A flake sees only tracked files, so the
+generated \code{.rs}/\code{.css} — ignored on \code{main} — come from the seed. The full build
+lives in \code{flake.nix.cob}.
 
 ## Testing {#sec:LEQV}
 
@@ -211,7 +216,7 @@ Each layer has its own strategy.
 | Prose pipeline | Snapshot tests per stage, especially math-extraction edge cases. |
 | Numbering and refs | Property test: every reference resolves; numbers are dense and monotonic. |
 | Split | Property test: concatenating all pages' sections reproduces the section list. |
-| Tangle | Differential against \code{notangle} on a fixture corpus. |
+| Tangle | Against frozen \code{notangle} goldens; \code{--check} flags drift. |
 | Determinism | Weave twice, diff. |
 | Annotation contract | Assert every section carries its id and provenance and a margin slot. |
 ```
@@ -236,11 +241,11 @@ are recorded in \code{transclude.rs.cob}.
 The native reader is the first slice of M15: cob reads its own \code{.cob} source with a
 Rust reader (\code{markup.rs}), so no \code{markup} process runs at read time and cob can ship
 as one binary. The reader is a formal PEG grammar that the \code{peg} crate builds into a
-parser at compile time (\code{markup.rs.cob}). noweb does not go away. \code{notangle} still
-does tangle, and \code{markup} stays as the reader's test oracle — the differential test
-and the flake \code{reader} check diff the reader against real \code{markup} for every module.
-Replacing \code{notangle} too stays a contingency with explicit triggers, recorded in
-\code{tangle.rs.cob}.
+parser at compile time (\code{markup.rs.cob}). A native tangler (§11) replaced
+\code{notangle} too, so cob runs no noweb tool at all. noweb stays only as a test
+oracle: frozen \code{markup} and \code{notangle} goldens prove the native reader and
+tangler right (§15). The \code{reader} and \code{tangle} flake checks diff cob against
+those goldens.
 
 ## Open questions {#sec:QznE}
 
@@ -275,7 +280,7 @@ introduces a code, it claims the next free number in this registry.
 | Code | Meaning | Module |
 |---|---|---|
 | E001 | malformed IR line from \code{markup} | \code{noweb.rs} |
-| E002 | \code{markup} failed, \code{@fatal}, or not found | \code{noweb.rs} |
+| E002 | retired (was \code{markup} process failure); cob reads natively | \code{noweb.rs} |
 | E010 | use of an undefined chunk | \code{model.rs} |
 | E014 | duplicate label | \code{resolve.rs} |
 | E015 | unresolved reference | \code{resolve.rs} |
@@ -309,10 +314,10 @@ introduces a code, it claims the next free number in this registry.
   with a code.
 - Every noweb-boundary discovery gets a fixture. A minimal \code{.cob} plus regenerated
   \code{.markup} pair and a test is how the verified-noweb prose stays true.
-- noweb does not go away, but cob reads its own source now: a native Rust reader
-  (\code{markup.rs}) replaces the \code{markup} process (M15), and \code{markup} stays as its test
-  oracle. Do not reimplement \code{notangle}; the removal triggers are in \code{tangle.rs.cob}
-  and none have fired.
+- noweb is gone from the run time. A native reader (\code{markup.rs}) replaced the
+  \code{markup} process, and a native tangler (\code{tangle.rs}) replaced \code{notangle} (M15).
+  noweb stays only as a test oracle — the frozen \code{markup} and \code{notangle} goldens.
+  Remake the affected golden when a fixture changes.
 - Determinism is a feature. No timestamps, and no HashMap iteration order in output —
   a \code{BTreeMap} or an explicit sort.
 - When a decision conflicts with observed reality, verification wins: probe the real

@@ -17,28 +17,28 @@ caption mechanics there are unchanged.
 ## What earns an id {#sec:X0Yp}
 
 A float earns an id by carrying a label. Every section earns one too. A heading
-with a `sec:` id — `{#sec:lexing}` in Markdown, an `id="sec:lexing"` in HTML — is a
-first-class label: cob mints it into `cob.lock` with `kind = "section"`, a
-`\ref{sec:lexing}` renders "Section k3f9", and the section leads with a small
-clickable permalink whose id the stylesheet draws. The id lives in `data-id`, never
+with a \code{sec:} id — \code{{#sec:lexing}} in Markdown, an \code{id="sec:lexing"} in HTML — is a
+first-class label: cob mints it into \code{cob.lock} with \code{kind = "section"}, a
+\code{\ref{sec:lexing}} renders "Section k3f9", and the section leads with a small
+clickable permalink whose id the stylesheet draws. The id lives in \code{data-id}, never
 a text node, so it stays out of selections and the quote selectors (§9.2); the
 anchor itself is the click target. An h1 is addressed by its page id and is never
 minted.
 
-The author does not have to label a section by hand. `cob lock` gives every
-unlabelled `h2`/`h3` heading an id: it mints one and writes a `sec:<id>` anchor into
-the heading's source line (`section.rs`). So every section is linkable, and the id
+The author does not have to label a section by hand. \code{cob lock} gives every
+unlabelled \code{h2}/\code{h3} heading an id: it mints one and writes a \code{sec:<id>} anchor into
+the heading's source line (\code{section.rs}). So every section is linkable, and the id
 is source-anchored — it lives on the heading, not on a slug of the heading text — so
 a reword of the heading does not break the link. The id doubles as its own name
-until the author gives it a human one with `cob rename-label <id> <name>`, which
+until the author gives it a human one with \code{cob rename-label <id> <name>}, which
 rewrites the source anchor and rekeys the lock while the frozen id stays the same.
 Because the anchor lives in the source, the write happens only in the dev-time
-`cob lock` pass; a `--locked` weave never mints and never edits, so an anchored
+\code{cob lock} pass; a \code{--locked} weave never mints and never edits, so an anchored
 section absent from the committed lock is still the E031 error, like any label.
 
 ## The id itself {#sec:oaLc}
 
-The id is a random 4-character base62 string (`[0-9A-Za-z]`, case-sensitive,
+The id is a random 4-character base62 string (\code{[0-9A-Za-z]}, case-sensitive,
 about 14.8 million values). cob mints it once and never recomputes it. It is
 deliberately not derived from the label, the path, or the content, because a
 derived id would change under exactly the renames and moves it exists to survive.
@@ -46,19 +46,19 @@ derived id would change under exactly the renames and moves it exists to survive
 
 ## Labels stay human, ids stay global {#sec:jJzq}
 
-An author keeps writing a human-readable `\label{fig:pipeline}` and
-`\ref{fig:pipeline}` (§6.4). A label is note-local: two notes may both use
-`fig:pipeline` without colliding, because cob resolves a label only against its
-own file. The opaque id is global. Within a file a `\ref` resolves by the human
+An author keeps writing a human-readable \code{\label{fig:pipeline}} and
+\code{\ref{fig:pipeline}} (§6.4). A label is note-local: two notes may both use
+\code{fig:pipeline} without colliding, because cob resolves a label only against its
+own file. The opaque id is global. Within a file a \code{\ref} resolves by the human
 label. Across files (import and transclude, M12) a reference names the target by
 its opaque id, which is rename- and move-proof.
 
 ## The lock file {#sec:GIRD}
 
-`cob.lock` is a committed, human-readable, greppable map from `label` to
-`{ id, kind }`, keyed by source file so note-local labels stay distinct:
+\code{cob.lock} is a committed, human-readable, greppable map from \code{label} to
+\code{{ id, kind }}, keyed by source file so note-local labels stay distinct:
 
-```toml
+```verbatim \lang{toml}
 # cob.lock — generated; edit only to delete a retired label.
 ["parser.cob"]
 "fig:pipeline" = { id = "k3f9", kind = "figure" }
@@ -66,27 +66,27 @@ its opaque id, which is rename- and move-proof.
 "eq:wrap"      = { id = "Qx0m", kind = "equation" }
 ```
 
-`kind` is carried from the fence or tag, not parsed off the id. The label prefix
+\code{kind} is carried from the fence or tag, not parsed off the id. The label prefix
 survives only as the E030 sanity check (§6.4); it no longer decides numbering or
 identity.
 
 ## Mint on miss, freeze under --locked {#sec:YZLc}
 
-A normal `weave` mints an id for any label missing from the lock and rewrites
-`cob.lock`, a dev-time side effect like updating a dependency lockfile. On a
+A normal \code{weave} mints an id for any label missing from the lock and rewrites
+\code{cob.lock}, a dev-time side effect like updating a dependency lockfile. On a
 collision it re-rolls. But weave must stay a byte-deterministic function of its
 inputs (§8), and CI and the Nix sandbox run against a read-only source tree. So
-`weave --locked` never mints: a label absent from the lock is the E031 error,
-which mirrors `cargo --locked` against `Cargo.lock`. `nix flake check` weaves
-`--locked`, and the committed lock is what lets a random mint reconcile with
+\code{weave --locked} never mints: a label absent from the lock is the E031 error,
+which mirrors \code{cargo --locked} against \code{Cargo.lock}. \code{nix flake check} weaves
+\code{--locked}, and the committed lock is what lets a random mint reconcile with
 determinism.
 
 ## Discovery {#sec:acTW}
 
 The id is random and persisted, so it cannot be computed; you discover it with
-tooling. `cob lock` is a fast pass that mints and populates `cob.lock` with no
-full weave, and the committed lock is greppable. `cob labels <file>` lists a
-file's label-to-id map; `cob id <file> <label>` prints one id for scripting.
+tooling. \code{cob lock} is a fast pass that mints and populates \code{cob.lock} with no
+full weave, and the committed lock is greppable. \code{cob labels <file>} lists a
+file's label-to-id map; \code{cob id <file> <label>} prints one id for scripting.
 
 ## How the code implements this {#sec:erRn}
 
@@ -129,7 +129,7 @@ why the map nests by file.
 //! globally unique (E014); the per-file nesting is forward-looking.
 @
 Ordered maps and sets so the serialized lock is deterministic, plus the reference
-`Kind` a label carries.
+\code{Kind} a label carries.
 <<imports>>=
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -140,7 +140,7 @@ use serde::{Deserialize, Serialize};
 use crate::rewrite::Kind;
 @
 Four base62 characters — about 14.8 million ids, ample for a hobby-scale forest.
-The alphabet is case-sensitive; `SPACE` is the count the minter reduces a raw value
+The alphabet is case-sensitive; \code{SPACE} is the count the minter reduces a raw value
 modulo.
 <<the id constants>>=
 /// A frozen id is four base62 characters (`[0-9A-Za-z]`, case-sensitive) — about
@@ -158,7 +158,7 @@ pub struct LockEntry {
 }
 @
 Whether a weave may mint fresh ids, or must find every label already present.
-`Locked` is CI and the read-only Nix sandbox, where minting is forbidden (§7.1).
+\code{Locked} is CI and the read-only Nix sandbox, where minting is forbidden (§7.1).
 <<the lock mode>>=
 /// Whether a weave may mint fresh ids (dev-time) or must find every label
 /// already in the lock (`--locked`, for CI and the read-only Nix sandbox; §7.1).
@@ -168,7 +168,7 @@ pub enum LockMode {
     Locked,
 }
 @
-The lock is `file → (label → entry)`. `used` is a derived index of every id in
+The lock is \code{file → (label → entry)}. \code{used} is a derived index of every id in
 play, so a mint rejects a collision in one lookup. It is rebuilt on load, never
 serialized.
 <<the lock file>>=
@@ -181,8 +181,8 @@ pub struct LockFile {
     used: BTreeSet<String>,
 }
 @
-Two codes. E031 is a label missing under `--locked` — the caller must run
-`cob lock` first. E032 is any read, parse, or write failure of the lock itself.
+Two codes. E031 is a label missing under \code{--locked} — the caller must run
+\code{cob lock} first. E032 is any read, parse, or write failure of the lock itself.
 <<the lock error>>=
 #[derive(Debug)]
 pub enum LockError {
@@ -211,8 +211,8 @@ impl std::error::Error for LockError {}
 @
 A minter of fresh ids: SplitMix64 seeded from entropy. Determinism does not depend
 on the seed — a minted id is persisted and re-read forever after, so the RNG only
-ever decides an id's first value. `from_entropy` mixes a stack address with the
-clock; `seeded` is the reproducible test door; `next` is one SplitMix64 step reduced
+ever decides an id's first value. \code{from_entropy} mixes a stack address with the
+clock; \code{seeded} is the reproducible test door; \code{next} is one SplitMix64 step reduced
 into the id space.
 <<the id minter>>=
 /// A minter of fresh ids. SplitMix64 seeded from entropy — deterministic weave
@@ -251,7 +251,7 @@ impl Minter {
     }
 }
 @
-A value below `SPACE` to its fixed four-character spelling, most-significant digit
+A value below \code{SPACE} to its fixed four-character spelling, most-significant digit
 first.
 <<the base62 spelling>>=
 /// `n < SPACE` → its four-character base62 spelling.
@@ -285,8 +285,8 @@ impl LockFile {
     <<count of frozen ids>>
 }
 @
-An absent lock is an empty lock, not an error — the first `cob lock` or `weave`
-mints into it. Loading rebuilds the `used` index from every stored id.
+An absent lock is an empty lock, not an error — the first \code{cob lock} or \code{weave}
+mints into it. Loading rebuilds the \code{used} index from every stored id.
 <<load the lock>>=
 /// Load `cob.lock`; an absent file is an empty lock, not an error (the first
 /// `cob lock`/`weave` mints into it).
@@ -328,7 +328,7 @@ pub fn get(&self, file: &str, label: &str) -> Option<&LockEntry> {
 @
 Idempotent: an existing label re-reads its frozen id. A fresh label rolls the
 minter until it lands on an id not already used, then records it. Re-rolling on
-collision is the reason `used` exists.
+collision is the reason \code{used} exists.
 <<mint or reuse an id>>=
 /// The existing id for `(file, label)`, or a freshly minted one written into
 /// the lock. A collision with an id already in use is re-rolled.
@@ -350,10 +350,10 @@ pub fn mint(&mut self, file: &str, label: &str, kind: Kind, minter: &mut Minter)
     id
 }
 @
-An auto-anchored section (§7.1, `section.rs`) has no author label, so `cob lock`
+An auto-anchored section (§7.1, \code{section.rs}) has no author label, so \code{cob lock}
 mints its id first, then uses that id as its own label: the source anchor cob writes
-is `sec:<id>`. The id and its name are the same string until `cob rename-label`
-gives it a human one. Like `mint`, a collision with an id already in use is
+is \code{sec:<id>}. The id and its name are the same string until \code{cob rename-label}
+gives it a human one. Like \code{mint}, a collision with an id already in use is
 re-rolled. It returns the id so the caller can write the anchor.
 <<mint an auto section id>>=
 /// Mint a fresh opaque id for an unlabelled section and record it under the label
@@ -376,7 +376,7 @@ pub fn mint_section(&mut self, file: &str, minter: &mut Minter) -> String {
     id
 }
 @
-`cob rename-label` takes the frozen id and gives it a human name. First it finds the
+\code{cob rename-label} takes the frozen id and gives it a human name. First it finds the
 section entry that carries the id, then it moves the entry to the new label, keeping
 the id. The id never changes, so every reference and permalink still resolves. A
 move to a label already in the file is refused, so a name is never overwritten.
@@ -412,7 +412,7 @@ pub fn rename(&mut self, file: &str, old: &str, new: &str) -> bool {
     }
 }
 @
-A file's label-to-entry pairs in sorted order, for `cob labels`.
+A file's label-to-entry pairs in sorted order, for \code{cob labels}.
 <<a file's labels>>=
 /// A file's `label → entry` pairs in sorted order (for `cob labels`).
 pub fn labels(&self, file: &str) -> impl Iterator<Item = (&String, &LockEntry)> {
