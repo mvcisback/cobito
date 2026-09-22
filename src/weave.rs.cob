@@ -411,6 +411,7 @@ fn render_frags(
     doc: &DocModel,
     lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
+    preamble: &mut String,
     lints: &mut Vec<Lint>,
 ) -> Result<Vec<Frag>, WeaveError> {
     let mut frags: Vec<Frag> = Vec::with_capacity(doc.sections.len());
@@ -418,12 +419,13 @@ fn render_frags(
         match &section.kind {
             SectionKind::Docs { spans } => {
                 let reassembled = prose::reassemble(spans);
-                let body =
-                    markdown::render(&reassembled, math).map_err(|err| WeaveError::Markdown {
+                let body = markdown::render(&reassembled, math, preamble).map_err(|err| {
+                    WeaveError::Markdown {
                         file: section.file.clone(),
                         line: section.line,
                         err,
-                    })?;
+                    }
+                })?;
                 frags.push(Frag::Docs(body));
             }
             SectionKind::Code {
@@ -497,10 +499,11 @@ pub fn mint_lock(
     minter: &mut Minter,
 ) -> Result<(), WeaveError> {
     let mut math: Vec<Math> = Vec::new();
+    let mut preamble = String::new();
     let mut lints: Vec<Lint> = Vec::new();
     // Minting only needs labels/floats, not colors, so the language config is empty.
     let lang_cfg = LangConfig::default();
-    let frags = render_frags(doc, &lang_cfg, &mut math, &mut lints)?;
+    let frags = render_frags(doc, &lang_cfg, &mut math, &mut preamble, &mut lints)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -554,8 +557,9 @@ pub fn render(
     minter: &mut Minter,
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
+    let mut preamble = String::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut hl_lints)?;
+    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut preamble, &mut hl_lints)?;
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -591,7 +595,7 @@ pub fn render(
 
     // Steps 5–6: serialize is implicit in the rewriter; now render math and
     // wrap each section in its provenance envelope.
-    let rendered = Renderer::new(cache_root)
+    let rendered = Renderer::new(cache_root, &preamble)
         .render_all(&math)
         .map_err(WeaveError::Math)?;
     let mut wrapped: Vec<String> = Vec::with_capacity(frags.len());
@@ -653,6 +657,17 @@ pub fn render(
     // pre-expansion bodies) is untouched. The scope counter is document-wide, so
     // every copy's scoped ids are unique and the output stays deterministic (§8).
     let mut tx = transclude::Context::build(&scan, &res, &bodies);
+    // §10 a `def:` (macros) node is homeless: the table has just captured it, so
+    // drop the canonical island from the reading flow and the archival JSON before
+    // transclusion runs. No transcluded copy exists yet, so every island is
+    // canonical; the exposition now shows only on its `n/` page and where it is
+    // transcluded.
+    for w in wrapped.iter_mut() {
+        *w = rewrite::strip_macros(w).map_err(WeaveError::Rewrite)?;
+    }
+    for raw in raws.iter_mut() {
+        raw.html = rewrite::strip_macros(&raw.html).map_err(WeaveError::Rewrite)?;
+    }
     let mut tx_lints: Vec<Lint> = Vec::new();
     let mut tx_scope = 0usize;
     for (k, w) in wrapped.iter_mut().enumerate() {

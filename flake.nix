@@ -507,6 +507,74 @@
           done
           touch $out
         '';
+
+        macros = pkgs.runCommand "cob-macros" { } ''
+          cob=${self.packages.${system}.cob}/bin/cob
+          work=$TMPDIR/mac
+          mkdir -p $work
+          cd $work
+          cat > mac.cob <<'DOC'
+          # Macros demo
+
+          ## Notation
+
+          ```macros \label{def:basics}
+          We write $\RR$ for the reals and $\abs{x}$ for the absolute value.
+
+          \def\RR{\mathbb{R}}
+          \def\abs[x]{\lvert \x \rvert}
+          \let\R=\RR
+          ```
+
+          The line is $\RR$, also $\R$; and $\abs{\RR}$. See \ref{def:basics}.
+
+          ## Later
+
+          \transclude{def:basics}
+          DOC
+          # A macros fence is a node, so `cob lock` mints its def: id.
+          $cob lock mac.cob | grep -q 'newly minted'
+          $cob labels mac.cob | grep -qE '^def:basics[[:space:]]+[0-9A-Za-z]{4}[[:space:]]+Notation$'
+
+          # Weave twice, byte-diff: the macros path is deterministic.
+          $cob weave --locked mac.cob --out a
+          $cob weave --locked mac.cob --out b
+          diff -r a b
+
+          # The macros expand everywhere: `\RR`/`\R` and the parametered `\abs{…}` render,
+          # so KaTeX output is present. An unknown macro would be a hard E020 and fail the
+          # weave.
+          grep -q 'katex' a/index.html
+
+          # The node is homeless (§10): no canonical `def-` anchor is left in the flow.
+          if grep -qE 'id="def-[0-9A-Za-z]{4}"' a/index.html; then
+            echo "the macros node kept an in-flow anchor; it must be homeless (§10)" >&2
+            exit 1
+          fi
+          # It has its own page, and a \ref points there, not at a dead fragment. The node
+          # page is the \ref target, not just the first n/ link (a section link comes first).
+          grep -qE '<a data-ref="def:basics" href="n/[0-9A-Za-z]{4}\.html">Notation [0-9A-Za-z]{4}</a>' a/index.html
+          node=$(grep -oE 'href="n/[0-9A-Za-z]{4}\.html">Notation' a/index.html | grep -oE 'n/[0-9A-Za-z]{4}\.html')
+          test -f "a/$node"
+          # The node page shows the exposition: the author's prose (macros in scope) and the
+          # definitions verbatim as a code block — the source, not typeset (§6.4).
+          grep -q 'We write' "a/$node"
+          grep -q 'class="macro-src"' "a/$node"
+          grep -qF '\def\abs[x]{\lvert \x \rvert}' "a/$node"
+          if grep -q 'macro-def' "a/$node"; then
+            echo "a \\def/\\let line was typeset; §6.4 shows the source, not name := expansion" >&2
+            exit 1
+          fi
+          # `\transclude{def:basics}` splices a scoped copy into the flow.
+          grep -q 'data-transclude="def:basics"' a/index.html
+
+          # The archival page carries no script but the nav-spy aid (§6.3).
+          if grep '<script' a/index.html | grep -qv '<script id="nav-spy">'; then
+            echo "macros weave emitted a script other than the nav-spy aid" >&2
+            exit 1
+          fi
+          touch $out
+        '';
       });
     };
 }

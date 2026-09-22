@@ -149,10 +149,10 @@ is an error, not a wrong render.
            label's namespace must match the fence (`fig:`/`tbl:`/`eq:`) so the \
            cross-reference machinery can find it.",
 "E034" => "A fenced block had no kind (a bare ```` ``` ````) or an unknown kind. \
-           The kinds are closed: `math`, `figure`, `table`, `html-escape`, or \
-           `verbatim`. Use `verbatim` (with an optional `\\lang{…}`) for plain \
-           preformatted text; a missing or misspelt kind is an error, not a \
-           silent fallback.",
+           The kinds are closed: `math`, `figure`, `table`, `macros`, \
+           `html-escape`, or `verbatim`. Use `verbatim` (with an optional \
+           `\\lang{…}`) for plain preformatted text; a missing or misspelt kind \
+           is an error, not a silent fallback.",
 @
 These two codes come from the frozen-id lock (§7.1). E031 is a label with no
 frozen id during a \code{--locked} weave, which never mints. E032 is a lock file that

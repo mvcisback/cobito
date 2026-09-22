@@ -83,6 +83,17 @@ What is still deferred:
   transclude another's node by its opaque id. The scoped-id and chrome machinery
   here is the same; only the address space grows.
 
+## A homeless macro node {#sec:SJwf}
+
+A \code{macros} fence is a node too (§6.4). It carries a \code{def:} label, so it earns a
+frozen id, a page under \code{n/}, and the transclusion and ref machinery, the same as
+a float. It differs in one way: it is homeless. A float renders where the author
+writes it and also gets a node page. A macro node does not render where the author
+writes it. The weaver cuts the node for the table, then removes the block from the
+reading flow (\code{rewrite::strip_macros}). So the reader sees the macros only on the
+node page, or where the author puts a \code{\transclude}. A \code{\ref{def:name}} links to
+the node page, not to a place in the text.
+
 ## A page for every node {#sec:node-pages}
 
 A node is a place a reader can go to. So every heading node and every labelled
@@ -166,7 +177,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::model::Lint;
 use crate::prose;
 use crate::resolve::Resolution;
-use crate::rewrite::{anchor_of, Heading, Scan};
+use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
 @
 A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
 carries the address. The expander scans for this exact opening and tail, so the
@@ -267,12 +278,16 @@ impl Context {
                 .iter()
                 .position(|n| n.level <= h.level)
                 .map(|k| pos[i + 1 + k]);
+            // A `macros` island is a homeless node (§10): it shows only on its own
+            // page and where it is transcluded, so strip it from a heading node's
+            // body too — not just the reading flow.
+            let raw = slice_body(bodies, pos[i], end);
             nodes.insert(
                 res.heading_anchors[i].clone(),
                 Node {
                     title: h.text.clone(),
                     page: res.section_page[h.section],
-                    body: slice_body(bodies, pos[i], end),
+                    body: strip_macros(&raw).unwrap_or(raw),
                 },
             );
         }
@@ -374,7 +389,13 @@ directive shows the same inlined content its canonical page does.
                 title: node.title.clone(),
                 body: node.body.clone(),
                 page: label.page,
-                context: format!("../{page_file}#{anchor}"),
+                // A homeless macro node has no in-flow anchor (§10), so it has no
+                // "read in context" link; every other float links to its place.
+                context: if label.kind == "macro" {
+                    String::new()
+                } else {
+                    format!("../{page_file}#{anchor}")
+                },
                 crumbs,
                 transcluded_by: backlinks(tx_by.get(anchor), heads, res),
                 referenced_by: backlinks(ref_by.get(anchor), heads, res),
@@ -654,6 +675,7 @@ fn float_title(html: &str, kind: &str) -> String {
             "figure" => "Figure",
             "table" => "Table",
             "equation" => "Equation",
+            "macro" => "Notation",
             _ => "Float",
         }
         .to_string(),
