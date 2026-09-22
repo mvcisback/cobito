@@ -9,7 +9,7 @@ model folds \code{markup}'s IR (§4.1) into the types the weaver and the tangler
 noweb lets a chunk name be defined more than once. A later definition appends to
 the earlier one. This matters in three places, and it is easy to get wrong:
 
-- Tangle joins the definitions in source order. \code{notangle} does this.
+- Tangle joins the definitions in source order. cob's tangler does this (§11).
 - The JSON model keeps \code{chunks[name].defs} as an ordered list. Each section
   after the first carries \code{continues: true}.
 - The render shows a continuation with a \code{+=} marker, the noweb convention, and

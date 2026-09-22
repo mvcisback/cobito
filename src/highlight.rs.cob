@@ -91,11 +91,11 @@ This slice colors each chunk on its own. A chunk body that is only a fragment,
 such as \code{count += 1;} with no enclosing function, leans on tree-sitter's error
 recovery. The more correct design colors the tangled program, which is complete
 and has full context, and paints the token colors back onto the chunk view. That
-is blocked today by provenance. \code{notangle -L} gives line-granular breadcrumbs,
-but it says nothing about which tangled columns came from a chunk's own text and
-which came from an expanded hole. The back-paint needs column-level
-tangle-to-chunk provenance, which noweb throws away. This is a concrete reason to
-eventually own or fork \code{notangle} (§11). Chunk-local highlighting is the interim.
+is blocked today by provenance. A line pragma gives line-granular breadcrumbs
+only; it says nothing about which tangled columns came from a chunk's own text and
+which came from an expanded hole. The back-paint needs column-level chunk
+provenance. cob owns the tangler now (§11), so it can keep these breadcrumbs later;
+noweb threw them away. Chunk-local highlighting is the interim.
 It is correct for a whole-chunk root, and it falls back to plain text for a
 fragment.
 

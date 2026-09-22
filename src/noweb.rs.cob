@@ -5,9 +5,11 @@ prose is the specification. The chunks after it are the implementation.
 
 ## What the parser reads {#sec:0AwF}
 
-cob does not drive \code{noweave}. It reads the IR that noweb's \code{markup} stage emits,
-and it shells out to \code{notangle} for tangle. \code{markup} writes one tagged line per
-token. A short example:
+cob reads and tangles a \code{.cob} file with its own code now (§4.1, §11). It runs
+no noweb tool. This parser stays for one job: it decodes the frozen
+\code{fixtures/*.markup} goldens, so a test can compare the native reader with real
+noweb output (§15). noweb's \code{markup} stage made those goldens. \code{markup} writes
+one tagged line per token. A short example:
 
 ```verbatim
 @file lexer.cob
@@ -24,32 +26,35 @@ token. A short example:
 @end code 4
 ```
 
-cob consumes these tags: \code{@file}, \code{@line}, \code{@begin}/\code{@end docs|code}, \code{@text},
-\code{@nl}, \code{@defn}, \code{@use}, \code{@quote}/\code{@endquote} (from an inline prose quote),
-\code{@literal}, \code{@index defn}, and \code{@fatal}.
+The parser reads these tags: \code{@file}, \code{@line}, \code{@begin}/\code{@end docs|code},
+\code{@text}, \code{@nl}, \code{@defn}, \code{@use}, \code{@quote}/\code{@endquote}, \code{@literal},
+\code{@index defn}, and \code{@fatal}. The parser keeps \code{@quote}/\code{@endquote} as valid
+noweb IR, but cob's own reader never makes them: inline code is \code{\code{…}} now
+(§6.4), not a \code{[[…]]} quote.
 
-Chunk structure is reliable with no extra filter. \code{markup} must emit \code{@defn} and
-\code{@use} for each definition and reference, because \code{notangle} is itself
-\code{markup | nt}, and \code{nt} reads exactly those tags. cob v1 skips \code{finduses} and
-\code{noidx}, which serve the identifier index, not chunk structure. So cob ships no
-identifier index in v1; it can come back later.
+noweb's \code{markup} makes \code{@defn} and \code{@use} for each definition and reference,
+because \code{notangle} is \code{markup | nt} and \code{nt} reads those tags. So chunk
+structure is reliable with no extra filter. The goldens skip \code{finduses} and
+\code{noidx}, which serve the identifier index, not chunk structure. cob ships no
+identifier index yet; it can come back later.
 
 ## Verified against noweb 2.13 {#sec:Kt8c}
 
 R1 is retired. cob probed the real toolchain with \code{fixtures/hello.cob} and the
 parser encodes these facts (§4.2):
 
-- The pipeline tools are not on \code{bin}. \code{markup}, \code{nt}, \code{tohtml}, and the rest
-  live in \code{lib/noweb}. Only the \code{notangle}/\code{noweave}/\code{noroots} drivers are on
-  \code{bin}. The Nix wrapper must add \code{lib/noweb} to the PATH.
+- noweb's pipeline tools live in \code{lib/noweb}, not \code{bin}. Only the
+  \code{notangle}/\code{noweave}/\code{noroots} drivers are on \code{bin}. You need this fact
+  only to remake a golden: run \code{markup} from \code{\${noweb}/lib/noweb} by hand.
+  The build and the run time use no noweb.
 - \code{markup} emits no \code{@line} markers by default. cob counts each \code{@nl} since the
   last \code{@file} to get a line number, the same way \code{nt} does for \code{-L}. The parser
   tracks this count for diagnostics (§12).
 - \code{@ %def c} becomes \code{@index defn c} and makes no docs chunk.
 - A continued chunk arrives as separate \code{@begin code} blocks that share one
   \code{@defn} name, in source order.
-- An inline prose quote matches greedily to its last closing bracket pair, so a
-  nested quote keeps its inner brackets.
+- noweb reads a \code{[[…]]} prose quote greedily, to the last bracket pair. cob's
+  reader does not: it makes a \code{[[…]]} run literal text (§6.4). No fixture uses one.
 - A blank line between chunks becomes an empty docs chunk, and the stream also
   opens with a leading empty docs chunk. The section builder merges or drops
   these.
