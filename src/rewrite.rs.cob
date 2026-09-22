@@ -59,7 +59,7 @@ First, provenance. Every rendered section element carries its identity and its
 source coordinates, so an annotation on the woven page maps back to the \code{.cob}
 source that a review agent must patch:
 
-```html
+```verbatim \lang{html}
 <section class="code" id="sec-4" data-nw-file="parser.cob" data-nw-line="47"
          data-chunk="lex a token">…</section>
 ```

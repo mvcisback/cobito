@@ -58,7 +58,7 @@ its opaque id, which is rename- and move-proof.
 \code{cob.lock} is a committed, human-readable, greppable map from \code{label} to
 \code{{ id, kind }}, keyed by source file so note-local labels stay distinct:
 
-```toml
+```verbatim \lang{toml}
 # cob.lock — generated; edit only to delete a retired label.
 ["parser.cob"]
 "fig:pipeline" = { id = "k3f9", kind = "figure" }

@@ -21,7 +21,7 @@ of the same input make byte-identical output.
 A code chunk renders as a \code{section} that wraps a collapsible \code{details}. The
 \code{summary} holds the chunk name; the body holds one \code{span} per line:
 
-```html
+```verbatim \lang{html}
 <section class="code" id="sec-2" data-nw-file="…" data-nw-line="6" data-chunk="lex a token">
   <div class="margin-slot" data-for="sec-2"></div>
   <details class="chunk" open>

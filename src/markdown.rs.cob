@@ -743,9 +743,9 @@ fn render_inline(src: &str, math: &mut Vec<Math>) -> Result<String, MarkdownErro
     Ok(out)
 }
 @
-The escape helpers turn the grammar's escapes back into literals. \code{\code} bodies
-only unescape braces (everything else is verbatim); text also unescapes \code{\$} and
-\code{\\}.
+The escape helpers turn the grammar's escapes back into literals. A \code{\code} body
+only unescapes braces — \code{\{} and \code{\}} — and leaves everything else verbatim;
+text also unescapes the dollar escape \code{\$} and a doubled backslash.
 <<the escape helpers>>=
 fn unescape_braces(s: &str) -> String {
     if s.contains('\\') {

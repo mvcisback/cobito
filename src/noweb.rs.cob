@@ -9,7 +9,7 @@ cob does not drive \code{noweave}. It reads the IR that noweb's \code{markup} st
 and it shells out to \code{notangle} for tangle. \code{markup} writes one tagged line per
 token. A short example:
 
-```
+```verbatim
 @file lexer.cob
 @begin docs 3
 @text <p>The lexer emits one token per call.</p>

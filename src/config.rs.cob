@@ -11,7 +11,7 @@ files in order. A \code{[tangle]} table sets the default output directory, and a
 \code{[[tangle.root]]} table per root sets that root's line-pragma format. A \code{[weave]}
 table holds the highlight language keys (§5.5).
 
-```toml
+```verbatim \lang{toml}
 [[document]]
 id = "cob"
 title = "cob: a literate programming system"

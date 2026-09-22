@@ -309,6 +309,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the dogfood check>>
 
 <<the selfhost check>>
+
+<<the modules check>>
 @
 ### build {#sec:9hJs}
 
@@ -882,4 +884,28 @@ for page in $TMPDIR/sh $TMPDIR/shcss; do
   fi
 done
 touch $out
+@
+### modules {#sec:5DHH}
+
+Every crate module is itself a literate document, so the whole crate reads as one
+book (§13). This check weaves each \code{src/*.rs.cob} under \code{--locked} and fails if
+any does not render — a guard against a module's prose drifting into a construct
+the dialect rejects (a bad fence, a bare brace, an unlocked label). The archival
+no-script rule (§6.3) holds for every module page too.
+<<the modules check>>=
+# Every module weaves on its own (§13), so the crate is one literate book. Guards
+# against prose that the dialect rejects (bad fence, bare brace, unlocked label).
+modules = pkgs.runCommand "cob-modules" { } ''
+  cd ${self}
+  cob=${self.packages.${system}.cob}/bin/cob
+  for m in src/*.rs.cob; do
+    if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
+      echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
+    fi
+    if grep '<script' $TMPDIR/m/*.html | grep -qv '<script id="nav-spy">'; then
+      echo "$m wove a script other than the nav-spy aid (§6.3)" >&2; exit 1
+    fi
+  done
+  touch $out
+'';
 @

@@ -61,7 +61,7 @@ greedy.
 
 A file is a list of lines. Each line is one of three kinds. This is the line level:
 
-```peg
+```verbatim \lang{peg}
 document     <- line*
 line         <- def_line / control_line / plain_line
 
@@ -78,7 +78,7 @@ eol          <- "\n" / EOF
 Inside a line the text tokenizes two ways. The open chunk sets the mode: a code
 chunk uses the code tokens, a documentation chunk uses the documentation tokens.
 
-```peg
+```verbatim \lang{peg}
 // a code-chunk line
 code_line    <- code_atom*
 code_atom    <- use / escape / char

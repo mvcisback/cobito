@@ -491,6 +491,22 @@
           done
           touch $out
         '';
+
+        # Every module weaves on its own (§13), so the crate is one literate book. Guards
+        # against prose that the dialect rejects (bad fence, bare brace, unlocked label).
+        modules = pkgs.runCommand "cob-modules" { } ''
+          cd ${self}
+          cob=${self.packages.${system}.cob}/bin/cob
+          for m in src/*.rs.cob; do
+            if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
+              echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
+            fi
+            if grep '<script' $TMPDIR/m/*.html | grep -qv '<script id="nav-spy">'; then
+              echo "$m wove a script other than the nav-spy aid (§6.3)" >&2; exit 1
+            fi
+          done
+          touch $out
+        '';
       });
     };
 }

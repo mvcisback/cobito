@@ -12,7 +12,7 @@ cob splits on the prose instead. A \code{[weave] spcob-at} key names the heading
 to split on — a Markdown \code{#} and an HTML \code{h1} both count. A \code{nav-depth} key sets
 how deep the nav tree goes.
 
-```toml
+```verbatim \lang{toml}
 [weave]
 spcob-at = "h1"
 nav-depth = 3
@@ -29,7 +29,7 @@ reads it and writes nothing back — annotations live entirely outside it
 (\code{ANNOTATIONS.md}). The shape holds the metadata, the nav tree, the label tables,
 the chunk graph, and the pages:
 
-```jsonc
+```verbatim \lang{jsonc}
 {
   "schema": 2,
   "meta": { "id": "cob", "title": "…", "authors": ["…"] },
