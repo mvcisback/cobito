@@ -24,7 +24,7 @@ reader sees the hole's opaque id (§7.1), never target source. So the tokenizer
 gets only the literal runs between the anchors, with the byte offset of each
 hole. It never reads across a hole. This is the discipline the math pass uses
 (§6.2): take the foreign spans out, tokenize the rest, put the spans back. The
-line `let c = HOLE;` tokenizes as `let`, `c`, `=`, and `;`, and the hole in the
+line \code{let c = HOLE;} tokenizes as \code{let}, \code{c}, \code{=}, and \code{;}, and the hole in the
 middle stays untouched, so the two brackets never lex as a shift operator.
 
 ## Move 2 — cob resolves the language, once, out of band {#sec:50k1}
@@ -32,13 +32,13 @@ middle stays untouched, so the two brackets never lex as a shift operator.
 The engine never guesses the language. cob resolves it in three tiers. The most
 specific tier wins.
 
-1. Per-chunk override. A `[weave.chunk-lang]` table in `cob.toml` maps a chunk
+1. Per-chunk override. A \code{[weave.chunk-lang]} table in \code{cob.toml} maps a chunk
    name to a language. This is the escape hatch for a shell snippet inside a
    Rust document, or for an abstract chunk whose name has no extension. The map
-   is out-of-band config, so it survives `markup`. An inline tag on the def line
-   would not, because `markup` folds everything after the chunk name into the
+   is out-of-band config, so it survives \code{markup}. An inline tag on the def line
+   would not, because \code{markup} folds everything after the chunk name into the
    body.
-2. Document default. A `[weave] lang` key in `cob.toml` sets one language for
+2. Document default. A \code{[weave] lang} key in \code{cob.toml} sets one language for
    the whole document.
 3. Root file extension. With nothing else said, a chunk takes the language of
    the tangle root it flows into. A concrete chunk uses its own extension. An
@@ -47,7 +47,7 @@ specific tier wins.
 
 A chunk that resolves to no known language is plain text and a W104 warning,
 never an error; the page still renders. An unknown chunk name in either
-`[weave]` key is the E033 error.
+\code{[weave]} key is the E033 error.
 
 cob ships four grammars: Rust, Nix, Bash, and CSS. CSS is here so cob can
 present its own stylesheet as a literate document (§13). Each further grammar is
@@ -78,9 +78,9 @@ spans that §5.4 emits. For each code chunk cob does four steps:
   emits the anchor as-is, and reopens them, so a hole is never inside a color
   span. Elsewhere it escapes the bytes into the current token span.
 
-The engine is tree-sitter, through `tree-sitter-highlight`. Each grammar maps a
-stable set of highlight names (`keyword`, `string`, `comment`, and so on) to
-`tok-*` CSS classes in `cob.css`. The color is a pure class over the bytes that
+The engine is tree-sitter, through \code{tree-sitter-highlight}. Each grammar maps a
+stable set of highlight names (\code{keyword}, \code{string}, \code{comment}, and so on) to
+\code{tok-*} CSS classes in \code{cob.css}. The color is a pure class over the bytes that
 are already there. There is no inline style and no script, so the archival rule
 (§6.3) and determinism (§8) hold, and a token span adds no text of its own, so
 §5.4's copy and quote guarantees stay true.
@@ -88,14 +88,14 @@ are already there. There is no inline style and no script, so the archival rule
 ## Future work — tangle-then-backout highlighting {#sec:rxh8}
 
 This slice colors each chunk on its own. A chunk body that is only a fragment,
-such as `count += 1;` with no enclosing function, leans on tree-sitter's error
+such as \code{count += 1;} with no enclosing function, leans on tree-sitter's error
 recovery. The more correct design colors the tangled program, which is complete
 and has full context, and paints the token colors back onto the chunk view. That
-is blocked today by provenance. `notangle -L` gives line-granular breadcrumbs,
+is blocked today by provenance. \code{notangle -L} gives line-granular breadcrumbs,
 but it says nothing about which tangled columns came from a chunk's own text and
 which came from an expanded hole. The back-paint needs column-level
 tangle-to-chunk provenance, which noweb throws away. This is a concrete reason to
-eventually own or fork `notangle` (§11). Chunk-local highlighting is the interim.
+eventually own or fork \code{notangle} (§11). Chunk-local highlighting is the interim.
 It is correct for a whole-chunk root, and it falls back to plain text for a
 fragment.
 
@@ -175,7 +175,7 @@ pub enum Lang {
     Css,
 }
 @
-Four small conversions: the id `cob language` prints, parsing an id from config,
+Four small conversions: the id \code{cob language} prints, parsing an id from config,
 mapping a file extension to a language, and reading a language off a chunk or root
 name that ends in a known extension.
 <<language conversions>>=
@@ -219,9 +219,9 @@ impl Lang {
     }
 }
 @
-The resolved highlighting configuration. `default` is the document-wide tier-2
-language; `chunk_lang` is the tier-1 per-chunk map. Both are already parsed to
-`Lang`, so an unknown id was rejected once at config-load, not here.
+The resolved highlighting configuration. \code{default} is the document-wide tier-2
+language; \code{chunk_lang} is the tier-1 per-chunk map. Both are already parsed to
+\code{Lang}, so an unknown id was rejected once at config-load, not here.
 <<the resolved config>>=
 /// The resolved highlighting configuration for a document (§5.5). `default` is the
 /// document-wide `[weave] lang` (tier 2); `chunk_lang` is the `[weave.chunk-lang]`
@@ -279,7 +279,7 @@ pub fn resolve(doc: &DocModel, chunk: &str, cfg: &LangConfig) -> Option<Lang> {
     None
 }
 @
-Chunk name to the names it uses, drawn from each code section's spans. `ChunkInfo.uses`
+Chunk name to the names it uses, drawn from each code section's spans. \code{ChunkInfo.uses}
 is a reverse index of use-site sections, so the forward edges are built here for the
 reachability walk.
 <<forward chunk-use edges>>=
@@ -301,7 +301,7 @@ fn forward_uses(doc: &DocModel) -> HashMap<&str, Vec<&str>> {
     fwd
 }
 @
-Does `root` reach `target` by following chunk uses, counting `root` itself.
+Does \code{root} reach \code{target} by following chunk uses, counting \code{root} itself.
 <<reachability>>=
 /// Does `root` reach `target` by following chunk uses? (`root == target` counts.)
 fn reaches(forward: &HashMap<&str, Vec<&str>>, root: &str, target: &str) -> bool {
@@ -336,7 +336,7 @@ impl std::error::Error for HlError {}
 @
 The highlight names recognized, in fixed order. tree-sitter matches a grammar's
 dotted capture to the longest of these that is a prefix, so listing base names is
-enough; each maps to a `tok-` class.
+enough; each maps to a \code{tok-} class.
 <<the highlight names>>=
 /// The highlight names we recognize, in a fixed order. tree-sitter matches a
 /// grammar's dotted capture (`punctuation.bracket`) to the longest of these that
@@ -362,8 +362,8 @@ const HL_NAMES: &[&str] = &[
     "variable",
 ];
 @
-The `tok-` class for each name, same order. An index out of range falls back to
-`tok-variable`, the plainest colored class.
+The \code{tok-} class for each name, same order. An index out of range falls back to
+\code{tok-variable}, the plainest colored class.
 <<the token classes>>=
 /// The `tok-*` class for each `HL_NAMES` entry, same order. A highlight index out
 /// of range falls back to `tok-variable` (the plainest colored class).
@@ -400,7 +400,7 @@ thread_local! {
 }
 @
 Fetch or build the grammar configuration for a language, caching it. Building applies
-`HL_NAMES` so capture indices line up with `TOK_CLASSES`.
+\code{HL_NAMES} so capture indices line up with \code{TOK_CLASSES}.
 <<build or fetch a grammar config>>=
 fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
     if let Some(cfg) = CONFIGS.with(|m| m.borrow().get(&lang).cloned()) {
@@ -421,8 +421,8 @@ fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
 }
 @
 Highlight one chunk. The source is the raw code with holes removed and lines joined
-by newline; `holes` gives each removed hole's byte offset and its anchor HTML. The
-walk keeps a stack of open `tok-` classes so it can close them in reverse and reopen
+by newline; \code{holes} gives each removed hole's byte offset and its anchor HTML. The
+walk keeps a stack of open \code{tok-} classes so it can close them in reverse and reopen
 them across a line break or around a hole — a hole is always emitted outside every
 color span, and each line is left self-contained so the caller can wrap and number
 it. The returned strings are the inner HTML of each line.

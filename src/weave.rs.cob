@@ -18,8 +18,8 @@ of the same input make byte-identical output.
 
 ## How a code chunk renders {#sec:A00S}
 
-A code chunk renders as a `section` that wraps a collapsible `details`. The
-`summary` holds the chunk name; the body holds one `span` per line:
+A code chunk renders as a \code{section} that wraps a collapsible \code{details}. The
+\code{summary} holds the chunk name; the body holds one \code{span} per line:
 
 ```html
 <section class="code" id="sec-2" data-nw-file="…" data-nw-line="6" data-chunk="lex a token">
@@ -39,18 +39,18 @@ Three decisions shape this markup, and all three need zero client JavaScript.
 First, the chunk is collapsible and open by default. A reader can fold a chunk
 away. Nothing is hidden from a reader who never touches it, and the collapsed
 state is not persisted, because that needs no JavaScript and no storage. The
-header lives in the `summary`, which matters for a cross-reference: a link targets
-the `section`, not the `details`, so a link into a *collapsed* chunk still scrolls
+header lives in the \code{summary}, which matters for a cross-reference: a link targets
+the \code{section}, not the \code{details}, so a link into a *collapsed* chunk still scrolls
 to a visible element that names the chunk.
 
-Second, the line numbers are `.cob` source lines, not per-chunk 1..n. The number a
-reader sees is the number they type into an editor. It matches the `data-nw-line`
-provenance and any `notangle -L` pragma. A continuation chunk restarts at its own
+Second, the line numbers are \code{.cob} source lines, not per-chunk 1..n. The number a
+reader sees is the number they type into an editor. It matches the \code{data-nw-line}
+provenance and any \code{notangle -L} pragma. A continuation chunk restarts at its own
 source line, which is the honest answer: the two halves of a chunk are not
 contiguous in the source.
 
-The numbers render as CSS generated content — `data-line` on the span,
-`content: attr(data-line)` in the stylesheet — never as text nodes. This is not
+The numbers render as CSS generated content — \code{data-line} on the span,
+\code{content: attr(data-line)} in the stylesheet — never as text nodes. This is not
 cosmetic. A text-node number would be copied with a code selection, and it would
 sit inside the exact-quote selector the annotation layer anchors with (§9.2). So a
 re-weave after an edit above would orphan every annotation on the code below.
@@ -58,14 +58,14 @@ Generated content is invisible to both the clipboard and the selector.
 
 Third, the bytes get syntax highlighting. The chunk-use hole stays opaque, the
 language is resolved out of band, and the color is pure CSS. This preserves the
-copy-paste and the annotation invariants above. The `highlight` module owns that
+copy-paste and the annotation invariants above. The \code{highlight} module owns that
 concern and states the full rule (§5.5).
 
 ## How the code implements this {#sec:LG7c}
 
 The module is the error type, the per-chunk and per-section renderers, the
 fragment passes, the mint-only lock path, the whole-document render, the asset
-copy, and the top-level `write_site` that ties them to disk.
+copy, and the top-level \code{write_site} that ties them to disk.
 <<src/weave.rs>>=
 <<the module banner>>
 
@@ -347,7 +347,7 @@ fn wrap_section(
 A rendered page pairs its metadata with its HTML. The site is every page, one
 standalone sitemap page, the math count, the collected lints, and the archival JSON
 — the JSON is always assembled but only written under the archive flag, and its
-metadata is a placeholder that `write_site` fills in. The test-only helper
+metadata is a placeholder that \code{write_site} fills in. The test-only helper
 concatenates every page's HTML for whole-document assertions where the page split is
 not what is under test.
 <<the rendered page and the site>>=
@@ -482,7 +482,7 @@ fn scan_frags(frags: &[Frag]) -> Result<(Scan, Vec<Option<String>>), WeaveError>
     Ok((scan, first_tags))
 }
 @
-The mint-only path is `cob lock`. It runs the same render and scan passes so it
+The mint-only path is \code{cob lock}. It runs the same render and scan passes so it
 sees the same labels the weaver would, then mints a frozen id for each, in document
 order, into the caller's lock. It renders no math and writes no HTML — it only
 grows the lock so the caller can persist it. The language config is empty because
@@ -764,8 +764,8 @@ pub fn render(
 @
 The template contexts turn a page's metadata into the values the template reads: a
 link is a title and a filename; a nav node is a title, an href, its children, and a
-`current` flag. `current` is true when the node is the landing entry of the page now
-being woven — an h1's href is exactly that page's filename (`resolve.rs`). Because
+\code{current} flag. \code{current} is true when the node is the landing entry of the page now
+being woven — an h1's href is exactly that page's filename (\code{resolve.rs}). Because
 cob renders every page on its own, it knows which entry is current and marks it
 statically, so the nav shows the reader's place with no script and in every browser.
 The sitemap passes an empty current, so it highlights nothing.
@@ -788,7 +788,7 @@ fn nav_context(nodes: &[NavNode], current: &str) -> Vec<minijinja::Value> {
         .collect()
 }
 @
-A node page sits one directory down, so its nav links need a `../` prefix; it
+A node page sits one directory down, so its nav links need a \code{../} prefix; it
 marks nothing current. A breadcrumb step and a backlink are each a title and an
 href, so one helper serves both.
 <<the node page context>>=
@@ -896,11 +896,11 @@ fn write_embedded_katex(_dst: &Path) -> Result<(), WeaveError> {
     ))
 }
 @
-The embedded dist is `include_bytes!`d from the pinned `COB_KATEX_ASSETS` at build
+The embedded dist is \code{include_bytes!}d from the pinned \code{COB_KATEX_ASSETS} at build
 time, so the version pin stays in the flake (§6.3) and no fonts are vendored in the
 source tree. The font list is fixed for the pinned KaTeX version; a bump changes
 the list here and the hash in the flake together. This module exists only under
-the `embed-assets` feature, so a default build never reads the env at compile time.
+the \code{embed-assets} feature, so a default build never reads the env at compile time.
 <<the embedded katex dist>>=
 /// The pinned KaTeX dist, baked in at build time from `COB_KATEX_ASSETS` for a
 /// standalone binary. Kept sorted for deterministic output (§8).
@@ -1258,7 +1258,7 @@ fn math_is_rendered_not_left_as_placeholder() {
     assert!(!html.contains("<span>a < b</span>"));
 }
 @
-A `\code{…}` span in prose renders as an escaped inline code element.
+A \code{\code{…}} span in prose renders as an escaped inline code element.
 <<quoted code renders as escaped code>>=
 #[test]
 fn quoted_code_renders_as_escaped_code() {
@@ -1632,9 +1632,9 @@ fn markdown_fenced_floats_are_labeled_and_referenced() {
     assert!(html.contains("href=\"#tbl-units\""));
 }
 @
-The transclusion fixture puts a title, an intro, and the source heading in one `@`
+The transclusion fixture puts a title, an intro, and the source heading in one \code{@}
 chunk, then transcludes the source into a later section. The copy is cut at the
-heading — the shallower `h1` stays out — runs across the following code chunk, and
+heading — the shallower \code{h1} stays out — runs across the following code chunk, and
 carries scoped ids so it cannot collide with the canonical node.
 <<transclusion cuts a heading node and scopes the copy>>=
 #[test]
@@ -1658,9 +1658,9 @@ fn transclusion_cuts_a_heading_node_and_scopes_the_copy() {
     assert!(site.lints.iter().all(|l| l.code != "W105" && l.code != "W106"));
 }
 @
-Every uid-bearing node earns a standalone page under `n/` (§10). The page carries
-the node body, a breadcrumb up to the document `h1`, a "read in context" link to
-the canonical anchor, and the backlinks that point at the node. The `h1` itself
+Every uid-bearing node earns a standalone page under \code{n/} (§10). The page carries
+the node body, a breadcrumb up to the document \code{h1}, a "read in context" link to
+the canonical anchor, and the backlinks that point at the node. The \code{h1} itself
 has no uid, so it earns no page.
 <<every node gets a standalone page with context and backlinks>>=
 #[test]
@@ -1698,7 +1698,7 @@ fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
     assert_eq!(reuse_uid.len(), ID_LEN as usize);
 }
 @
-A labelled float is a node too (§10). `\transclude{fig:…}` lifts the one figure
+A labelled float is a node too (§10). \code{\transclude{fig:…}} lifts the one figure
 out of its section and inlines it with a scoped id and chrome that names the
 caption. The figure and the equation each earn a node page, and each leads with a
 node-page link in context.

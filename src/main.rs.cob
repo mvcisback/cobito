@@ -2,19 +2,19 @@
 
 This is the binary. It parses the argument vector, dispatches to one subcommand,
 and turns each subcommand's outcome into a process exit code. Every subcommand is
-a small function that prints its own diagnostics and returns an `ExitCode`, so the
+a small function that prints its own diagnostics and returns an \code{ExitCode}, so the
 dispatcher stays a flat table.
 
 The exit codes follow one rule. A usage mistake — a missing argument, an unknown
 command — exits with code 2. A real failure — a file did not read, the model
-rejected the document, disk write failed — exits with code 1 (`ExitCode::FAILURE`).
+rejected the document, disk write failed — exits with code 1 (\code{ExitCode::FAILURE}).
 Success is
 code 0. A build script can therefore tell "you called me wrong" apart from "the
 work failed".
 
-The front half of `weave`, `lock`, `language`, `tangle`, and both dump commands is
-the same: read the `.cob` files, fold the events into the document model. That shared
-front half is factored into `build_doc` where a command needs it, and inlined where
+The front half of \code{weave}, \code{lock}, \code{language}, \code{tangle}, and both dump commands is
+the same: read the \code{.cob} files, fold the events into the document model. That shared
+front half is factored into \code{build_doc} where a command needs it, and inlined where
 it does not.
 <<src/main.rs>>=
 <<the module tree>>
@@ -78,7 +78,7 @@ use std::path::Path;
 use std::process::ExitCode;
 @
 The usage banner is the help text. It prints when the command line makes no sense.
-It lists every subcommand and every option, so a reader who runs `cob` with no
+It lists every subcommand and every option, so a reader who runs \code{cob} with no
 arguments learns the whole surface at once.
 <<the usage banner>>=
 const USAGE: &str = "\
@@ -108,7 +108,7 @@ OPTIONS:
     --check                       tangle: diff roots against disk, exit 1 on drift
 ";
 @
-The dispatcher reads the argument vector once. It handles `--explain` first,
+The dispatcher reads the argument vector once. It handles \code{--explain} first,
 because that flag is informational and may sit after any subcommand or stand
 alone. Then it matches the first argument against the known commands. Each arm
 guards on the argument count, so a command with the wrong number of arguments
@@ -168,11 +168,11 @@ fn explain_cmd(code: Option<&str>) -> ExitCode {
 @
 The weave command is the main path. It parses its own options, reads the files,
 builds the model, loads config, resolves the highlighting language, then calls
-`weave::write_site`. Lints from the model and lints from the site are both
-counted; `--deny-warnings` turns a nonzero count into a nonzero exit after the
+\code{weave::write_site}. Lints from the model and lints from the site are both
+counted; \code{--deny-warnings} turns a nonzero count into a nonzero exit after the
 site is written, so CI fails but the artifact stays available.
 
-The option loop walks the argument iterator by hand. `--out` consumes the next
+The option loop walks the argument iterator by hand. \code{--out} consumes the next
 argument as a directory; a missing value is a usage error. Everything the loop
 does not recognise is treated as a file.
 <<the weave command>>=
@@ -293,8 +293,8 @@ fn weave_cmd(args: &[String]) -> ExitCode {
     }
 }
 @
-`build_doc` is the shared front half of `lock`. It reads the files and builds the
-model. It prints its own diagnostics and carries the exit code in the `Err`, so the
+\code{build_doc} is the shared front half of \code{lock}. It reads the files and builds the
+model. It prints its own diagnostics and carries the exit code in the \code{Err}, so the
 caller returns that code directly.
 <<build the document once>>=
 /// Read the `.cob` files + fold the IR into the model — the front half shared by
@@ -313,9 +313,9 @@ fn build_doc(files: &[String]) -> Result<model::DocModel, ExitCode> {
 @
 The lock command mints a frozen id for every label without rendering. It loads the
 lock file and records the count. First it mints an id for every float and every
-author `sec:` heading. Then it gives every unlabelled `h2`/`h3` heading an id too:
-it mints one, records it, and writes a `sec:` anchor into the heading's source line
-(§7.1, `section.rs`). It saves the grown lock. Ids already present are left
+author \code{sec:} heading. Then it gives every unlabelled \code{h2}/\code{h3} heading an id too:
+it mints one, records it, and writes a \code{sec:} anchor into the heading's source line
+(§7.1, \code{section.rs}). It saves the grown lock. Ids already present are left
 untouched, and an already anchored heading is skipped, so re-running is idempotent.
 The report shows how many were newly minted.
 <<the lock command>>=
@@ -373,9 +373,9 @@ fn lock_cmd(files: &[String]) -> ExitCode {
 The rename-label command gives an auto-anchored section id a human name. It takes
 the frozen id and a bare name, and never changes the id, so every reference and
 permalink still resolves. First it validates the name — letters, digits, hyphen, and
-underscore only, since it becomes a `sec:` label. Then it finds the section entry the
+underscore only, since it becomes a \code{sec:} label. Then it finds the section entry the
 id belongs to, and refuses if the target name already exists in that file. It
-rewrites the source anchor from `sec:<id>` to `sec:<name>`, then rekeys the lock and
+rewrites the source anchor from \code{sec:<id>} to \code{sec:<name>}, then rekeys the lock and
 saves it. The source edit runs before the lock save, so a write failure never leaves
 a lock that points at an anchor the source does not carry.
 <<the rename-label command>>=
@@ -458,7 +458,7 @@ fn labels_cmd(file: &str) -> ExitCode {
 }
 @
 The id command prints the frozen id for one label. A known label prints and
-succeeds. An unknown label fails, and the message points at `cob lock` as the fix.
+succeeds. An unknown label fails, and the message points at \code{cob lock} as the fix.
 <<the id command>>=
 /// `cob id <file> <label>`: print the frozen id for one label, or exit nonzero if
 /// the label is not in `cob.lock`.
@@ -482,7 +482,7 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
     }
 }
 @
-`lang_config` builds the resolved highlighting config from the `[weave]` table. It
+\code{lang_config} builds the resolved highlighting config from the \code{[weave]} table. It
 validates every language name — the document default and every per-chunk value.
 An unknown name is a config error (E033), not a silent fallback, so a typo is
 caught rather than ignored. The inner closure parses one name and reports where it
@@ -513,7 +513,7 @@ fn lang_config(weave: &config::Weave) -> Result<highlight::LangConfig, String> {
 The language command prints the highlighting language cob resolves for one chunk.
 It is the shared resolver an editor plugin agrees with, exposed on the command
 line. It builds the model, loads config, resolves the language config, then calls
-`highlight::resolve`. A resolved language prints and succeeds. No known language
+\code{highlight::resolve}. A resolved language prints and succeeds. No known language
 exits nonzero, so a build can gate on it.
 <<the language command>>=
 /// `cob language <file> <chunk>`: print the highlighting language cob resolves for
@@ -562,16 +562,16 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
     }
 }
 @
-The tangle command extracts root chunks. It parses `--out`, `-R`, and `--check`.
-Precedence for the output directory is explicit flag, then `cob.toml`, then the
+The tangle command extracts root chunks. It parses \code{--out}, \code{-R}, and \code{--check}.
+Precedence for the output directory is explicit flag, then \code{cob.toml}, then the
 current directory.
 
 Every mode walks the model — it holds each chunk and its uses, and it surfaces the
-use-of-undefined-chunk error (E010) before tangle runs. `-R name` tangles one
+use-of-undefined-chunk error (E010) before tangle runs. \code{-R name} tangles one
 chunk (any name, not only a root) to stdout and never touches disk, so the caller
-redirects it. `--check` diffs each root against disk and reports drift; the default
+redirects it. \code{--check} diffs each root against disk and reports drift; the default
 mode writes each root and reports whether it was created, updated, or unchanged.
-The native tangler does not emit `-L` line pragmas yet, so a configured format
+The native tangler does not emit \code{-L} line pragmas yet, so a configured format
 gives a warning, not silent output (§11).
 <<the tangle command>>=
 fn tangle_cmd(args: &[String]) -> ExitCode {
@@ -755,10 +755,10 @@ window in the tool: read the files, print what the reader returned. It is the fi
 thing to reach for when the model looks wrong, because it shows the input the model
 folds.
 
-With `--from-markup <file>` it prints the events parsed from a frozen `markup` IR
-file instead of reading a `.cob`. This is the hermetic side of the `reader` flake
-check (§4.1): the native reader over a `.cob` must print the same events as
-`noweb::parse` over that file's pinned `.markup` golden, and no `markup` process
+With \code{--from-markup <file>} it prints the events parsed from a frozen \code{markup} IR
+file instead of reading a \code{.cob}. This is the hermetic side of the \code{reader} flake
+check (§4.1): the native reader over a \code{.cob} must print the same events as
+\code{noweb::parse} over that file's pinned \code{.markup} golden, and no \code{markup} process
 runs. The pinned goldens are the reader's oracle now that cob spawns no noweb.
 <<dump the ir>>=
 fn dump_ir(args: &[String]) -> ExitCode {

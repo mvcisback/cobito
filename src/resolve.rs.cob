@@ -4,7 +4,7 @@ This module is the specification and the implementation of document-global
 planning. The prose is the specification. The chunks after it are the
 implementation. Planning turns the raw scan (§6.2 step 4 inputs) into what the
 second rewrite pass and the templates need: page assignment, the nav tree, the
-label table, and one resolved target for each `data-ref` site.
+label table, and one resolved target for each \code{data-ref} site.
 
 ## Identity is document-global {#sec:iBsg}
 
@@ -16,37 +16,37 @@ planning lives in its own pass, before the split.
 §7.1 supersedes the display half of this section (the lock module). A reference
 shows a stable opaque id, not a position-dependent "Figure 3". The anchoring and
 caption mechanics here are unchanged; what changed is what the id is, and the
-attribute that carries it (`data-id`, not `data-number`).
+attribute that carries it (\code{data-id}, not \code{data-number}).
 
 ## Labels and references {#sec:fnwt}
 
-Prose carries a label on the target and a reference at the use site. In `html`
-mode these are attributes; in `markdown` mode `\label` and `\ref` lower to the
-same attributes (§6.4). At weave time cob turns each `data-ref` into an anchor
+Prose carries a label on the target and a reference at the use site. In \code{html}
+mode these are attributes; in \code{markdown} mode \code{\label} and \code{\ref} lower to the
+same attributes (§6.4). At weave time cob turns each \code{data-ref} into an anchor
 whose text comes from the target's kind and its opaque id, such as
-`<a href="parsing.html#fig-pipeline">Figure k3f9</a>`. cob keeps author-supplied
+\code{<a href="parsing.html#fig-pipeline">Figure k3f9</a>}. cob keeps author-supplied
 link text if there is any. An href is relative: a same-page target is a bare
-`#anchor`; a cross-page target is `page.html#anchor`. A colon in a label id
+\code{#anchor}; a cross-page target is \code{page.html#anchor}. A colon in a label id
 becomes a dash in the emitted anchor, because a colon needs escaping in every CSS
 selector that touches it.
 
-- Namespaces are by prefix: `eq:`, `fig:`, `tbl:`, `sec:`, and `chunk:`. An id
+- Namespaces are by prefix: \code{eq:}, \code{fig:}, \code{tbl:}, \code{sec:}, and \code{chunk:}. An id
   with no known prefix is not a target.
-- The numbering scheme is `flat` or `by-page`; the default is `flat`, so a page
-  boundary does not leak into a stable reference. M2 implements `flat`.
-- cob numbers an equation by default. A `data-nonumber` equation div opts out.
+- The numbering scheme is \code{flat} or \code{by-page}; the default is \code{flat}, so a page
+  boundary does not leak into a stable reference. M2 implements \code{flat}.
+- cob numbers an equation by default. A \code{data-nonumber} equation div opts out.
 - A figure and a table need a caption. A missing caption is the W103 lint, not an
   error.
-- A duplicate label is the E014 error. A `data-ref` to an unknown label is E015.
+- A duplicate label is the E014 error. A \code{data-ref} to an unknown label is E015.
 
-A `chunk:` target is synthesized from a chunk name, so prose can link to code.
+A \code{chunk:} target is synthesized from a chunk name, so prose can link to code.
 Its anchor is the chunk's first defining section, and the default link text is
 the chunk name.
 
 ## Identity never enters a text node {#sec:m11o}
 
 Like a code line number (§5.4), a float's id lands in an attribute and the
-stylesheet draws it. Because CSS `attr()` reads only the element's own
+stylesheet draws it. Because CSS \code{attr()} reads only the element's own
 attributes, the id is stamped on the caption element, not on the container, and
 an equation carries it on the equation div itself. This keeps the annotation
 layer's quote selectors (§9.2) stable when a figure moves, and the opaque id does
@@ -60,7 +60,7 @@ second page. The attribute holds the globally-assigned id instead — which unde
 ## How the code implements this {#sec:XwSp}
 
 The module is the label-id map, the error type, the resolution's data types, a
-slug-uniquifier, the `plan` entry point (walked in phases), and the nav builder.
+slug-uniquifier, the \code{plan} entry point (walked in phases), and the nav builder.
 <<src/resolve.rs>>=
 <<the module banner>>
 
@@ -104,13 +104,13 @@ use crate::model::{DocModel, Lint};
 use crate::rewrite::{anchor_of, slug, Kind, ResolvedRef, Scan};
 @
 The label-id map carries every labelled float's human label to its frozen opaque
-id (§7.1). Weave builds it from `cob.lock` before planning.
+id (§7.1). Weave builds it from \code{cob.lock} before planning.
 <<the label id map>>=
 /// Human label → frozen opaque id (§7.1), covering every labelled float in the
 /// document. Weave builds this from `cob.lock` before planning.
 pub type LabelIds = BTreeMap<String, String>;
 @
-Two failures: the same label id defined twice (E014), and a `data-ref` whose
+Two failures: the same label id defined twice (E014), and a \code{data-ref} whose
 target is no known label (E015).
 <<the resolve error>>=
 #[derive(Debug)]
@@ -136,8 +136,8 @@ impl fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 @
-`PageMeta` is one output page's id, title, and filename. `NavNode` is one
-table-of-contents entry: its `site.json` id, level, title, link href, and
+\code{PageMeta} is one output page's id, title, and filename. \code{NavNode} is one
+table-of-contents entry: its \code{site.json} id, level, title, link href, and
 children.
 <<page and nav metadata>>=
 #[derive(Debug, Clone)]
@@ -157,8 +157,8 @@ pub struct NavNode {
     pub children: Vec<NavNode>,
 }
 @
-`Label` is a resolved label as the §8 table records it — a page index, an anchor,
-a kind, and (for a float) its opaque id. `Resolution` is the whole plan: the
+\code{Label} is a resolved label as the §8 table records it — a page index, an anchor,
+a kind, and (for a float) its opaque id. \code{Resolution} is the whole plan: the
 pages, each section's page, the nav, the label table, the per-heading anchors and
 their optional opaque ids, one resolved ref per site, and the lints.
 <<a resolved label and the resolution>>=
@@ -193,7 +193,7 @@ pub struct Resolution {
     pub lints: Vec<Lint>,
 }
 @
-`LabelInfo` is the planner's private working record for one label: its page,
+\code{LabelInfo} is the planner's private working record for one label: its page,
 anchor, kind, opaque id, and the link text to use when the author gave none.
 <<internal label info>>=
 struct LabelInfo {
@@ -206,8 +206,8 @@ struct LabelInfo {
     text: String,
 }
 @
-Slugs must be unique within a page, so this suffixes a repeat with `-2`, `-3`,
-and so on; an empty base becomes `x`.
+Slugs must be unique within a page, so this suffixes a repeat with \code{-2}, \code{-3},
+and so on; an empty base becomes \code{x}.
 <<make a slug page-unique>>=
 /// A per-page set that turns a slug into a page-unique one by suffixing.
 fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
@@ -221,7 +221,7 @@ fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
     }
 }
 @
-`plan` runs in five phases. It first indexes the h1 text per section, then assigns
+\code{plan} runs in five phases. It first indexes the h1 text per section, then assigns
 each section to a page (Pass A), stamps heading anchors and builds the nav, fills
 the label table from floats, headings, and chunk targets, resolves every ref to an
 href and display text, and finally collects lints and assembles the result.
@@ -255,7 +255,7 @@ pub fn plan(
 <<collect lints and assemble the resolution>>
 }
 @
-The first page is always `index`, whatever it opens with. After that, each h1
+The first page is always \code{index}, whatever it opens with. After that, each h1
 starts a new page whose slug is derived from its title and made unique.
 <<pass a: assign each section to a page>>=
     // --- Pass A: page assignment ------------------------------------------
@@ -292,8 +292,8 @@ starts a new page whose slug is derived from its title and made unique.
     }
 @
 An h1 anchors to its page id; a deeper heading gets a page-unique slug unless the
-author pinned an id, which a `sec:` ref may target. A pinned section label is
-recorded for the label table, and its opaque id is carried out so `apply` can
+author pinned an id, which a \code{sec:} ref may target. A pinned section label is
+recorded for the label table, and its opaque id is carried out so \code{apply} can
 stamp the permalink prefix.
 <<stamp heading anchors and build the nav>>=
     // --- Heading anchors + nav --------------------------------------------
@@ -334,7 +334,7 @@ stamp the permalink prefix.
 @
 The label table draws from three sources: scanned float labels (each with its
 kind-and-opaque-id display text), heading section labels (which render as a
-kind-qualified opaque id, not the rot-prone heading text), and synthetic `chunk:`
+kind-qualified opaque id, not the rot-prone heading text), and synthetic \code{chunk:}
 targets that point at a chunk's first defining section so prose can link into
 code. A repeat id is E014.
 <<fill the label table>>=
@@ -438,7 +438,7 @@ if present, otherwise the label's own text. An unknown target is E015.
 @
 An uncaptioned figure or table cannot be numbered meaningfully, so it is W103. The
 public §8 label table then keeps everything but the synthetic chunk targets, which
-the `chunks` section already represents.
+the \code{chunks} section already represents.
 <<collect lints and assemble the resolution>>=
     // --- Lints ------------------------------------------------------------
     // A figure or table without a caption cannot be numbered meaningfully (§7).
@@ -533,7 +533,7 @@ fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<Na
 }
 @
 The tests build resolutions from raw prose fragments and assert the plan: pages
-open on h1, the first page is always `index`, nav nests, refs cross pages or stay
+open on h1, the first page is always \code{index}, nav nests, refs cross pages or stay
 fragments, chunk refs target the defining section, author ref text wins, and the
 E014/E015/W103 diagnostics fire.
 <<the tests>>=
@@ -652,7 +652,7 @@ fn h1_sections_start_pages_code_inherits() {
     assert_eq!(r.section_page, vec![0, 0, 1]);
 }
 @
-The first page is `index` even when it opens with a heading, taking the heading's
+The first page is \code{index} even when it opens with a heading, taking the heading's
 text as its title.
 <<the first page is index even with a heading>>=
 #[test]
@@ -705,7 +705,7 @@ fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
     assert_eq!(r.refs[2].href, "#eq-c");
 }
 @
-A `chunk:` ref points at the chunk's defining section, with the chunk name as
+A \code{chunk:} ref points at the chunk's defining section, with the chunk name as
 text.
 <<chunk refs target the defining section>>=
 #[test]
@@ -719,7 +719,7 @@ fn chunk_refs_target_the_defining_section() {
 }
 @
 When the author supplied ref text, the resolver keeps it (leaving the generated
-text `None`).
+text \code{None}).
 <<author ref text is kept>>=
 #[test]
 fn author_ref_text_is_kept() {

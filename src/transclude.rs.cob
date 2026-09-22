@@ -11,21 +11,21 @@ pull one part of a document into another place and show it there. This is
 link to it.
 
 The unit that moves is a **node**. A node is an addressable part of the document.
-cob already gives every part an address. Every `h2`/`h3` section earns an opaque
-`sec:` id (§7.1); every labelled float earns an opaque id. So the document is
+cob already gives every part an address. Every \code{h2}/\code{h3} section earns an opaque
+\code{sec:} id (§7.1); every labelled float earns an opaque id. So the document is
 already a tree of nodes: the heading nesting *is* the node tree, and the woven
-nav tree already draws it. A `.cob` file is sugar for a root node that holds its
+nav tree already draws it. A \code{.cob} file is sugar for a root node that holds its
 child nodes in document order. The node model needs almost no new identity
 machinery — it reuses the anchors the resolver already stamps.
 
 ## What this first slice does {#sec:K4mP}
 
 This slice does **same-document** transclusion of a **section node**. The author
-writes `\transclude{sec:name}` (Markdown) or the raw island a dialect lowers it
+writes \code{\transclude{sec:name}} (Markdown) or the raw island a dialect lowers it
 to (§6.4). A node is a heading and the content under it: the heading, its own
 text, and its child headings, up to the next heading at the same or a shallower
 level. cob cuts the node at these heading boundaries, not at the chunk
-boundaries, and puts the node where the directive sits. So one `@` chunk can hold
+boundaries, and puts the node where the directive sits. So one \code{@} chunk can hold
 many nodes, and a node can run across several chunks.
 
 Three rules make the copy safe:
@@ -56,7 +56,7 @@ on the host's page with no change to the split.
 
 The canonical render is unchanged. A section that holds no directive is
 byte-identical to today. This keeps the determinism anchor (§8): the archival
-`site.json` still records the canonical nodes once, because it is built from the
+\code{site.json} still records the canonical nodes once, because it is built from the
 pre-expansion bodies.
 
 ## Floats are nodes too {#sec:Fx3r}
@@ -64,15 +64,15 @@ pre-expansion bodies.
 A figure, a table, and an equation are nodes too. Each one already earns an
 opaque id (§7.1), so each one is addressable. cob cuts a float node by its tag,
 not by heading boundaries: it finds the element that carries the float's anchor
-and balances that tag, so a figure's inner tags and an equation's KaTeX `div`s do
-not cut the element short. So `\transclude{fig:name}` lifts the one figure out of
+and balances that tag, so a figure's inner tags and an equation's KaTeX \code{div}s do
+not cut the element short. So \code{\transclude{fig:name}} lifts the one figure out of
 its section and shows it where the directive sits, with the same scoped ids and
 context chrome a section copy gets. The chrome header reads the float's caption.
 
-A float also earns its own page, at `n/<id>.html`, the same as a section node.
+A float also earns its own page, at \code{n/<id>.html}, the same as a section node.
 Its breadcrumb is the heading it sits in, with that heading's own parents before
 it, so the reader keeps the context the float belongs to. Its backlinks are the
-nodes that transclude it and the nodes that `\ref` it. In its section, the float
+nodes that transclude it and the nodes that \code{\ref} it. In its section, the float
 leads with the same ⧉ node-page link a heading gets: on a figure or a table the
 link rides the caption; an equation has no caption, so the link rides the block
 and CSS drops it in the left margin.
@@ -86,28 +86,28 @@ What is still deferred:
 ## A page for every node {#sec:node-pages}
 
 A node is a place a reader can go to. So every heading node and every labelled
-float gets its own page, at `n/<id>.html`, where `<id>` is the node's frozen
+float gets its own page, at \code{n/<id>.html}, where \code{<id>} is the node's frozen
 opaque id (§7.1). The page shows one node on its own, the way a forester wiki
-shows one tree. A heading with no id — an `h1`, which is already its own page —
+shows one tree. A heading with no id — an \code{h1}, which is already its own page —
 gets no node page.
 
 The page has three parts. First a **breadcrumb**: the chain of parent headings,
-from the document `h1` down to the node, so the reader keeps the context the
-node sits in. Each parent links to its own node page (or, for the `h1`, to its
+from the document \code{h1} down to the node, so the reader keeps the context the
+node sits in. Each parent links to its own node page (or, for the \code{h1}, to its
 document page). Then the **node body** itself, the same bytes the canonical page
 shows, with a link back to the node in context. Last the **backlinks**: every
 node that transcludes this one ("Transcluded by") and every node that refers to
-it with `\ref` ("Referenced by"). So the reader sees where the node is used, not
+it with \code{\ref} ("Referenced by"). So the reader sees where the node is used, not
 only what it says.
 
 cob finds the backlinks by one scan of the section bodies, before the page
-split. A `\transclude` island names its target; a resolved `\ref` keeps its
-label in `data-ref`. For each, cob finds the innermost heading above it — the
+split. A \code{\transclude} island names its target; a resolved \code{\ref} keeps its
+label in \code{data-ref}. For each, cob finds the innermost heading above it — the
 node the use sits in — and records the pair. So a backlink names a node, and
 links to that node's page.
 
-A node page lives one directory down, in `n/`, so its links to the document
-pages and the shared assets get a `../` prefix. A link inside the node body that
+A node page lives one directory down, in \code{n/}, so its links to the document
+pages and the shared assets get a \code{../} prefix. A link inside the node body that
 points *out* of the node is made page-qualified, so it still lands on the right
 document page; a link that points *inside* the node stays a bare fragment. The
 page is static HTML, like every other: the only script is the shared nav aid,
@@ -158,7 +158,7 @@ a section with no directive is byte-unchanged.
 //! back to the canonical place.
 @
 Maps and sets for the node table and the scope set; the model's lint type, the
-resolver's plan, and the rewriter's `anchor_of` (a `:` in an id becomes a `-` in
+resolver's plan, and the rewriter's \code{anchor_of} (a \code{:} in an id becomes a \code{-} in
 an anchor, the same rule the resolver uses).
 <<imports>>=
 use std::collections::{BTreeMap, BTreeSet};
@@ -168,9 +168,9 @@ use crate::prose;
 use crate::resolve::Resolution;
 use crate::rewrite::{anchor_of, Heading, Scan};
 @
-A dialect lowers `\transclude{addr}` to one exact island: an empty `div` that
+A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
 carries the address. The expander scans for this exact opening and tail, so the
-context chrome it emits — a `section`, not a `div` — and the two error markers
+context chrome it emits — a \code{section}, not a \code{div} — and the two error markers
 (a different class) are never mistaken for another placeholder.
 <<the placeholder shape>>=
 /// The island a dialect lowers `\transclude{addr}` to (§6.4). The expander
@@ -206,10 +206,10 @@ pub struct Context {
     link_pages: BTreeMap<String, String>,
 }
 @
-A node page is the data the `node` template reads: the node's opaque id (its
-filename), its heading text, the node body with links fixed for the `n/`
+A node page is the data the \code{node} template reads: the node's opaque id (its
+filename), its heading text, the node body with links fixed for the \code{n/}
 directory, a link back to the node in context, the breadcrumb of parents, and
-the two backlink lists. A `Link` is a title and an href — a breadcrumb step or a
+the two backlink lists. A \code{Link} is a title and an href — a breadcrumb step or a
 backlink both need only that.
 <<the node page>>=
 /// A title and an href: one breadcrumb step or one backlink.
@@ -240,11 +240,11 @@ pub struct NodePage {
 Building the table walks the scanned headings in document order. A node runs from
 its own heading to the next heading at the same or a shallower level; a heading
 with nothing shallower after it runs to the end of the document. cob finds each
-heading in the final section bodies by the `id` that `apply` stamps on every
+heading in the final section bodies by the \code{id} that \code{apply} stamps on every
 heading (§5.4), then cuts the body between the two heading tags — across section
 bodies when the node spans more than one chunk. The anchor is the one the
-resolver already stamped for that heading, so a `\transclude{sec:name}` and a
-`\ref{sec:name}` name the very same place.
+resolver already stamped for that heading, so a \code{\transclude{sec:name}} and a
+\code{\ref{sec:name}} name the very same place.
 <<build the node table>>=
 impl Context {
     /// Build the node table from the scan, the plan, and the final section
@@ -308,9 +308,9 @@ impl Context {
     }
 @
 Building the node pages walks the same headings. Only a heading with a frozen id
-gets a page — an `h1` is its own page, so it is skipped. Each page takes the node
+gets a page — an \code{h1} is its own page, so it is skipped. Each page takes the node
 title and body, its breadcrumb of parents, and its two backlink lists. The
-bodies are raw at this point: `finish_node_pages` expands the directives inside
+bodies are raw at this point: \code{finish_node_pages} expands the directives inside
 them and rebases their links once the context exists, so a node that holds a
 directive shows the same inlined content its canonical page does.
 <<build the node pages>>=
@@ -410,7 +410,7 @@ directive shows the same inlined content its canonical page does.
 @
 Expanding a host body scans it for placeholders and replaces each with the named
 node's HTML, left to right. A body with no placeholder returns unchanged, so a
-canonical section costs one cheap scan and no copy of content. The `scope`
+canonical section costs one cheap scan and no copy of content. The \code{scope}
 counter is threaded through the whole weave, so every transcluded copy on every
 page gets a distinct prefix and the output stays deterministic.
 <<expand one host body>>=
@@ -532,7 +532,7 @@ outer prefix composes over it.
 }
 @
 Two helpers cut a heading node body. The first finds an element's opening tag in a
-final section body by the `id` that `apply` stamps on it (§5.4): the nearest `<`
+final section body by the \code{id} that \code{apply} stamps on it (§5.4): the nearest \code{<}
 before that id is the tag start. The second joins the bytes between two heading
 tags; when the node spans more than one chunk, it takes the tail of the first
 section body, every whole body between, and the head of the last. A node with no
@@ -575,9 +575,9 @@ fn slice_body(bodies: &[String], start: (usize, usize), end: Option<(usize, usiz
 }
 @
 A float is one element, not a run between headings, so cob cuts it by balancing
-its tag. `cut_element` finds the element's opening tag by its `id`, reads the tag
+its tag. \code{cut_element} finds the element's opening tag by its \code{id}, reads the tag
 name, then walks the bytes counting nested opens and closes of that name until the
-depth returns to zero — so a figure's inner `img` or an equation's KaTeX `div`s do
+depth returns to zero — so a figure's inner \code{img} or an equation's KaTeX \code{div}s do
 not end the cut too soon. Working on bytes keeps the scan safe over the UTF-8 the
 body may hold; every match is on ASCII tag bytes, so the returned range always
 lands on a char boundary.
@@ -685,12 +685,12 @@ fn strip_tags(html: &str) -> String {
 }
 @
 Scoping a copy has three parts, in order. First, collect every id the copy
-*defines*. Then prefix every `id` (always — an id is always local to the copy).
-Then prefix every `data-for` and every same-page `href="#…"` **only when its
+*defines*. Then prefix every \code{id} (always — an id is always local to the copy).
+Then prefix every \code{data-for} and every same-page \code{href="#…"} **only when its
 target is one of the collected ids** — so a margin slot and an intra-copy link
 follow the copy, while a link out of the copy keeps pointing at the canonical
-target. The leading space in the `id`/`data-for` patterns is deliberate: it
-stops a match inside `data-id=` or `data-nw-line=`.
+target. The leading space in the \code{id}/\code{data-for} patterns is deliberate: it
+stops a match inside \code{data-id=} or \code{data-nw-line=}.
 <<scope the ids in a copy>>=
 /// Prefix every id the copy defines, and every intra-copy reference to one, with
 /// `prefix-`, so two copies of a node never collide on a page and an in-copy link
@@ -747,11 +747,11 @@ fn prefix_attr(html: &str, pat: &str, prefix: &str, gate: Option<&BTreeSet<Strin
 @
 The node-page helpers make the breadcrumb, the backlinks, and the link rebasing.
 A breadcrumb or a backlink is one link to a node — to its own node page, or, for
-an `h1`, to its document page. Backlinks come from one scan of the bodies: a
-`\transclude` island and a resolved `\ref` both name a target, and the innermost
+an \code{h1}, to its document page. Backlinks come from one scan of the bodies: a
+\code{\transclude} island and a resolved \code{\ref} both name a target, and the innermost
 heading above the use is the node it sits in. Rebasing fixes a node body for the
-`n/` directory: a link inside the node stays a bare fragment; a link out of it
-becomes `../page.html#anchor`, so it lands on the right document page.
+\code{n/} directory: a link inside the node stays a bare fragment; a link out of it
+becomes \code{../page.html#anchor}, so it lands on the right document page.
 <<qualify links for a node page>>=
 /// Anchor → document page filename, for every heading and every labelled float,
 /// so a link that leaves a node page can be made page-qualified.
@@ -938,7 +938,7 @@ mod tests {
     <<a float title reads its caption or its kind>>
 }
 @
-The harness builds a context with one node, `sec:foo`, whose body is a heading, a
+The harness builds a context with one node, \code{sec:foo}, whose body is a heading, a
 margin slot, an in-copy link, and a link out of the copy, on a single page.
 <<a context over two sections>>=
 /// A context with one node `sec-foo`, on page 0 (`index.html`). The body is a
@@ -978,7 +978,7 @@ fn run(host: &str) -> (String, Vec<Lint>) {
     (out, lints)
 }
 @
-A transclusion splices the node body inside a `transclusion` section whose header
+A transclusion splices the node body inside a \code{transclusion} section whose header
 links back to the canonical anchor with the heading text.
 <<a transclusion splices the node with chrome>>=
 #[test]
@@ -1052,10 +1052,10 @@ fn an_unknown_target_is_flagged() {
     assert!(out.contains("data-transclude=\"sec:ghost\""));
 }
 @
-A node page lives one level down, in `n/`, so `rebase_href` fixes each link by
-kind (see `qualify_hrefs`). A fragment to an id the body defines stays bare; a
-fragment to an id elsewhere gets its page and a `../` prefix; a sibling node-page
-link loses its `n/`; any other document-relative link gets `../`; an absolute
+A node page lives one level down, in \code{n/}, so \code{rebase_href} fixes each link by
+kind (see \code{qualify_hrefs}). A fragment to an id the body defines stays bare; a
+fragment to an id elsewhere gets its page and a \code{../} prefix; a sibling node-page
+link loses its \code{n/}; any other document-relative link gets \code{../}; an absolute
 link or a scheme is left alone.
 <<node-page links rebase for the n directory>>=
 #[test]
@@ -1079,7 +1079,7 @@ fn node_page_links_rebase_for_the_n_directory() {
     assert_eq!(r("mailto:a@b.c"), "mailto:a@b.c");
 }
 @
-`containing_head` finds the node a use sits in: the last heading at or before the
+\code{containing_head} finds the node a use sits in: the last heading at or before the
 use in document order. A use above every heading (a preamble) has no node.
 <<the containing head is the last at or above a use>>=
 #[test]
@@ -1097,7 +1097,7 @@ fn the_containing_head_is_the_last_at_or_above_a_use() {
 }
 @
 A float is one element, cut by balancing its tag. The cut must count nested tags
-of the same name — an equation's KaTeX `div`s, a figure's inner tags — so it does
+of the same name — an equation's KaTeX \code{div}s, a figure's inner tags — so it does
 not end early, and must leave a float with a different anchor alone.
 <<a float element is cut by balancing its tag>>=
 #[test]

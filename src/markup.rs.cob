@@ -3,62 +3,60 @@
 This module is the specification and the implementation of the native reader. The
 prose is the specification. The chunks after it are the implementation.
 
-The reader reads a `.cob` file and makes the same event stream that noweb's
-`markup` stage makes (§4.1). It replaces the `markup` process. cob no longer runs
+The reader reads a \code{.cob} file and makes the same event stream that noweb's
+\code{markup} stage makes (§4.1). It replaces the \code{markup} process. cob no longer runs
 an external tool to read its own source, so cob can ship as one binary (§11). cob
 also owns the syntax now, so a later milestone can add new chunk-line syntax that
-`markup` cannot express.
+\code{markup} cannot express.
 
 noweb does not go away. It stays the **oracle**: a test proves this reader makes
-the same events as real `markup` for every module (§15). The old IR decoder in
-`src/noweb.rs` stays too, now only as the oracle's decoder in tests.
+the same events as real \code{markup} for every module (§15). The old IR decoder in
+\code{src/noweb.rs} stays too, now only as the oracle's decoder in tests.
 
 ## What the reader must reproduce {#sec:read-rules}
 
-The reader makes the `Event` stream of `src/noweb.rs`. It follows these rules,
-each checked against real `markup` (§4.2):
+The reader makes the \code{Event} stream of \code{src/noweb.rs}. It follows these rules,
+each checked against real \code{markup} (§4.2):
 
 - A file is a list of chunks. Each chunk is documentation or code. A chunk begins
-  with a `@<<name@>>=` line (code), an `@ ` control line (documentation), or a plain
+  with a \code{@<<name@>>=} line (code), an \code{@ } control line (documentation), or a plain
   line that continues the open chunk. The reader opens one empty documentation
-  chunk at the start of each file, the same as `markup`.
+  chunk at the start of each file, the same as \code{markup}.
 - The reader gives each chunk a number, counting up from zero across the whole
-  run. The number becomes the section id `sec-N` downstream (§5.1).
-- A `@<<name@>>=` line opens a code chunk. It makes `@defn name` and one `@nl` for
+  run. The number becomes the section id \code{sec-N} downstream (§5.1).
+- A \code{@<<name@>>=} line opens a code chunk. It makes \code{@defn name} and one \code{@nl} for
   the line's own newline.
-- An `@ ` line (or a bare `@`) closes the open chunk and opens a documentation
-  chunk. The text after `@ ` (one space is dropped) is the first line of the new
+- An \code{@ } line (or a bare \code{@}) closes the open chunk and opens a documentation
+  chunk. The text after \code{@ } (one space is dropped) is the first line of the new
   chunk.
-- `@ %def a b` after a code chunk does not open a documentation chunk. It adds
-  `@index defn a`, `@index defn b`, and one `@index nl` to that code chunk. More
-  `@ %def` lines add more index entries. The next real line closes the code chunk.
+- \code{@ %def a b} after a code chunk does not open a documentation chunk. It adds
+  \code{@index defn a}, \code{@index defn b}, and one \code{@index nl} to that code chunk. More
+  \code{@ %def} lines add more index entries. The next real line closes the code chunk.
 - A plain line continues the open chunk. In documentation it is text; in code it
   is text with chunk uses.
-- A documentation line splits on `[[quoted code]]`. Each quote is `@quote`,
-  `@text <inner>`, `@endquote`. The quote is greedy: it ends at the first `]]`
-  whose next character is not `]`, so `[[v[[0]]]]` keeps its inner brackets. A
-  quote can run over more than one line: the open and the close need not be on the
-  same line, and each line inside the quote still makes one `@nl` (§sec:read-rules).
-- A code line splits on `@<<name@>>` chunk uses. Each use is `@use name`. A `@<<`
-  with no later `>>` on the line is literal text (for example a shift operator).
-- An `@` before a doubled bracket is an escape: `@<<name@>>` in prose is the
-  literal text `@<<name@>>`, not a use. The reader drops the `@` and keeps the two
-  brackets, and they do not start a use or a quote. A single `@<` or `@>` is
-  literal, `@` and all. The escape works inside a quote too.
-- Every source line makes exactly one newline event: `@nl` for a normal line, or
-  `@index nl` for a `%def` line. This keeps the line counter true (§4.2).
-- The reader makes a text token for the run before each use or quote only when
+- A documentation line is one \code{@text} run. It has no chunk uses and no quotes:
+  inline code is \code{\code{…}} (§6.4), so \code{[[} and \code{]]} are ordinary text. (This is
+  the one place the reader departs from noweb, which emits \code{@quote} for \code{[[…]]}.)
+- A code line splits on \code{@<<name@>>} chunk uses. Each use is \code{@use name}. A \code{@<<}
+  with no later \code{>>} on the line is literal text (for example a shift operator).
+- An \code{@} before a doubled bracket is an escape: \code{@<<name@>>} in prose is the
+  literal text \code{@<<name@>>}, not a use. The reader drops the \code{@} and keeps the two
+  brackets, and they do not start a use. A single \code{@<} or \code{@>} is literal, \code{@} and
+  all.
+- Every source line makes exactly one newline event: \code{@nl} for a normal line, or
+  \code{@index nl} for a \code{%def} line. This keeps the line counter true (§4.2).
+- The reader makes a text token for the run before each use only when
   the run is not empty, but it always makes the trailing text token after the last
   one, even when that run is empty. So a use on its own line makes no text before
-  it and one empty text token after it, the same as `markup`.
+  it and one empty text token after it, the same as \code{markup}.
 
 ## The grammar {#sec:read-grammar}
 
 The rules above are the whole behavior. This section gives the syntactic core as a
-formal grammar, and the reader runs the grammar directly: the `peg` crate turns it
+formal grammar, and the reader runs the grammar directly: the \code{peg} crate turns it
 into the parser at compile time (§sec:read-code). The grammar is also the reference
-for later syntax that `markup` cannot express (§11). It is a Parsing Expression
-Grammar (PEG): the choice operator `/` tries the left side first, and repetition is
+for later syntax that \code{markup} cannot express (§11). It is a Parsing Expression
+Grammar (PEG): the choice operator \code{/} tries the left side first, and repetition is
 greedy.
 
 A file is a list of lines. Each line is one of three kinds. This is the line level:
@@ -87,11 +85,8 @@ code_atom    <- use / escape / char
 use          <- "@<<" use_name "@>>"
 use_name     <- ( !"@>>" . )+
 
-// a documentation-chunk line
-docs_line    <- docs_atom*
-docs_atom    <- quote / escape / char
-quote        <- "[[" ( !close . )* close
-close        <- "]]" !"]"                       // first "]]" not followed by "]"
+// a documentation-chunk line: one text run, no uses, no quotes
+docs_line    <- ( escape / char )*
 
 // shared
 escape       <- "@" ( "@<<" / "@>>" )           // the "@" is dropped, both brackets stay
@@ -103,42 +98,38 @@ it, because a PEG cannot state them:
 
 - Which mode a plain line uses. The mode comes from the open chunk, which is state
   from earlier lines, not shape.
-- Where a text token ends. `markup` breaks a run at each use, each quote, and each
-  literal `@<<`, and it drops an empty run before a token but keeps an empty run at
-  the end (§sec:read-rules).
-- That a `quote` can cross line ends. The grammar shows `quote` inside one
-  `docs_line`, but a real `[[` runs to the next `]]` even over more than one line,
-  and each line inside still makes one `@nl`. The reader keeps this in state, not
-  shape.
-- The `%def` and `%use` control lines. They add index entries to the open code
+- Where a text token ends. \code{markup} breaks a code run at each use and each literal
+  \code{@<<}, and it drops an empty run before a use but keeps an empty run at the end
+  (§sec:read-rules).
+- The \code{%def} and \code{%use} control lines. They add index entries to the open code
   chunk and hold it open until the next line. That is state, not shape.
 - The chunk number and the line number. Both are counters over the whole run.
 
 The prose rules (§sec:read-rules) and the differential test (§15) cover these.
 
-A `def_line` today ends right after `@>>=`. A later milestone adds an optional
+A \code{def_line} today ends right after \code{@>>=}. A later milestone adds an optional
 metadata group in that slot, so a chunk can set its own language, for example
-`@<<lex@>>= {lang=rust}` (§5.5). `markup` cannot carry that text, so this grammar
+\code{@<<lex@>>= {lang=rust}} (§5.5). \code{markup} cannot carry that text, so this grammar
 becomes the reference for it. The slot is not parsed yet.
 
 ## How the code implements this {#sec:read-code}
 
-The reader runs the grammar of §sec:read-grammar directly. The `peg` crate turns
-the grammar into a parser at compile time. The grammar tokenizes one line into a
-list of `Seg` atoms — text, a chunk use, a quote open, or a quote close — and sorts
-a whole line into its `Line` kind. A stateful `Reader` then lowers the atoms to
-events with the state rules of §sec:read-rules: the chunk counter, the open chunk,
-the `%def` wait, and the cross-line quote. So the grammar owns the shape and the
-`Reader` owns the state.
+The reader runs the grammar of §sec:read-grammar directly. The \code{peg} crate turns
+the grammar into a parser at compile time. The grammar tokenizes a code line into a
+list of \code{Seg} atoms — text or a chunk use — returns a documentation line as one
+text run, and sorts a whole line into its \code{Line} kind. A stateful \code{Reader} then
+lowers these to events with the state rules of §sec:read-rules: the chunk counter,
+the open chunk, and the \code{%def} wait. So the grammar owns the shape and the \code{Reader}
+owns the state.
 
 The grammar is the one parser. noweb stays the oracle at test time, not a second
-reader: the differential test (§15) and the flake `reader` check diff this reader
-against real `markup` for every module, so the grammar can never drift from the
+reader: the differential test (§15) and the flake \code{reader} check diff this reader
+against real \code{markup} for every module, so the grammar can never drift from the
 behavior it copies.
 
-The module is the read error, the `Seg` and `Line` types the grammar makes, the
+The module is the read error, the \code{Seg} and \code{Line} types the grammar makes, the
 grammar, the escape helper, the entry point that reads each file, the stateful
-`Reader`, and the tests.
+\code{Reader}, and the tests.
 <<src/markup.rs>>=
 <<the reader banner>>
 
@@ -166,7 +157,7 @@ oracle, so this reader must match it byte for byte.
 //! as one binary (§11). A differential test proves the events match real
 //! `markup` for every module; `noweb::parse` stays as the oracle's decoder.
 @
-The reader needs paths, formatting, and the shared `Event` type. It makes the
+The reader needs paths, formatting, and the shared \code{Event} type. It makes the
 same events the old parser made, so downstream code does not change.
 <<reader imports>>=
 use std::fmt;
@@ -191,16 +182,13 @@ impl fmt::Display for ReadError {
 
 impl std::error::Error for ReadError {}
 @
-The grammar makes two small types. `Seg` is one atom of a line: a text run, a
-chunk use, a quote open, or a quote close. `Line` is the kind of a whole line: a
-code definition, an `@` control line, or a plain line. The `Reader` reads these,
-never raw characters.
+The grammar makes two small types. \code{Seg} is one atom of a code line: a text run or
+a chunk use. \code{Line} is the kind of a whole line: a code definition, an \code{@} control
+line, or a plain line. The \code{Reader} reads these, never raw characters.
 <<the line and segment types>>=
 enum Seg {
     Text(String),
     Use(String),
-    Open,
-    Close,
 }
 
 enum Line {
@@ -210,15 +198,15 @@ enum Line {
 }
 @
 The grammar is the runnable form of §sec:read-grammar. Each rule returns the atoms
-of one line. A `pub rule` is one the `Reader` calls: `classify` sorts a line into
-its kind, `code_line` tokenizes a code line, and `docs_out`/`docs_in` tokenize a
-documentation line from each quote state. `docs_out` starts outside a quote and
-`docs_in` starts inside one; each returns the atoms and whether the quote is still
-open, so the `Reader` carries the open state to the next line.
+of one line. A \code{pub rule} is one the \code{Reader} calls: \code{classify} sorts a line into
+its kind, \code{code_line} tokenizes a code line into text and use atoms, and
+\code{docs_line} returns a documentation line as one text run. A documentation line has
+no chunk uses and no quotes — inline code is \code{\code{…}} (§6.4), so a \code{[[…]]} bracket
+pair is ordinary text.
 
-The run rules (`code_run`, `docs_run`, `docs_qrun`) capture the whole text run as
-one slice, then `resolve_esc` strips the `@` from each escape in one pass. This is
-faster than one string per character, and it makes the same text either way.
+The run rules (\code{code_run}, \code{docs_line}) capture the whole text run as one slice,
+then \code{resolve_esc} strips the \code{@} from each escape in one pass. This is faster than
+one string per character, and it makes the same text either way.
 <<the grammar>>=
 peg::parser! {
     grammar nw() for str {
@@ -253,59 +241,18 @@ peg::parser! {
         rule code_run() -> String = s:$(code_ch()*) { resolve_esc(s) }
         rule code_ch() = escape() / (!"@<<" [_] {})
 
-        pub rule docs_out() -> (Vec<Seg>, bool)
-            = run:docs_run() rest:docs_block()* {
-                let mut v = vec![Seg::Text(run)];
-                let mut open = false;
-                for (segs, ended) in rest {
-                    v.extend(segs);
-                    open = ended;
-                }
-                (v, open)
-            }
-
-        pub rule docs_in() -> (Vec<Seg>, bool)
-            = content:docs_qrun() tail:docs_reopen()? {
-                match tail {
-                    Some((mut segs, ended)) => {
-                        let mut v = vec![Seg::Text(content), Seg::Close];
-                        v.append(&mut segs);
-                        (v, ended)
-                    }
-                    None => (vec![Seg::Text(content)], true),
-                }
-            }
-
-        rule docs_reopen() -> (Vec<Seg>, bool)
-            = docs_close() rest:docs_out() { rest }
-
-        rule docs_block() -> (Vec<Seg>, bool)
-            = "[[" content:docs_qrun() close:docs_close()? post:docs_run() {
-                let mut v = vec![Seg::Open, Seg::Text(content)];
-                match close {
-                    Some(()) => {
-                        v.push(Seg::Close);
-                        v.push(Seg::Text(post));
-                        (v, false)
-                    }
-                    None => (v, true),
-                }
-            }
-
-        rule docs_close() -> () = "]]" !"]" { () }
-
-        rule docs_run() -> String = s:$(docs_ch()*) { resolve_esc(s) }
-        rule docs_ch() = escape() / (!"[[" [_] {})
-
-        rule docs_qrun() -> String = s:$(qrun_ch()*) { resolve_esc(s) }
-        rule qrun_ch() = escape() / (!docs_close() [_] {})
+        // A documentation line is one text run. `[[` carries no special meaning
+        // (§6.4 uses `\code{…}` for inline code); only the `@@<<`/`@@>>` escapes
+        // are resolved.
+        pub rule docs_line() -> String = s:$(docs_ch()*) { resolve_esc(s) }
+        rule docs_ch() = escape() / [_]
 
         rule escape() = "@@<<" / "@@>>"
     }
 }
 @
-A text run keeps its escapes as written, so one pass strips them: `@@<<` becomes
-`@<<` and `@@>>` becomes `@>>`. Most runs hold no `@`, so the reader checks for one
+A text run keeps its escapes as written, so one pass strips them: \code{@@<<} becomes
+\code{@<<} and \code{@@>>} becomes \code{@>>}. Most runs hold no \code{@}, so the reader checks for one
 before it makes a new string.
 <<the escape helper>>=
 fn resolve_esc(s: &str) -> String {
@@ -317,8 +264,8 @@ fn resolve_esc(s: &str) -> String {
 }
 @
 The entry point reads each file and folds it into one event stream. It emits one
-`@file` per file with the path as given, so `@file` events stay portable, the
-same as `markup`. The chunk counter runs across every file.
+\code{@file} per file with the path as given, so \code{@file} events stay portable, the
+same as \code{markup}. The chunk counter runs across every file.
 <<read the files>>=
 /// Read each `.cob` file and make the `markup` event stream (§4.1).
 ///
@@ -338,11 +285,10 @@ pub fn read<S: AsRef<Path>>(files: &[S]) -> Result<Vec<Event>, ReadError> {
 }
 @
 The reader holds the growing event stream, the chunk counter, and the open chunk.
-`open` is `Some(true)` for code, `Some(false)` for documentation, and `None`
-between chunks. `cur` is the open chunk's number, needed for its `@end`.
-`defs_pending` remembers that a code chunk saw `@ %def` and waits for the next
-real line to close it. `in_quote` remembers that a quote is open, because a quote
-can run over more than one line and end on a later line.
+\code{open} is \code{Some(true)} for code, \code{Some(false)} for documentation, and \code{None}
+between chunks. \code{cur} is the open chunk's number, needed for its \code{@end}.
+\code{defs_pending} remembers that a code chunk saw \code{@ %def} and waits for the next
+real line to close it.
 <<the reader state>>=
 #[derive(Default)]
 struct Reader {
@@ -351,7 +297,6 @@ struct Reader {
     open: Option<bool>,
     cur: u32,
     defs_pending: bool,
-    in_quote: bool,
 }
 
 impl Reader {
@@ -366,8 +311,8 @@ impl Reader {
 
 <<the directive helper>>
 @
-`open_docs`/`open_code` take the next number and emit the `@begin`.
-`close_current` emits the `@end` for the open chunk and clears the `%def` wait.
+\code{open_docs}/\code{open_code} take the next number and emit the \code{@begin}.
+\code{close_current} emits the \code{@end} for the open chunk and clears the \code{%def} wait.
 <<open and close a chunk>>=
 fn open_docs(&mut self) {
     let n = self.counter;
@@ -397,12 +342,12 @@ fn close_current(&mut self) {
     }
 }
 @
-`emit_segs` turns one line's atoms into events. It drops an empty text run before a
-marker but keeps the last run of the line, even when it is empty, so the empty-text
-rule of §sec:read-rules holds. One `@nl` ends the line. `code_emit` and `docs_emit`
-tokenize a line with the grammar, then emit its atoms; `docs_emit` picks the quote
-state and carries the new state forward. `index` adds `%def`/`%use` entries to the
-open code chunk and waits to close it.
+\code{emit_segs} turns one code line's atoms into events. It drops an empty text run
+before a use but keeps the last run of the line, even when it is empty, so the
+empty-text rule of §sec:read-rules holds. One \code{@nl} ends the line. \code{code_emit}
+tokenizes a code line and emits its atoms; \code{docs_emit} emits a documentation line
+as one \code{@text} run and one \code{@nl}. \code{index} adds \code{%def}/\code{%use} entries to the open
+code chunk and waits to close it.
 <<lower a line to events>>=
 fn emit_segs(&mut self, segs: Vec<Seg>) {
     let n = segs.len();
@@ -415,8 +360,6 @@ fn emit_segs(&mut self, segs: Vec<Seg>) {
                 }
             }
             Seg::Use(u) => self.out.push(Event::Use(u)),
-            Seg::Open => self.out.push(Event::Quote),
-            Seg::Close => self.out.push(Event::EndQuote),
         }
     }
     self.out.push(Event::Nl);
@@ -428,13 +371,11 @@ fn code_emit(&mut self, l: &str) {
 }
 
 fn docs_emit(&mut self, l: &str) {
-    let (segs, ended) = if self.in_quote {
-        nw::docs_in(l).expect("a docs line tokenizes")
-    } else {
-        nw::docs_out(l).expect("a docs line tokenizes")
-    };
-    self.in_quote = ended;
-    self.emit_segs(segs);
+    // A docs line is one text run (no uses, no quotes). Keep the last run even
+    // when empty, so the empty-text rule of §sec:read-rules holds.
+    let run = nw::docs_line(l).expect("a docs line tokenizes");
+    self.out.push(Event::Text(run));
+    self.out.push(Event::Nl);
 }
 
 fn index(&mut self, ids: &str, defn: bool) {
@@ -455,10 +396,10 @@ fn index(&mut self, ids: &str, defn: bool) {
     self.defs_pending = true;
 }
 @
-The dispatch decides what one line is. `classify` sorts it. A `Def` opens a code
-chunk. A `Control` is `%def`/`%use` (index entries) or an `@ ` line that opens a
-documentation chunk. A `Plain` line continues the open chunk — opening a fresh
-documentation chunk first if a `%def` just closed the code chunk.
+The dispatch decides what one line is. \code{classify} sorts it. A \code{Def} opens a code
+chunk. A \code{Control} is \code{%def}/\code{%use} (index entries) or an \code{@ } line that opens a
+documentation chunk. A \code{Plain} line continues the open chunk — opening a fresh
+documentation chunk first if a \code{%def} just closed the code chunk.
 <<dispatch one line>>=
 fn line(&mut self, l: &str) {
     match nw::classify(l).expect("every line classifies") {
@@ -495,7 +436,7 @@ fn line(&mut self, l: &str) {
     }
 }
 @
-One file: emit `@file`, open the leading empty documentation chunk, walk every
+One file: emit \code{@file}, open the leading empty documentation chunk, walk every
 line, then close whatever chunk stays open at the end.
 <<walk one file>>=
 fn file(&mut self, path: &str, text: &str) {
@@ -507,8 +448,8 @@ fn file(&mut self, path: &str, text: &str) {
     self.close_current();
 }
 @
-`directive` reads the text after an `@ ` control keyword, or `None`. `%def` and
-`%def x` both match; the returned rest is empty or the ids.
+\code{directive} reads the text after an \code{@ } control keyword, or \code{None}. \code{%def} and
+\code{%def x} both match; the returned rest is empty or the ids.
 <<the directive helper>>=
 fn directive<'a>(content: &'a str, key: &str) -> Option<&'a str> {
     if content == key {
@@ -518,8 +459,8 @@ fn directive<'a>(content: &'a str, key: &str) -> Option<&'a str> {
 }
 @
 The tests are the differential: this reader must make the same events as real
-`markup`. The pinned `fixtures/*.markup` files are the oracle output, so the test
-is hermetic — it decodes them with `noweb::parse` and compares.
+\code{markup}. The pinned \code{fixtures/*.markup} files are the oracle output, so the test
+is hermetic — it decodes them with \code{noweb::parse} and compares.
 <<the reader tests>>=
 #[cfg(test)]
 mod tests {
@@ -571,11 +512,6 @@ mod tests {
     #[test]
     fn matches_markup_for_txf() {
         same_as_oracle("fixtures/txf.cob", include_str!("../fixtures/txf.markup"));
-    }
-
-    #[test]
-    fn matches_markup_for_quote() {
-        same_as_oracle("fixtures/quote.cob", include_str!("../fixtures/quote.markup"));
     }
 }
 @

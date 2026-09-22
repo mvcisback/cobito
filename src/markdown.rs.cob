@@ -9,24 +9,24 @@ cob tells a program as a document, so the prose surface must be small and ours.
 CommonMark is large and hard to reason about: its emphasis rule is an operational
 flanking algorithm, its raw-HTML blocks have seven start conditions, and its link
 definitions need two passes. cob owns a small line-oriented block grammar and a
-LaTeX-style command family instead. The `peg` crate — the same crate that reads
-`.cob` — builds the inline grammar into a parser at compile time. A post-pass
+LaTeX-style command family instead. The \code{peg} crate — the same crate that reads
+\code{.cob} — builds the inline grammar into a parser at compile time. A post-pass
 lowers the tokens to HTML.
 
 ## The command family {#sec:TAUn}
 
 Marks are commands, not punctuation, so there is no flanking rule to get wrong:
 
-- `\emph{…}` makes `<em>` and `\strong{…}` makes `<strong>`. Both nest.
-- `\code{…}` makes inline `<code>`. The body is verbatim; cob escapes it for
-  HTML. Balanced braces inside need no escape (`\code{fn f() { x }}`); a lone
-  brace uses `\{` or `\}`.
-- `$…$` is inline math and `$$…$$` is display math. A literal dollar is `\$`.
-- `\ref{ns:name}` makes the same `<a data-ref>` the resolver reads (§7).
-- `\transclude{sec:name}` makes the transclusion island the weaver expands (§10).
-  A paragraph that is only a `\transclude` makes the bare island, not a `<p>`.
+- \code{\emph{…}} makes \code{<em>} and \code{\strong{…}} makes \code{<strong>}. Both nest.
+- \code{\code{…}} makes inline \code{<code>}. The body is verbatim; cob escapes it for
+  HTML. Balanced braces inside need no escape (\code{\code{fn f() { x }}}); a lone
+  brace uses \code{\{} or \code{\}}.
+- \code{$…$} is inline math and \code{$$…$$} is display math. A literal dollar is \code{\$}.
+- \code{\ref{ns:name}} makes the same \code{<a data-ref>} the resolver reads (§7).
+- \code{\transclude{sec:name}} makes the transclusion island the weaver expands (§10).
+  A paragraph that is only a \code{\transclude} makes the bare island, not a \code{<p>}.
 
-A `\ref`, `\transclude`, or `$…$` inside a `\code{}` is literal text, because the
+A \code{\ref}, \code{\transclude}, or \code{$…$} inside a \code{\code{}} is literal text, because the
 code body is captured whole before any command is read.
 
 ## The block grammar {#sec:k8T0}
@@ -34,28 +34,28 @@ code body is captured whole before any command is read.
 A line loop frames the inline grammar, the way the reader's file loop frames its
 line grammar. Blank lines split blocks. cob knows:
 
-- an ATX heading (`#`…`######` then a space), with an optional trailing
-  `{#sec:name}` id;
-- a bullet list (`- `) or an ordered list (`1. `), one level deep;
-- a fenced block (```` ``` ````), whose info line is a kind and optional modifiers
-  (`\label{ns:name}`, `\lang{name}`);
+- an ATX heading (\code{#}…\code{######} then a space), with an optional trailing
+  \code{{#sec:name}} id;
+- a bullet list (\code{- }) or an ordered list (\code{1. }), one level deep;
+- a fenced block (opened and closed by \code{```}), whose info line is a kind and
+  optional modifiers (\code{\label{ns:name}}, \code{\lang{name}});
 - a paragraph — every other run of non-blank lines.
 
 ## The fenced blocks {#sec:UWqg}
 
 The kind word picks the block. The set is closed:
 
-- `math` is display math. The body is bare LaTeX (the fence is the delimiter, so
-  a `$` is redundant). It makes an equation div.
-- `figure` takes an optional leading `\caption{…}`, then a raw-HTML body (an
-  image or an SVG), and makes a `<figure>` with an optional `<figcaption>`.
-- `table` takes an optional `\caption{…}`, then a pipe table, and makes a
-  `<table>` with a `<caption>`.
-- `html-escape` is the one door for raw HTML. Its body passes through verbatim. It
-  subsumes the old `html` dialect and every raw-HTML island (a sidenote aside is
-  now an `html-escape` fence).
-- `verbatim` is preformatted plain text: `<pre><code>` with an escaped body. An
-  optional `\lang{name}` modifier adds a `language-name` class for an editor or a
+- \code{math} is display math. The body is bare LaTeX (the fence is the delimiter, so
+  a \code{$} is redundant). It makes an equation div.
+- \code{figure} takes an optional leading \code{\caption{…}}, then a raw-HTML body (an
+  image or an SVG), and makes a \code{<figure>} with an optional \code{<figcaption>}.
+- \code{table} takes an optional \code{\caption{…}}, then a pipe table, and makes a
+  \code{<table>} with a \code{<caption>}.
+- \code{html-escape} is the one door for raw HTML. Its body passes through verbatim. It
+  subsumes the old \code{html} dialect and every raw-HTML island (a sidenote aside is
+  now an \code{html-escape} fence).
+- \code{verbatim} is preformatted plain text: \code{<pre><code>} with an escaped body. An
+  optional \code{\lang{name}} modifier adds a \code{language-name} class for an editor or a
   reader to key on.
 
 There is no silent fallback. A bare fence (no kind) or an unknown kind is E034, so
@@ -64,16 +64,16 @@ a typo is an error, not a wrong render.
 ## Modifiers and namespaces {#sec:k8T1}
 
 The info line is a kind, then modifiers, each a command. The grammar parses them,
-so a malformed modifier is an error, not a silent drop. `\label{ns:name}` names a
-float: its namespace must match the kind (`eq:` for `math`, `fig:` for `figure`,
-`tbl:` for `table`), and a mismatch is E030. `\lang{name}` is for `verbatim` only.
-A `\caption{…}` leads the body of a `figure` or a `table`. A float with no `\label`
+so a malformed modifier is an error, not a silent drop. \code{\label{ns:name}} names a
+float: its namespace must match the kind (\code{eq:} for \code{math}, \code{fig:} for \code{figure},
+\code{tbl:} for \code{table}), and a mismatch is E030. \code{\lang{name}} is for \code{verbatim} only.
+A \code{\caption{…}} leads the body of a \code{figure} or a \code{table}. A float with no \code{\label}
 gets no id and is not referenceable (§7.1).
 
 ## Math order {#sec:k8T2}
 
 cob walks the blocks in document order and pushes each formula onto the shared
-`math` list as it meets it. The index is internal: `substitute_math` (§6.2 step 6)
+\code{math} list as it meets it. The index is internal: \code{substitute_math} (§6.2 step 6)
 maps each placeholder back by its own index, so the order the list is built in
 does not change the output.
 
@@ -141,16 +141,16 @@ The banner states where the dialect sits and what it owns.
 //! emphasis flanking rule. Raw HTML has one door: the ```` ```html-escape ````
 //! fence.
 @
-Formatting, the shared prose helpers, and the `peg` runtime.
+Formatting, the shared prose helpers, and the \code{peg} runtime.
 <<imports>>=
 use std::fmt;
 
 use crate::prose::{self, Math};
 @
-Two failure classes. A prose or math syntax fault is `Syntax` (E022). A fence
-fault is `Fence`, which carries its code: a bad `\label`/`\caption`/`\lang`
-modifier is E030 (`fence_err`); a bare or unknown fence kind is E034
-(`kind_err`).
+Two failure classes. A prose or math syntax fault is \code{Syntax} (E022). A fence
+fault is \code{Fence}, which carries its code: a bad \code{\label}/\code{\caption}/\code{\lang}
+modifier is E030 (\code{fence_err}); a bare or unknown fence kind is E034
+(\code{kind_err}).
 <<the markdown error>>=
 /// A prose dialect fault. `Syntax` is a parse or math fault (E022); `Fence` is a
 /// fence fault carrying its own code — a bad modifier (E030) or a bare/unknown
@@ -187,8 +187,8 @@ fn kind_err(message: impl Into<String>) -> MarkdownError {
 }
 @
 The top level splits the reassembled prose into blocks, renders each in document
-order, and joins them. It appends any math it meets to `math`, so
-`substitute_math` resolves each placeholder by index later (§6.2).
+order, and joins them. It appends any math it meets to \code{math}, so
+\code{substitute_math} resolves each placeholder by index later (§6.2).
 <<render a docs chunk>>=
 /// Render one docs chunk's reassembled prose. Appends every formula it meets to
 /// `math` in document order; `substitute_math` resolves each placeholder by its
@@ -318,8 +318,8 @@ fn fence_close(line: &str, open_ticks: usize) -> bool {
     !t.is_empty() && ticks == t.len() && ticks >= open_ticks
 }
 @
-A heading line is one to six leading `#` and a space, then the text (which may end
-with a `{#sec:name}` id).
+A heading line is one to six leading \code{#} and a space, then the text (which may end
+with a \code{{#sec:name}} id).
 <<recognise a heading line>>=
 fn heading_line(line: &str) -> Option<(usize, String)> {
     let hashes = line.chars().take_while(|&c| c == '#').count();
@@ -330,8 +330,8 @@ fn heading_line(line: &str) -> Option<(usize, String)> {
     }
 }
 @
-A list item is a bullet (`- `) or an ordered marker (`1. `). `list_item` is either;
-the split loop uses `ordered_item`/`bullet_item` to keep one list one kind.
+A list item is a bullet (\code{- }) or an ordered marker (\code{1. }). \code{list_item} is either;
+the split loop uses \code{ordered_item}/\code{bullet_item} to keep one list one kind.
 <<recognise a list item>>=
 fn bullet_item(line: &str) -> Option<String> {
     line.strip_prefix("- ").map(|s| s.to_string())
@@ -351,7 +351,7 @@ fn list_item(line: &str) -> Option<String> {
 }
 @
 A heading renders its text as one inline run, with the optional id split off the
-tail. The id is source-anchored (§7.1), so `cob lock` writes `{#sec:<id>}` here.
+tail. The id is source-anchored (§7.1), so \code{cob lock} writes \code{{#sec:<id>}} here.
 <<render a heading>>=
 fn render_heading(
     level: usize,
@@ -377,8 +377,8 @@ fn split_heading_attr(text: &str) -> (&str, Option<&str>) {
     (t, None)
 }
 @
-A list renders each item as one inline run inside an `<li>`, wrapped in `<ul>` or
-`<ol>`.
+A list renders each item as one inline run inside an \code{<li>}, wrapped in \code{<ul>} or
+\code{<ol>}.
 <<render a list>>=
 fn render_list(
     ordered: bool,
@@ -395,8 +395,8 @@ fn render_list(
     Ok(out)
 }
 @
-A paragraph renders as one inline run inside a `<p>`. A paragraph that is only a
-`\transclude` makes the bare island instead, so the weaver's transclusion pass
+A paragraph renders as one inline run inside a \code{<p>}. A paragraph that is only a
+\code{\transclude} makes the bare island instead, so the weaver's transclusion pass
 sees a block-level marker (§10).
 <<render a paragraph>>=
 fn render_paragraph(text: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
@@ -412,10 +412,10 @@ fn render_paragraph(text: &str, math: &mut Vec<Math>) -> Result<String, Markdown
     Ok(format!("<p>{out}</p>"))
 }
 @
-A fence dispatches on its kind. `math` makes the equation div in place;
-`figure`/`table` make their float; `html-escape` passes its body through;
-`verbatim` makes an escaped code sample, with a `language-*` class when it carries
-a `\lang`.
+A fence dispatches on its kind. \code{math} makes the equation div in place;
+\code{figure}/\code{table} make their float; \code{html-escape} passes its body through;
+\code{verbatim} makes an escaped code sample, with a \code{language-*} class when it carries
+a \code{\lang}.
 <<render a fence>>=
 fn render_fence(info: &str, body: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
     match parse_fence_info(info)? {
@@ -434,8 +434,8 @@ fn render_fence(info: &str, body: &str, math: &mut Vec<Math>) -> Result<String, 
 }
 @
 A math fence makes the equation div, its bare-LaTeX body pushed as display math. A
-labelled fence gets its `id` and joins the numbering; an unlabelled one opts out
-with `data-nonumber`, because only a labelled float earns a stable id (§7.1).
+labelled fence gets its \code{id} and joins the numbering; an unlabelled one opts out
+with \code{data-nonumber}, because only a labelled float earns a stable id (§7.1).
 <<render a math fence>>=
 fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String {
     let idx = math.len();
@@ -453,7 +453,7 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
 }
 @
 A figure fence takes an optional leading caption, then a raw-HTML body (an image or
-an SVG), and makes a real `<figure>`/`<figcaption>` so the numbering and ref
+an SVG), and makes a real \code{<figure>}/\code{<figcaption>} so the numbering and ref
 machinery downstream is reused unchanged.
 <<render a figure fence>>=
 fn render_figure(
@@ -475,7 +475,7 @@ fn render_figure(
 @
 A table fence takes an optional caption, then a pipe table. The first row is the
 head, the second is the delimiter, the rest are body rows; each cell is one inline
-run. The id and caption splice into the `<table>`.
+run. The id and caption splice into the \code{<table>}.
 <<render a table fence>>=
 fn render_table(
     label: Option<&str>,
@@ -517,7 +517,7 @@ fn split_row(line: &str) -> Vec<String> {
         .collect()
 }
 @
-A leading `\caption{…}` (brace-balanced, possibly multi-line) is peeled off a fence
+A leading \code{\caption{…}} (brace-balanced, possibly multi-line) is peeled off a fence
 body by the grammar, which returns its raw source and the byte offset where the rest
 of the body starts. The remainder goes to the float renderer.
 <<peel a caption>>=
@@ -530,7 +530,7 @@ fn take_caption(body: &str) -> Result<(Option<String>, String), MarkdownError> {
 }
 @
 A parsed fence is a float directive (each with its optional namespace-checked
-label), the `html-escape` door, or a `verbatim` block with an optional language.
+label), the \code{html-escape} door, or a \code{verbatim} block with an optional language.
 <<parse the fence info>>=
 enum Fence {
     Math(Option<String>),
@@ -546,7 +546,7 @@ enum Modifier {
     Lang(String),
 }
 @
-The kind is the leading word (letters, digits, `-`). The grammar parses the
+The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
 <<parse the fence info>>=
@@ -620,7 +620,7 @@ fn reject_modifiers(mods: &[Modifier], kind: &str) -> Result<(), MarkdownError> 
     }
 }
 @
-The `id="…"` attribute for an optional label, escaped, or empty.
+The \code{id="…"} attribute for an optional label, escaped, or empty.
 <<an id attribute>>=
 fn id_attr(label: Option<&str>) -> String {
     label
@@ -628,12 +628,12 @@ fn id_attr(label: Option<&str>) -> String {
         .unwrap_or_default()
 }
 @
-The grammar. `peg` builds it into a parser at compile time. `nodes` tokenises one
+The grammar. \code{peg} builds it into a parser at compile time. \code{nodes} tokenises one
 prose run into commands, math, and literal text. A command body recurses through
-the same grammar, so `\strong{\emph{x}}` nests. A `\code{}` body is a slice with
+the same grammar, so \code{\strong{\emph{x}}} nests. A \code{\code{}} body is a slice with
 balanced braces, captured whole, so any command inside it stays literal. Two more
-public rules serve the fence header: `modifiers` reads the whole info-line tail
-after the kind, and `caption` peels a leading `\caption{…}` off a float body and
+public rules serve the fence header: \code{modifiers} reads the whole info-line tail
+after the kind, and \code{caption} peels a leading \code{\caption{…}} off a float body and
 reports where the rest begins.
 <<the inline grammar>>=
 peg::parser! {
@@ -688,7 +688,7 @@ enum Inline {
 }
 @
 Lowering walks the nodes and makes HTML. Text is escaped; a command wraps its
-lowered children; `\code` escapes its verbatim body; math pushes onto the shared
+lowered children; \code{\code} escapes its verbatim body; math pushes onto the shared
 list and leaves a placeholder the render pass fills (§6.2).
 <<lower inline nodes>>=
 fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
@@ -743,9 +743,9 @@ fn render_inline(src: &str, math: &mut Vec<Math>) -> Result<String, MarkdownErro
     Ok(out)
 }
 @
-The escape helpers turn the grammar's escapes back into literals. `\code` bodies
-only unescape braces (everything else is verbatim); text also unescapes `\$` and
-`\\`.
+The escape helpers turn the grammar's escapes back into literals. \code{\code} bodies
+only unescape braces (everything else is verbatim); text also unescapes \code{\$} and
+\code{\\}.
 <<the escape helpers>>=
 fn unescape_braces(s: &str) -> String {
     if s.contains('\\') {
@@ -767,7 +767,7 @@ fn unescape_text(s: &str) -> String {
 }
 @
 The tests walk each §6.4 behavior: the command family, headings and lists, the
-`html-escape` door, verbatim code, each float directive, the ref and transclude
+\code{html-escape} door, verbatim code, each float directive, the ref and transclude
 lowering and their no-op inside code, the E030 namespace check, and a round trip
 through math substitution.
 <<the tests>>=
@@ -839,7 +839,7 @@ fn heading_and_list() {
     assert!(html.contains("<ul><li>one</li><li>two</li></ul>"));
 }
 @
-An `html-escape` fence passes its body through verbatim — the one raw-HTML door.
+An \code{html-escape} fence passes its body through verbatim — the one raw-HTML door.
 <<html escape passes through>>=
 #[test]
 fn html_escape_passes_through_verbatim() {
@@ -848,7 +848,7 @@ fn html_escape_passes_through_verbatim() {
     assert!(html.contains(aside));
 }
 @
-Inline `\code` is verbatim and escaped, and balanced braces need no escape.
+Inline \code{\code} is verbatim and escaped, and balanced braces need no escape.
 <<code is verbatim>>=
 #[test]
 fn code_is_verbatim_and_escapes() {
@@ -972,7 +972,7 @@ fn transclude_lowers_to_a_placeholder() {
     assert!(!cob.contains("data-transclude=\"sec:x\""));
 }
 @
-A ref inside `\code` is literal, never lowered.
+A ref inside \code{\code} is literal, never lowered.
 <<a ref inside code is literal>>=
 #[test]
 fn ref_inside_code_is_literal() {
@@ -992,7 +992,7 @@ fn mismatched_label_namespace_is_e030() {
     assert!(err.to_string().contains("fig:"));
 }
 @
-A verbatim fence with a `\lang{}` modifier keeps a language class. A bare
+A verbatim fence with a \code{\lang{}} modifier keeps a language class. A bare
 fence and an unknown kind are both E034, so a typo fails fast.
 <<a code fence with a language>>=
 #[test]

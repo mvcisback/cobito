@@ -748,9 +748,11 @@ stream in Rust, so cob reads its own source with no noweb process. The check run
 the native reader over each fixture and diffs its events against the frozen
 \code{markup} golden for that fixture — \code{cob dump-ir <file>.cob} against \code{cob dump-ir
 --from-markup <file>.markup}, which parses the committed IR. The two must be
-identical. The fixtures carry the edge cases (the cross-line quote and doubled
-brackets of \code{quote.cob}); the crate, \code{cobito.cob}, and the flake are read by the
-\code{selfhost} and \code{dogfood} checks, so a reader break there fails those too.
+identical for the noweb-era subset (a docs line, chunk uses, `%def`, indentation).
+The reader departs from noweb on `[[…]]`, which noweb quotes but cob reads as plain
+text (§6.4 uses \code{\code{…}}), so no fixture uses it. The crate, \code{cobito.cob},
+and the flake are read by the \code{selfhost} and \code{dogfood} checks, so a reader
+break there fails those too.
 <<the reader check>>=
 # Reader differential (§4.1): the native reader (`cob dump-ir`) must make
 # the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
