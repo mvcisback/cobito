@@ -42,7 +42,7 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
   # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
   # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
   inputs.seed = {
-    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.1";
+    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.2";
     flake = false;
   };
 
