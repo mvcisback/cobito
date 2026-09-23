@@ -73,6 +73,8 @@ then the tests.
 
 <<a declared document>>
 
+<<an import>>
+
 <<the tangle table>>
 
 <<a tangle root>>
@@ -145,6 +147,29 @@ pub struct Config {
     pub tangle: Tangle,
     #[serde(default)]
     pub weave: Weave,
+    /// The `[import.<alias>]` tables (§13): each binds another forest to a local
+    /// namespace alias used in `label@alias` addresses. `BTreeMap` keeps the
+    /// order deterministic.
+    #[serde(rename = "import", default)]
+    pub imports: BTreeMap<String, Import>,
+}
+@
+An \code{[import.<alias>]} table binds another forest to the alias, so \code{label@alias}
+addresses resolve against it (§13). \code{path} names a local forest to read now; \code{git}
+plus \code{rev} name a remote one that \code{cob fetch} pins into the import cache before a
+weave reads it offline.
+<<an import>>=
+/// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
+/// local `path`, or a `git` URL pinned by `rev`. `cob fetch` turns a git import
+/// into a cached path; a weave only ever reads a path, so it stays offline.
+#[derive(Deserialize, Default, Clone)]
+pub struct Import {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub git: Option<String>,
+    #[serde(default)]
+    pub rev: Option<String>,
 }
 @
 \code{[weave]} carries the syntax-highlighting configuration (§5.5). \code{lang} is the
