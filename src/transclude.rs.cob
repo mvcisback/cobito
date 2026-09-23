@@ -28,36 +28,31 @@ level. cob cuts the node at these heading boundaries, not at the chunk
 boundaries, and puts the node where the directive sits. So one \code{@} chunk can hold
 many nodes, and a node can run across several chunks.
 
-Three rules make the copy safe:
+The copy is safe by construction, because the weaver never copies the body. A
+\code{\transclude} lowers to a lazy \code{<cob-transclude>} element (below): the client
+fetches the node's own page and lifts its body into a **shadow root**. So:
 
-- **Recursive by default.** A transcluded node expands the directives inside it
-  too. So a node pulls in its own parts.
-- **Cycles are flagged, not broken in silence.** If a node transcludes itself,
-  directly or through a chain, cob puts a short marker in place of the second
-  copy and raises the W105 warning. The weave does not loop.
-- **Scoped ids.** The canonical copy keeps the bare ids. The transcluded copy
-  gets a scope prefix on every id it defines, and on every link that points
-  inside the copy. So two copies of one node on one page do not collide, and a
-  link inside the copy still lands in the copy. A link that points *out* of the
-  copy keeps its canonical target.
+- **Ids are isolated.** The shadow root scopes every id, so two copies of one node
+  on one page never collide — with no id prefixing.
+- **A cycle cannot loop the build.** The weaver resolves no body and emits an inert
+  element, so a self-transclusion is a client concern, not a build-time loop.
+- **The body is stored once.** The node's own \code{n/} page is the one copy; every
+  transclusion references it, so a big forest does not multiply the bytes (§13).
 
-The copy also carries **context chrome**: a small header that names the node and
-links back to its canonical place. So a reader sees that the text is transcluded
-and can go to the source.
+The element carries **context chrome**: a fallback link that names the node and
+points at its page. The link shows until — and unless — the client inlines the
+body. So a reader with no JavaScript still reaches the node; the inline copy is the
+enhancement.
 
 ## Where transclusion runs {#sec:7qWt}
 
 Transclusion runs in the weaver, after every section is rendered and wrapped in
-its provenance envelope, and before the page split (§5.3). The reason is order.
-A node's HTML does not exist until every section is wrapped; the directive only
-needs to splice finished HTML. The page split then groups the host section as
-before — the transcluded copy rides inside the host section's HTML, so it lands
-on the host's page with no change to the split.
-
-The canonical render is unchanged. A section that holds no directive is
-byte-identical to today. This keeps the determinism anchor (§8): the archival
-\code{site.json} still records the canonical nodes once, because it is built from the
-pre-expansion bodies.
+its provenance envelope, and before the page split (§5.3). The weaver replaces each
+\code{\transclude} island with a \code{<cob-transclude>} element: its \code{src} is the target
+node's own page, its fallback is a link to that page. It copies no body, so a
+section with no directive is byte-identical to today, and the archival \code{site.json}
+still records the canonical nodes once (§8). The client does the inlining at view
+time, so the woven bytes stay deterministic and small.
 
 ## Floats are nodes too {#sec:Fx3r}
 
@@ -65,9 +60,9 @@ A figure, a table, and an equation are nodes too. Each one already earns an
 opaque id (§7.1), so each one is addressable. cob cuts a float node by its tag,
 not by heading boundaries: it finds the element that carries the float's anchor
 and balances that tag, so a figure's inner tags and an equation's KaTeX \code{div}s do
-not cut the element short. So \code{\transclude{fig:name}} lifts the one figure out of
-its section and shows it where the directive sits, with the same scoped ids and
-context chrome a section copy gets. The chrome header reads the float's caption.
+not cut the element short. So \code{\transclude{fig:name}} lowers to the same lazy
+\code{<cob-transclude>} a section does; its fallback link reads the float's caption, and
+the client lifts the figure from the float's own page into a shadow root.
 
 A float also earns its own page, at \code{n/<id>.html}, the same as a section node.
 Its breadcrumb is the heading it sits in, with that heading's own parents before
@@ -80,8 +75,8 @@ and CSS drops it in the left margin.
 What is still deferred:
 
 - **Foreign (cross-document) transclusion.** The forest (§13) lets one project
-  transclude another's node by its opaque id. The scoped-id and chrome machinery
-  here is the same; only the address space grows.
+  transclude another's node by its opaque id. The element and its shadow-root
+  isolation are the same; only the \code{src} points at another forest's node page.
 
 ## A homeless macro node {#sec:SJwf}
 
@@ -144,13 +139,9 @@ host body, the id-scoping helpers, and the per-node pages.
 
 <<build the node pages>>
 
-<<expand one host body>>
-
-<<render one transclusion>>
+<<expand islands into cob-transclude>>
 
 <<cut a node body from the section bodies>>
-
-<<scope the ids in a copy>>
 
 <<qualify links for a node page>>
 
@@ -180,24 +171,25 @@ use crate::resolve::Resolution;
 use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
 @
 A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
-carries the address. The expander scans for this exact opening and tail, so the
-context chrome it emits — a \code{section}, not a \code{div} — and the two error markers
-(a different class) are never mistaken for another placeholder.
+carries the address. The expander scans for this exact opening and tail, so its own
+output — a \code{<cob-transclude>} element, or a \code{transclusion-missing} marker — is
+never rescanned as a placeholder.
 <<the placeholder shape>>=
 /// The island a dialect lowers `\transclude{addr}` to (§6.4). The expander
-/// matches this exact opening and tail, so its own output — a `<section
-/// class="transclusion">` with chrome, or a `transclusion-missing`/`-cycle`
-/// marker — is never rescanned as a placeholder.
+/// matches this exact opening and tail, so its own output — a `<cob-transclude>`
+/// element, or a `transclusion-missing` marker — is never rescanned as a
+/// placeholder.
 const OPEN: &str = "<div class=\"transclusion\" data-transclude=\"";
 const TAIL: &str = "\"></div>";
 @
-A node is one addressable heading and its content: the heading text (the chrome's
-link text), the page it lands on canonically, and the rendered HTML of the node
-body. cob cuts the body once, at build time, from the final section bodies, so
-the expander only splices a finished string. The context holds every node keyed
-by its anchor, plus the page filenames so a cross-page backlink can name its file.
+A node is one addressable heading and its content: the heading text (the fallback
+link text), the page it lands on, and the rendered HTML of the node body. cob cuts
+the body once, at build time, from the final section bodies; the body feeds the
+node's own \code{n/} page, which every transclusion then references. The context holds
+each node keyed by its anchor, plus the anchor→id map a transclusion needs to name
+that page.
 <<a node and the context>>=
-/// One addressable heading node: its heading text (the chrome's link text), its
+/// One addressable heading node: its heading text (the fallback link text), its
 /// canonical page, and the rendered HTML of the node body — the heading tag and
 /// the content under it, cut at the next heading of the same or a shallower level.
 struct Node {
@@ -206,11 +198,13 @@ struct Node {
     body: String,
 }
 
-/// The node table plus the page filenames, built once per weave.
+/// The node table and the per-node pages, built once per weave.
 pub struct Context {
     /// Anchor (`sec-name`, the resolver's form) → node.
     nodes: BTreeMap<String, Node>,
-    page_files: Vec<String>,
+    /// Anchor → the node's frozen opaque id, which names its `n/<id>.html` page.
+    /// A transclusion points its `<cob-transclude src>` at that page (§10).
+    uids: BTreeMap<String, String>,
     /// One page per heading node, in document order (§10 node pages).
     node_pages: Vec<NodePage>,
     /// Anchor → document page filename, to rebase links that leave a node page.
@@ -236,8 +230,6 @@ pub struct NodePage {
     pub title: String,
     /// The node body, with links rebased for the `n/` directory.
     pub body: String,
-    /// The node's canonical page index; `finish_node_pages` expands with it.
-    pub page: usize,
     /// A link to the node in its document page (`../page.html#anchor`).
     pub context: String,
     /// The parent headings, document `h1` first, node last-but-one.
@@ -272,7 +264,11 @@ impl Context {
             .map(|(i, h)| (h.section, element_offset(&bodies[h.section], &res.heading_anchors[i])))
             .collect();
         let mut nodes = BTreeMap::new();
+        let mut uids: BTreeMap<String, String> = BTreeMap::new();
         for (i, h) in heads.iter().enumerate() {
+            if let Some(uid) = &res.heading_uids[i] {
+                uids.insert(res.heading_anchors[i].clone(), uid.clone());
+            }
             // The next heading at the same or a shallower level ends the node.
             let end = heads[i + 1..]
                 .iter()
@@ -301,6 +297,9 @@ impl Context {
             };
             let body = &bodies[ld.section];
             if let Some((s, e)) = cut_element(body, &label.anchor) {
+                if let Some(uid) = &label.id {
+                    uids.insert(label.anchor.clone(), uid.clone());
+                }
                 nodes.insert(
                     label.anchor.clone(),
                     Node {
@@ -313,10 +312,9 @@ impl Context {
         }
         let link_pages = anchor_pages(heads, res);
         let node_pages = Self::build_node_pages(scan, &pos, res, bodies, &nodes);
-        let page_files = res.pages.iter().map(|p| p.filename.clone()).collect();
         Context {
             nodes,
-            page_files,
+            uids,
             node_pages,
             link_pages,
         }
@@ -353,7 +351,6 @@ directive shows the same inlined content its canonical page does.
                 id: uid,
                 title: node.title.clone(),
                 body: node.body.clone(),
-                page: node.page,
                 context: format!("../{page_file}#{anchor}"),
                 crumbs: crumbs(heads, res, i),
                 transcluded_by: backlinks(tx_by.get(anchor), heads, res),
@@ -388,7 +385,6 @@ directive shows the same inlined content its canonical page does.
                 id: uid,
                 title: node.title.clone(),
                 body: node.body.clone(),
-                page: label.page,
                 // A homeless macro node has no in-flow anchor (§10), so it has no
                 // "read in context" link; every other float links to its place.
                 context: if label.kind == "macro" {
@@ -410,14 +406,15 @@ directive shows the same inlined content its canonical page does.
     /// document's, so ids stay unique and the output is deterministic (§8). A
     /// transclusion fault here is already counted on the canonical page, so its
     /// lint is discarded.
-    pub fn finish_node_pages(&mut self, scope: &mut usize) {
+    pub fn finish_node_pages(&mut self) {
         let pages = std::mem::take(&mut self.node_pages);
         self.node_pages = pages
             .into_iter()
             .map(|mut np| {
+                // A node page lives in `n/`, so a transclusion inside it points at a
+                // sibling `<uid>.html` (prefix ""). Then rebase its links for `n/`.
                 let mut discard = Vec::new();
-                let mut stack = Vec::new();
-                let body = self.expand_inner(&np.body, np.page, scope, &mut discard, "", 0, &mut stack);
+                let body = self.expand(&np.body, "", &mut discard, "", 0);
                 np.body = qualify_hrefs(&body, &self.link_pages);
                 np
             })
@@ -429,39 +426,25 @@ directive shows the same inlined content its canonical page does.
         &self.node_pages
     }
 @
-Expanding a host body scans it for placeholders and replaces each with the named
-node's HTML, left to right. A body with no placeholder returns unchanged, so a
-canonical section costs one cheap scan and no copy of content. The \code{scope}
-counter is threaded through the whole weave, so every transcluded copy on every
-page gets a distinct prefix and the output stays deterministic.
-<<expand one host body>>=
-    /// Replace every `\transclude` placeholder in `html` with the named node's
-    /// finished HTML, recursively. `host_page` decides whether a backlink is a
-    /// bare fragment or page-qualified; `scope` is the document-wide counter that
-    /// makes each copy's id prefix unique and deterministic.
+A \code{\transclude} island lowers to a lazy \code{<cob-transclude>} element (§10). The
+client fetches the node's own page into a shadow root, so the body is stored once
+and loaded on demand. The weaver copies no body: it resolves the address to the
+node-page URL and title, and leaves a link fallback that works with no JavaScript.
+\code{prefix} is the path to the \code{n/} directory from the host page ("n/" from a
+document page, "" from a node page). An unknown target is W106, an inert marker; a
+cycle is now a client-side guard, not a build-time lint.
+<<expand islands into cob-transclude>>=
+    /// Replace every `\transclude` island in `html` with a lazy `<cob-transclude>`
+    /// (§10): a link fallback plus the node-page `src` the client lifts into a
+    /// shadow root. `prefix` is the path to `n/` from the host page. No body is
+    /// copied here; an unknown target is W106.
     pub fn expand(
         &self,
         html: &str,
-        host_page: usize,
-        scope: &mut usize,
+        prefix: &str,
         lints: &mut Vec<Lint>,
         file: &str,
         line: u32,
-    ) -> String {
-        let mut stack: Vec<String> = Vec::new();
-        self.expand_inner(html, host_page, scope, lints, file, line, &mut stack)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn expand_inner(
-        &self,
-        html: &str,
-        host_page: usize,
-        scope: &mut usize,
-        lints: &mut Vec<Lint>,
-        file: &str,
-        line: u32,
-        stack: &mut Vec<String>,
     ) -> String {
         if !html.contains(OPEN) {
             return html.to_string();
@@ -473,82 +456,45 @@ page gets a distinct prefix and the output stays deterministic.
             out.push_str(&html[i..p]);
             let astart = p + OPEN.len();
             let Some(q) = html[astart..].find('"') else {
-                // Malformed placeholder: copy the rest verbatim and stop.
                 out.push_str(&html[p..]);
                 return out;
             };
             let addr = &html[astart..astart + q];
-            out.push_str(&self.render(addr, host_page, scope, lints, file, line, stack));
+            out.push_str(&self.element(addr, prefix, lints, file, line));
             i = astart + q + TAIL.len();
         }
         out.push_str(&html[i..]);
         out
     }
-@
-Rendering one transclusion resolves the address, guards the two failure cases,
-expands the node body recursively, scopes its ids, and wraps it in the context
-chrome. An unknown target is W106; a cycle is W105. Both put a short inert marker
-in place, so the weave never fails and never loops on a transclusion fault —
-transclusion is a convenience, not a correctness gate. The node body is expanded
-*before* it is scoped, so a nested copy already carries its own prefix and the
-outer prefix composes over it.
-<<render one transclusion>>=
-    #[allow(clippy::too_many_arguments)]
-    fn render(
-        &self,
-        addr: &str,
-        host_page: usize,
-        scope: &mut usize,
-        lints: &mut Vec<Lint>,
-        file: &str,
-        line: u32,
-        stack: &mut Vec<String>,
-    ) -> String {
+
+    /// One `<cob-transclude>` for a resolved address, or a W106 marker for an
+    /// unknown one. `src` is the node's own page under `n/`; the fallback link is
+    /// the same page, so the content is reachable with no JavaScript (§6.3).
+    fn element(&self, addr: &str, prefix: &str, lints: &mut Vec<Lint>, file: &str, line: u32) -> String {
         let anchor = anchor_of(addr);
-        let Some(node) = self.nodes.get(&anchor) else {
-            lints.push(Lint {
-                code: "W106",
-                message: format!("transclusion of unknown target `{addr}`"),
-                file: file.to_string(),
-                line,
-            });
-            return format!(
-                "<div class=\"transclusion-missing\" data-transclude=\"{}\">unknown transclusion target</div>",
-                prose::escape(addr)
-            );
-        };
-        if stack.contains(&anchor) {
-            lints.push(Lint {
-                code: "W105",
-                message: format!("transclusion cycle through `{addr}`"),
-                file: file.to_string(),
-                line,
-            });
-            return format!(
-                "<div class=\"transclusion-cycle\" data-transclude=\"{}\">transclusion cycle</div>",
-                prose::escape(addr)
-            );
+        match (self.nodes.get(&anchor), self.uids.get(&anchor)) {
+            (Some(node), Some(uid)) => {
+                let url = format!("{prefix}{uid}.html");
+                format!(
+                    "<cob-transclude src=\"{url}\" data-transclude=\"{a}\">\
+                     <a href=\"{url}\">{t} &rarr;</a></cob-transclude>",
+                    a = prose::escape(addr),
+                    t = prose::escape(&node.title)
+                )
+            }
+            _ => {
+                lints.push(Lint {
+                    code: "W106",
+                    message: format!("transclusion of unknown target `{addr}`"),
+                    file: file.to_string(),
+                    line,
+                });
+                format!(
+                    "<div class=\"transclusion-missing\" data-transclude=\"{}\">unknown transclusion target</div>",
+                    prose::escape(addr)
+                )
+            }
         }
-
-        stack.push(anchor.clone());
-        let body = self.expand_inner(&node.body, host_page, scope, lints, file, line, stack);
-        stack.pop();
-
-        *scope += 1;
-        let prefix = format!("tx{scope}");
-        let scoped = scope_ids(&body, &prefix);
-        let href = if node.page == host_page {
-            format!("#{anchor}")
-        } else {
-            format!("{}#{anchor}", self.page_files[node.page])
-        };
-        format!(
-            "<section class=\"transclusion\" data-transclude=\"{addr}\">\
-             <header class=\"transclusion-from\"><a href=\"{href}\">{title}</a></header>\
-             {scoped}</section>",
-            addr = prose::escape(addr),
-            title = prose::escape(&node.title)
-        )
     }
 }
 @
@@ -706,67 +652,6 @@ fn strip_tags(html: &str) -> String {
     out
 }
 @
-Scoping a copy has three parts, in order. First, collect every id the copy
-*defines*. Then prefix every \code{id} (always — an id is always local to the copy).
-Then prefix every \code{data-for} and every same-page \code{href="#…"} **only when its
-target is one of the collected ids** — so a margin slot and an intra-copy link
-follow the copy, while a link out of the copy keeps pointing at the canonical
-target. The leading space in the \code{id}/\code{data-for} patterns is deliberate: it
-stops a match inside \code{data-id=} or \code{data-nw-line=}.
-<<scope the ids in a copy>>=
-/// Prefix every id the copy defines, and every intra-copy reference to one, with
-/// `prefix-`, so two copies of a node never collide on a page and an in-copy link
-/// still lands in the copy. A reference whose target is *not* defined in the copy
-/// is left alone, so it keeps pointing at the canonical node.
-fn scope_ids(html: &str, prefix: &str) -> String {
-    let defined = collect_ids(html);
-    // An id is always local to the copy; a data-for / intra-page href only when
-    // it names an id the copy defines.
-    let a = prefix_attr(html, " id=\"", prefix, None);
-    let b = prefix_attr(&a, " data-for=\"", prefix, Some(&defined));
-    prefix_attr(&b, "href=\"#", prefix, Some(&defined))
-}
-
-/// Every value of an ` id="…"` attribute in `html`.
-fn collect_ids(html: &str) -> BTreeSet<String> {
-    let pat = " id=\"";
-    let mut set = BTreeSet::new();
-    let mut i = 0;
-    while let Some(rel) = html[i..].find(pat) {
-        let s = i + rel + pat.len();
-        let Some(q) = html[s..].find('"') else { break };
-        set.insert(html[s..s + q].to_string());
-        i = s + q;
-    }
-    set
-}
-
-/// Rewrite every `pat"value"` in `html` to `pat"prefix-value"`. With a `gate`,
-/// only values the gate contains are prefixed; without one, every value is.
-fn prefix_attr(html: &str, pat: &str, prefix: &str, gate: Option<&BTreeSet<String>>) -> String {
-    let mut out = String::new();
-    let mut i = 0;
-    while let Some(rel) = html[i..].find(pat) {
-        let p = i + rel;
-        out.push_str(&html[i..p]);
-        out.push_str(pat);
-        let vstart = p + pat.len();
-        let Some(q) = html[vstart..].find('"') else {
-            out.push_str(&html[vstart..]);
-            return out;
-        };
-        let val = &html[vstart..vstart + q];
-        if gate.is_none_or(|set| set.contains(val)) {
-            out.push_str(prefix);
-            out.push('-');
-        }
-        out.push_str(val);
-        i = vstart + q;
-    }
-    out.push_str(&html[i..]);
-    out
-}
-@
 The node-page helpers make the breadcrumb, the backlinks, and the link rebasing.
 A breadcrumb or a backlink is one link to a node — to its own node page, or, for
 an \code{h1}, to its document page. Backlinks come from one scan of the bodies: a
@@ -910,6 +795,21 @@ fn qualify_hrefs(body: &str, link_pages: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// Every value of an ` id="…"` attribute in `html` — the ids local to this node
+/// body, so a link into it stays a fragment while a link out is page-qualified.
+fn collect_ids(html: &str) -> BTreeSet<String> {
+    let pat = " id=\"";
+    let mut set = BTreeSet::new();
+    let mut i = 0;
+    while let Some(rel) = html[i..].find(pat) {
+        let s = i + rel + pat.len();
+        let Some(q) = html[s..].find('"') else { break };
+        set.insert(html[s..s + q].to_string());
+        i = s + q;
+    }
+    set
+}
+
 /// One link value, rebased for the `n/` directory (see `qualify_hrefs`).
 fn rebase_href(v: &str, local: &BTreeSet<String>, link_pages: &BTreeMap<String, String>) -> String {
     if let Some(anchor) = v.strip_prefix('#') {
@@ -945,10 +845,6 @@ mod tests {
 
     <<a transclusion splices the node with chrome>>
 
-    <<a transcluded copy has scoped ids>>
-
-    <<a cycle is flagged not looped>>
-
     <<an unknown target is flagged>>
 
     <<node-page links rebase for the n directory>>
@@ -979,9 +875,11 @@ fn ctx() -> Context {
                 .to_string(),
         },
     );
+    let mut uids = BTreeMap::new();
+    uids.insert("sec-foo".to_string(), "abcd".to_string());
     Context {
         nodes,
-        page_files: vec!["index.html".to_string()],
+        uids,
         node_pages: Vec::new(),
         link_pages: BTreeMap::new(),
     }
@@ -994,71 +892,30 @@ fn host() -> String {
 
 fn run(host: &str) -> (String, Vec<Lint>) {
     let c = ctx();
-    let mut scope = 0;
     let mut lints = Vec::new();
-    let out = c.expand(host, 0, &mut scope, &mut lints, "t.cob", 1);
+    let out = c.expand(host, "n/", &mut lints, "t.cob", 1);
     (out, lints)
 }
 @
-A transclusion splices the node body inside a \code{transclusion} section whose header
-links back to the canonical anchor with the heading text.
+A transclusion lowers to a lazy \code{<cob-transclude>} whose \code{src} is the node's own
+page under \code{n/} and whose fallback link is the same page, so the content is
+reachable with no JavaScript (§10). The weaver copies no body and scopes no ids —
+the shadow root isolates them. The host's own text is kept around the element.
 <<a transclusion splices the node with chrome>>=
 #[test]
-fn transclusion_splices_the_node_with_chrome() {
+fn transclusion_lowers_to_a_lazy_element() {
     let (out, lints) = run(&host());
     assert!(lints.is_empty());
-    assert!(out.contains("<section class=\"transclusion\" data-transclude=\"sec:foo\">"));
-    assert!(out.contains("<header class=\"transclusion-from\"><a href=\"#sec-foo\">Foo</a></header>"));
-    // The host's own text is kept around the spliced node.
-    assert!(out.contains("host <section class=\"transclusion\""));
-    assert!(out.contains("</section> tail"));
-}
-@
-The copy's own ids and its intra-copy references carry the scope prefix, while a
-reference out of the copy keeps its canonical target.
-<<a transcluded copy has scoped ids>>=
-#[test]
-fn transcluded_copy_has_scoped_ids() {
-    let (out, _) = run(&host());
-    // The defined id and the margin slot that points at it are prefixed.
-    assert!(out.contains("id=\"tx1-sec-foo\""));
-    assert!(out.contains("data-for=\"tx1-sec-foo\""));
-    // An in-copy link follows the copy; a link out of the copy does not.
-    assert!(out.contains("<a href=\"#tx1-sec-foo\">self</a>"));
-    assert!(out.contains("<a href=\"#elsewhere\">out</a>"));
-    // The canonical copy is untouched: no bare sec-foo id remains in the body.
-    assert!(!out.contains("<h2 id=\"sec-foo\">"));
-}
-@
-A node that transcludes itself is flagged W105 and replaced with an inert marker;
-the weave does not loop.
-<<a cycle is flagged not looped>>=
-#[test]
-fn a_cycle_is_flagged_not_looped() {
-    // sec:foo's body transcludes sec:foo — a direct cycle.
-    let mut nodes = BTreeMap::new();
-    nodes.insert(
-        "sec-foo".to_string(),
-        Node {
-            title: "Foo".to_string(),
-            page: 0,
-            body: format!("<h2 id=\"sec-foo\">Foo</h2>{OPEN}sec:foo{TAIL}"),
-        },
-    );
-    let c = Context {
-        nodes,
-        page_files: vec!["index.html".to_string()],
-        node_pages: Vec::new(),
-        link_pages: BTreeMap::new(),
-    };
-    let mut scope = 0;
-    let mut lints = Vec::new();
-    let out = c.expand(&host(), 0, &mut scope, &mut lints, "t.cob", 1);
-    assert_eq!(lints.len(), 1);
-    assert_eq!(lints[0].code, "W105");
-    assert!(out.contains("class=\"transclusion-cycle\""));
-    // The first copy still rendered; only the inner self-reference is a marker.
-    assert!(out.contains("<h2 id=\"tx1-sec-foo\">Foo</h2>"));
+    assert!(out.contains(
+        "<cob-transclude src=\"n/abcd.html\" data-transclude=\"sec:foo\">\
+         <a href=\"n/abcd.html\">Foo &rarr;</a></cob-transclude>"
+    ));
+    // No server-side copy: the node body is not spliced, and no scoped id appears.
+    assert!(!out.contains("<section class=\"transclusion\""));
+    assert!(!out.contains("tx1-"));
+    // The host's own text is kept around the element.
+    assert!(out.contains("host <cob-transclude"));
+    assert!(out.contains("</cob-transclude> tail"));
 }
 @
 A directive whose target is no known node is flagged W106 and replaced with an

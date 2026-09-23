@@ -669,21 +669,15 @@ pub fn render(
         raw.html = rewrite::strip_macros(&raw.html).map_err(WeaveError::Rewrite)?;
     }
     let mut tx_lints: Vec<Lint> = Vec::new();
-    let mut tx_scope = 0usize;
     for (k, w) in wrapped.iter_mut().enumerate() {
         let sec = &doc.sections[k];
-        *w = tx.expand(
-            w,
-            res.section_page[k],
-            &mut tx_scope,
-            &mut tx_lints,
-            &sec.file,
-            sec.line,
-        );
+        // A document page reaches a node page under `n/`, so the transclusion `src`
+        // takes the `n/` prefix. The body is not spliced; the client fetches it.
+        *w = tx.expand(w, "n/", &mut tx_lints, &sec.file, sec.line);
     }
-    // §10 node pages: expand and rebase each node's body once, after the host
-    // pass, reusing the same document-wide scope counter so ids stay unique.
-    tx.finish_node_pages(&mut tx_scope);
+    // §10 node pages: turn their islands into `<cob-transclude>` too and rebase
+    // their links for the `n/` directory.
+    tx.finish_node_pages();
 
     // §5.3 page split: group wrapped sections by their assigned page.
     let mut env = minijinja::Environment::new();
@@ -692,6 +686,10 @@ pub fn render(
     env.add_template("sitemap", include_str!("../templates/sitemap.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
     env.add_template("node", include_str!("../templates/node.html"))
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
+    // The shared progressive-enhancement scripts (nav-spy + cob-transclude), so a
+    // page and a node page carry the same, single copy (§5.3, §10).
+    env.add_template("scripts", include_str!("../templates/scripts.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
     let tmpl = env
         .get_template("page")
@@ -1648,27 +1646,29 @@ fn markdown_fenced_floats_are_labeled_and_referenced() {
 }
 @
 The transclusion fixture puts a title, an intro, and the source heading in one \code{@}
-chunk, then transcludes the source into a later section. The copy is cut at the
-heading — the shallower \code{h1} stays out — runs across the following code chunk, and
-carries scoped ids so it cannot collide with the canonical node.
+chunk, then transcludes the source into a later section. The directive lowers to a
+lazy \code{<cob-transclude>} pointing at the source's own \code{n/} page, with a link
+fallback — no server-side copy, so the body is not duplicated and its ids are not
+scoped (§10).
 <<transclusion cuts a heading node and scopes the copy>>=
 #[test]
-fn transclusion_cuts_a_heading_node_and_scopes_the_copy() {
+fn transclusion_lowers_to_a_lazy_element() {
     let site = dev_render(&tx(), "");
     let html = site.all_html();
-    // The node is spliced as a `transclusion` section whose chrome links back to
-    // the canonical anchor with the heading text (§10).
-    assert!(html.contains("<section class=\"transclusion\" data-transclude=\"sec:source\">"));
-    assert!(html.contains("<a href=\"#sec-source\">The source</a>"));
-    // Node extent is the heading, not the chunk: the `h1` that shares the source's
-    // chunk is NOT pulled into the copy, so the whole page still has one `h1`.
+    // The node lowers to a lazy element that fetches its own n/ page, with a link
+    // fallback naming the heading — reachable with no JavaScript (§10).
+    assert!(html.contains("<cob-transclude src=\"n/"));
+    assert!(html.contains("data-transclude=\"sec:source\">"));
+    assert!(html.contains(">The source &rarr;</a></cob-transclude>"));
+    // No server-side copy: no spliced section (the `data-transclude` form the old
+    // splice used; the enhancement script's own literal has no such attribute) and
+    // no scoped ids.
+    assert!(!html.contains("<section class=\"transclusion\" data-transclude="));
+    assert!(!html.contains("tx1-"));
+    // The body is not duplicated: one h1, one canonical id, one chunk body.
     assert_eq!(html.matches("<h1").count(), 1);
-    // The copy scopes its ids; the canonical heading keeps the bare id.
-    assert!(html.contains("id=\"tx1-sec-source\""));
-    assert!(html.contains("id=\"sec-source\""));
-    // The node runs across the following code chunk, so the copy reproduces it —
-    // one canonical chunk body, one in the copy.
-    assert_eq!(html.matches("chunk-body").count(), 2);
+    assert_eq!(html.matches("id=\"sec-source\"").count(), 1);
+    assert_eq!(html.matches("chunk-body").count(), 1);
     // The target resolves, so no transclusion lint fires.
     assert!(site.lints.iter().all(|l| l.code != "W105" && l.code != "W106"));
 }
@@ -1685,8 +1685,16 @@ fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
     assert_eq!(site.node_pages.len(), 2);
     for (path, html) in &site.node_pages {
         assert!(path.starts_with("n/") && path.ends_with(".html"));
-        // A node page is archival too: no script.
-        assert!(!html.contains("<script"));
+        // A node page is archival too: only the nav-spy and cob-transclude aids, so
+        // a transclusion inside a node page lazy-loads and nothing else runs.
+        for tag in html.match_indices("<script id=") {
+            let id = &html[tag.0 + 11..];
+            assert!(
+                id.starts_with("\"nav-spy\"") || id.starts_with("\"cob-transclude\""),
+                "node page has an unexpected script"
+            );
+        }
+        assert_eq!(html.matches("<script").count(), html.matches("<script id=").count());
     }
     // The source node page: found by its "read in context" link to the canonical
     // anchor, which sits one directory up (`../`).
@@ -1713,26 +1721,29 @@ fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
     assert_eq!(reuse_uid.len(), ID_LEN as usize);
 }
 @
-A labelled float is a node too (§10). \code{\transclude{fig:…}} lifts the one figure
-out of its section and inlines it with a scoped id and chrome that names the
-caption. The figure and the equation each earn a node page, and each leads with a
-node-page link in context.
+A labelled float is a node too (§10). \code{\transclude{fig:…}} lowers to a lazy
+\code{<cob-transclude>} pointing at the figure's own page, with a link fallback naming
+the caption. The figure and the equation each earn a node page, and each leads with
+a node-page link in context.
 <<a float is a node with its own page and can be transcluded>>=
 #[test]
 fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
     let site = dev_render(&txf(), "");
     let idx = &site.pages[0].html;
-    // \transclude{fig:demo} lifts the one figure out and inlines it with a
-    // scoped id, its chrome naming the caption text.
-    assert!(idx.contains("<section class=\"transclusion\" data-transclude=\"fig:demo\">"));
-    assert!(idx.contains(">A tiny schematic.</a>"));
-    assert!(idx.contains("id=\"tx1-fig-demo\""));
+    let figid = id_at(idx, "fig-demo");
+    // \transclude{fig:demo} lowers to a lazy element pointing at the figure's page,
+    // with a link fallback naming the caption — no server-side copy.
+    assert!(idx.contains(&format!(
+        "<cob-transclude src=\"n/{figid}.html\" data-transclude=\"fig:demo\">"
+    )));
+    assert!(idx.contains(">A tiny schematic. &rarr;</a></cob-transclude>"));
+    assert!(!idx.contains("<section class=\"transclusion\" data-transclude="));
+    assert!(!idx.contains("tx1-"));
     // The canonical figure still carries its bare id, once.
     assert_eq!(idx.matches("id=\"fig-demo\"").count(), 1);
     // Two headings and two floats each earn a node page.
     assert_eq!(site.node_pages.len(), 4);
     // The figure leads with a node-page link in context (drawn by CSS, no text).
-    let figid = id_at(idx, "fig-demo");
     assert!(idx.contains(&format!("href=\"n/{figid}.html\"")));
     // The figure's node page carries the figure, a breadcrumb to the heading it
     // sits in, a context link, and a backlink to the node that transcludes it.

@@ -149,7 +149,7 @@
           # §6.3 the content needs no JavaScript: the only script a page may carry is
           # the inline nav-spy aid — no math script, no external src.
           for p in $TMPDIR/a/*.html; do
-            if grep '<script' "$p" | grep -qv '<script id="nav-spy">'; then
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
               echo "$p carries a script other than the nav-spy aid; math must render at weave time" >&2
               exit 1
             fi
@@ -195,7 +195,7 @@
           grep -qE 'id="eq-wrap" data-id="[0-9A-Za-z]{4}"' $TMPDIR/md-a/index.html
           grep -q 'href="#eq-wrap"' $TMPDIR/md-a/index.html
           grep -q 'href="#tbl-api"' $TMPDIR/md-a/index.html
-          if grep '<script' $TMPDIR/md-a/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' $TMPDIR/md-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "Markdown weave emitted a script other than the nav-spy aid; math must render at weave time" >&2
             exit 1
           fi
@@ -226,7 +226,7 @@
             exit 1
           fi
           # Highlighting is pure CSS classes — the only script is the nav-spy aid.
-          if grep '<script' $TMPDIR/hl-a/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' $TMPDIR/hl-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "highlighted weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
@@ -236,22 +236,27 @@
           $cob weave --locked fixtures/tx.cob --out $TMPDIR/tx-a
           $cob weave --locked fixtures/tx.cob --out $TMPDIR/tx-b
           diff -r $TMPDIR/tx-a $TMPDIR/tx-b
-          # The node is spliced as a transclusion section whose chrome links back to
-          # the canonical anchor with the heading text.
-          grep -q '<section class="transclusion" data-transclude="sec:source">' $TMPDIR/tx-a/index.html
-          grep -q '<a href="#sec-source">The source</a>' $TMPDIR/tx-a/index.html
+          # The directive lowers to a lazy <cob-transclude> pointing at the source's own
+          # n/ page, with a link fallback naming the heading — reachable with no JS (§10).
+          grep -q '<cob-transclude src="n/' $TMPDIR/tx-a/index.html
+          grep -q 'data-transclude="sec:source">' $TMPDIR/tx-a/index.html
+          grep -q 'The source &rarr;</a></cob-transclude>' $TMPDIR/tx-a/index.html
+          # No server-side copy: no spliced section, no scoped ids, no duplicated body.
+          if grep -q '<section class="transclusion" data-transclude=' $TMPDIR/tx-a/index.html; then
+            echo "transclusion was spliced server-side; §10 wants a lazy element" >&2; exit 1
+          fi
+          if grep -q 'tx1-' $TMPDIR/tx-a/index.html; then
+            echo "a scoped id leaked; shadow DOM isolates the copy (§10)" >&2; exit 1
+          fi
           # Node extent is the markdown heading, not the @ chunk: the h1 that shares
-          # the source's chunk is NOT pulled into the copy, so the page has one h1.
+          # the source's chunk is NOT pulled in, so the page has one h1.
           test "$(grep -oE '<h1[ >]' $TMPDIR/tx-a/index.html | wc -l)" -eq 1
-          # The copy scopes its ids; the canonical heading keeps the bare id.
-          grep -q 'id="tx1-sec-source"' $TMPDIR/tx-a/index.html
-          grep -q 'id="sec-source"' $TMPDIR/tx-a/index.html
-          # The node runs across the following code chunk, so the copy reproduces it
-          # — one canonical chunk body, one in the copy.
-          test "$(grep -oE 'class="chunk-body"' $TMPDIR/tx-a/index.html | wc -l)" -eq 2
+          # The body is not duplicated: one canonical id, one chunk body.
+          test "$(grep -oE 'id="sec-source"' $TMPDIR/tx-a/index.html | wc -l)" -eq 1
+          test "$(grep -oE 'class="chunk-body"' $TMPDIR/tx-a/index.html | wc -l)" -eq 1
           # Transclusion duplicates finished HTML, so it adds no script: the only
           # script a page may carry is the nav-spy aid (§6.3).
-          if grep '<script' $TMPDIR/tx-a/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' $TMPDIR/tx-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "transcluded weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
@@ -266,11 +271,14 @@
           src=$(grep -l 'href="../index.html#sec-source">Read in context' $TMPDIR/tx-a/n/*.html)
           grep -q '<a href="../index.html">Transclusion fixture</a>' "$src"
           grep -q 'Transcluded by' "$src"
-          # A node page is archival too: it carries no script at all.
-          if grep -q '<script' $TMPDIR/tx-a/n/*.html; then
-            echo "a node page emitted a script" >&2
-            exit 1
-          fi
+          # A node page is archival too: the only scripts are the nav-spy and cob-transclude
+          # aids, so a transclusion inside a node page lazy-loads and everything else holds.
+          for p in $TMPDIR/tx-a/n/*.html; do
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+              echo "a node page emitted a script other than the enhancement aids" >&2
+              exit 1
+            fi
+          done
           # §10 floats are nodes: txf.cob labels an equation and a figure, then
           # transcludes each into a later section. Weave twice, byte-diff, and
           # confirm a float is cut, paged, linked, and transcludable.
@@ -279,11 +287,17 @@
           diff -r $TMPDIR/txf-a $TMPDIR/txf-b
           # Two heading nodes and two float nodes each earn a standalone page under n/.
           test "$(ls $TMPDIR/txf-a/n/*.html | wc -l)" -eq 4
-          # The figure is transcluded on its own: a transclusion section keyed to the
-          # float, and the copy scopes the figure id with the tx prefix.
-          grep -q '<section class="transclusion" data-transclude="fig:demo">' $TMPDIR/txf-a/index.html
-          grep -q 'id="tx1-fig-demo"' $TMPDIR/txf-a/index.html
-          grep -q '<section class="transclusion" data-transclude="eq:demo">' $TMPDIR/txf-a/index.html
+          # Each float is transcluded on its own as a lazy <cob-transclude> at its node
+          # page; no server-side splice, no scoped ids (§10).
+          grep -q 'data-transclude="fig:demo">' $TMPDIR/txf-a/index.html
+          grep -q 'data-transclude="eq:demo">' $TMPDIR/txf-a/index.html
+          grep -q '<cob-transclude src="n/' $TMPDIR/txf-a/index.html
+          if grep -q '<section class="transclusion" data-transclude=' $TMPDIR/txf-a/index.html; then
+            echo "float transclusion was spliced; §10 wants a lazy element" >&2; exit 1
+          fi
+          if grep -q 'tx1-' $TMPDIR/txf-a/index.html; then
+            echo "a scoped id leaked (§10)" >&2; exit 1
+          fi
           # The canonical figure keeps its bare id; only one canonical figure exists.
           test "$(grep -oE 'id="fig-demo"' $TMPDIR/txf-a/index.html | wc -l)" -eq 1
           # In context, a float leads with a node-page link, drawn by CSS (no text). The
@@ -297,11 +311,13 @@
           grep -q '<a href="../index.html">Float transclusion fixture</a>' "$fig"
           grep -q '<figure id="fig-demo"' "$fig"
           grep -q 'Transcluded by' "$fig"
-          # A float node page is archival too: no script at all.
-          if grep -q '<script' $TMPDIR/txf-a/n/*.html; then
-            echo "a float node page emitted a script" >&2
-            exit 1
-          fi
+          # A float node page is archival too: only the nav-spy and cob-transclude aids.
+          for p in $TMPDIR/txf-a/n/*.html; do
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+              echo "a float node page emitted a script other than the enhancement aids" >&2
+              exit 1
+            fi
+          done
           touch $out
         '';
 
@@ -363,7 +379,7 @@
           $cob weave --locked sections.cob --out out
           grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
           # The only script the archival page carries is the nav-spy aid (§6.3).
-          if grep '<script' out/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' out/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "section weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
@@ -449,7 +465,7 @@
             exit 1
           fi
           # Pure CSS coloring: the only script here is the nav-spy aid too.
-          if grep '<script' $TMPDIR/df-a/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' $TMPDIR/df-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "dogfood weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
@@ -484,7 +500,7 @@
           $cob weave --locked templates/cob.css.cob --out $TMPDIR/shcss
           grep -q 'class="tok-property">' $TMPDIR/shcss/index.html
           for page in $TMPDIR/sh $TMPDIR/shcss; do
-            if grep '<script' "$page"/index.html | grep -qv '<script id="nav-spy">'; then
+            if grep '<script' "$page"/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
               echo "self-host weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
               exit 1
             fi
@@ -501,7 +517,7 @@
             if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
               echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
             fi
-            if grep '<script' $TMPDIR/m/*.html | grep -qv '<script id="nav-spy">'; then
+            if grep '<script' $TMPDIR/m/*.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
               echo "$m wove a script other than the nav-spy aid (§6.3)" >&2; exit 1
             fi
           done
@@ -551,10 +567,11 @@
             echo "the macros node kept an in-flow anchor; it must be homeless (§10)" >&2
             exit 1
           fi
-          # It has its own page, and a \ref points there, not at a dead fragment. The node
-          # page is the \ref target, not just the first n/ link (a section link comes first).
+          # It has its own page, and a \ref points there, not at a dead fragment. Take the
+          # node from the \ref (the data-ref link), not a bare n/ link — a section link and
+          # the transclusion fallback also point into n/.
           grep -qE '<a data-ref="def:basics" href="n/[0-9A-Za-z]{4}\.html">Notation [0-9A-Za-z]{4}</a>' a/index.html
-          node=$(grep -oE 'href="n/[0-9A-Za-z]{4}\.html">Notation' a/index.html | grep -oE 'n/[0-9A-Za-z]{4}\.html')
+          node=$(grep -oE 'data-ref="def:basics" href="n/[0-9A-Za-z]{4}\.html"' a/index.html | grep -oE 'n/[0-9A-Za-z]{4}\.html')
           test -f "a/$node"
           # The node page shows the exposition: the author's prose (macros in scope) and the
           # definitions verbatim as a code block — the source, not typeset (§6.4).
@@ -569,7 +586,7 @@
           grep -q 'data-transclude="def:basics"' a/index.html
 
           # The archival page carries no script but the nav-spy aid (§6.3).
-          if grep '<script' a/index.html | grep -qv '<script id="nav-spy">'; then
+          if grep '<script' a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
             echo "macros weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
