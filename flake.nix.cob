@@ -42,7 +42,7 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
   # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
   # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
   inputs.seed = {
-    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.0";
+    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.2";
     flake = false;
   };
 
@@ -311,6 +311,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the selfhost check>>
 
 <<the modules check>>
+
+<<the macros check>>
 @
 ### build {#sec:9hJs}
 
@@ -908,4 +910,83 @@ modules = pkgs.runCommand "cob-modules" { } ''
   done
   touch $out
 '';
+@
+### macros {#sec:1XOf}
+
+The \code{macros} fence (§6.4) defines KaTeX macros and shows them as a \code{def:} node
+(§10). This check writes a small document, mints the \code{def:} id with \code{cob lock},
+then weaves it twice under \code{--locked}. It proves the macros expand, the node is
+homeless (no in-flow anchor), the node has an \code{n/} page a \code{\ref} points at, and
+a \code{\transclude} splices a copy — all deterministic and with no script.
+<<the macros check>>=
+macros = pkgs.runCommand "cob-macros" { } ''
+  <<macros check script>>
+'';
+@
+<<macros check script>>=
+cob=${self.packages.${system}.cob}/bin/cob
+work=$TMPDIR/mac
+mkdir -p $work
+cd $work
+cat > mac.cob <<'DOC'
+# Macros demo
+
+## Notation
+
+```macros \label{def:basics}
+We write $\RR$ for the reals and $\abs{x}$ for the absolute value.
+
+\def\RR{\mathbb{R}}
+\def\abs[x]{\lvert \x \rvert}
+\let\R=\RR
+```
+
+The line is $\RR$, also $\R$; and $\abs{\RR}$. See \ref{def:basics}.
+
+## Later
+
+\transclude{def:basics}
+DOC
+# A macros fence is a node, so `cob lock` mints its def: id.
+$cob lock mac.cob | grep -q 'newly minted'
+$cob labels mac.cob | grep -qE '^def:basics[[:space:]]+[0-9A-Za-z]{4}[[:space:]]+Notation$'
+
+# Weave twice, byte-diff: the macros path is deterministic.
+$cob weave --locked mac.cob --out a
+$cob weave --locked mac.cob --out b
+diff -r a b
+
+# The macros expand everywhere: `\RR`/`\R` and the parametered `\abs{…}` render,
+# so KaTeX output is present. An unknown macro would be a hard E020 and fail the
+# weave.
+grep -q 'katex' a/index.html
+
+# The node is homeless (§10): no canonical `def-` anchor is left in the flow.
+if grep -qE 'id="def-[0-9A-Za-z]{4}"' a/index.html; then
+  echo "the macros node kept an in-flow anchor; it must be homeless (§10)" >&2
+  exit 1
+fi
+# It has its own page, and a \ref points there, not at a dead fragment. The node
+# page is the \ref target, not just the first n/ link (a section link comes first).
+grep -qE '<a data-ref="def:basics" href="n/[0-9A-Za-z]{4}\.html">Notation [0-9A-Za-z]{4}</a>' a/index.html
+node=$(grep -oE 'href="n/[0-9A-Za-z]{4}\.html">Notation' a/index.html | grep -oE 'n/[0-9A-Za-z]{4}\.html')
+test -f "a/$node"
+# The node page shows the exposition: the author's prose (macros in scope) and the
+# definitions verbatim as a code block — the source, not typeset (§6.4).
+grep -q 'We write' "a/$node"
+grep -q 'class="macro-src"' "a/$node"
+grep -qF '\def\abs[x]{\lvert \x \rvert}' "a/$node"
+if grep -q 'macro-def' "a/$node"; then
+  echo "a \\def/\\let line was typeset; §6.4 shows the source, not name := expansion" >&2
+  exit 1
+fi
+# `\transclude{def:basics}` splices a scoped copy into the flow.
+grep -q 'data-transclude="def:basics"' a/index.html
+
+# The archival page carries no script but the nav-spy aid (§6.3).
+if grep '<script' a/index.html | grep -qv '<script id="nav-spy">'; then
+  echo "macros weave emitted a script other than the nav-spy aid" >&2
+  exit 1
+fi
+touch $out
 @

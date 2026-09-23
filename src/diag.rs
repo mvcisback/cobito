@@ -54,10 +54,10 @@ pub fn explain(code: &str) -> Option<&'static str> {
                    label's namespace must match the fence (`fig:`/`tbl:`/`eq:`) so the \
                    cross-reference machinery can find it.",
         "E034" => "A fenced block had no kind (a bare ```` ``` ````) or an unknown kind. \
-                   The kinds are closed: `math`, `figure`, `table`, `html-escape`, or \
-                   `verbatim`. Use `verbatim` (with an optional `\\lang{…}`) for plain \
-                   preformatted text; a missing or misspelt kind is an error, not a \
-                   silent fallback.",
+                   The kinds are closed: `math`, `figure`, `table`, `macros`, \
+                   `html-escape`, or `verbatim`. Use `verbatim` (with an optional \
+                   `\\lang{…}`) for plain preformatted text; a missing or misspelt kind \
+                   is an error, not a silent fallback.",
         "E031" => "A label carried by a float was not found in `cob.lock` while \
                    weaving under `--locked`. Locked weaves (CI and the read-only Nix \
                    sandbox) never mint ids; they require every label to already own \

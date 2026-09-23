@@ -43,6 +43,11 @@ pub struct Config {
     pub tangle: Tangle,
     #[serde(default)]
     pub weave: Weave,
+    /// The `[import.<alias>]` tables (§13): each binds another forest to a local
+    /// namespace alias used in `label@alias` addresses. `BTreeMap` keeps the
+    /// order deterministic.
+    #[serde(rename = "import", default)]
+    pub imports: BTreeMap<String, Import>,
 }
 
 /// The `[weave]` table (§5.5). Only the document-wide highlighting default lives
@@ -75,6 +80,19 @@ pub struct Document {
     pub authors: Vec<String>,
     #[serde(default)]
     pub files: Vec<String>,
+}
+
+/// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
+/// local `path`, or a `git` URL pinned by `rev`. `cob fetch` turns a git import
+/// into a cached path; a weave only ever reads a path, so it stays offline.
+#[derive(Deserialize, Default, Clone)]
+pub struct Import {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub git: Option<String>,
+    #[serde(default)]
+    pub rev: Option<String>,
 }
 
 #[derive(Deserialize, Default)]

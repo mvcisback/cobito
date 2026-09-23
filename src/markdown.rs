@@ -46,14 +46,31 @@ fn kind_err(message: impl Into<String>) -> MarkdownError {
 /// Render one docs chunk's reassembled prose. Appends every formula it meets to
 /// `math` in document order; `substitute_math` resolves each placeholder by its
 /// own index later (§6.2), so the build order does not change the output.
-pub fn render(input: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
+pub fn render(
+    input: &str,
+    math: &mut Vec<Math>,
+    preamble: &mut String,
+) -> Result<String, MarkdownError> {
+    render_ctx(input, math, preamble, false)
+}
+
+/// The block loop. `macros` is true only while rendering a `macros` fence body,
+/// where a `\def`/`\let` line is a macro definition (§6.4), not prose. A `macros`
+/// body appends its `\def`/`\let`s to `preamble`; every other block ignores it.
+fn render_ctx(
+    input: &str,
+    math: &mut Vec<Math>,
+    preamble: &mut String,
+    macros: bool,
+) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
-    for block in split_blocks(input) {
+    for block in split_blocks(input, macros) {
         let html = match block {
-            RawBlock::Fence { info, body } => render_fence(&info, &body, math)?,
+            RawBlock::Fence { info, body } => render_fence(&info, &body, math, preamble)?,
             RawBlock::Heading { level, text } => render_heading(level, &text, math)?,
             RawBlock::List { ordered, items } => render_list(ordered, &items, math)?,
             RawBlock::Paragraph(text) => render_paragraph(&text, math)?,
+            RawBlock::MacroDef(src) => render_macro_def(&src, preamble)?,
         };
         if !html.is_empty() {
             out.push(html);
@@ -67,15 +84,28 @@ enum RawBlock {
     Heading { level: usize, text: String },
     List { ordered: bool, items: Vec<String> },
     Paragraph(String),
+    /// A `\def`/`\let` line inside a `macros` fence body (§6.4).
+    MacroDef(String),
 }
 
-fn split_blocks(input: &str) -> Vec<RawBlock> {
+fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
     let lines: Vec<&str> = input.split('\n').collect();
     let mut blocks = Vec::new();
     let mut i = 0;
     while i < lines.len() {
         if lines[i].trim().is_empty() {
             i += 1;
+            continue;
+        }
+        // In a `macros` body, a run of `\def`/`\let` lines is one definition block,
+        // shown verbatim as one code block.
+        if macros && is_macro_def_line(lines[i]) {
+            let mut defs = Vec::new();
+            while i < lines.len() && is_macro_def_line(lines[i]) {
+                defs.push(lines[i].trim());
+                i += 1;
+            }
+            blocks.push(RawBlock::MacroDef(defs.join("\n")));
             continue;
         }
         if let Some(ticks) = fence_open(lines[i]) {
@@ -125,6 +155,7 @@ fn split_blocks(input: &str) -> Vec<RawBlock> {
                 || fence_open(l).is_some()
                 || heading_line(l).is_some()
                 || list_item(l).is_some()
+                || (macros && is_macro_def_line(l))
             {
                 break;
             }
@@ -137,6 +168,16 @@ fn split_blocks(input: &str) -> Vec<RawBlock> {
         blocks.push(RawBlock::Paragraph(para));
     }
     blocks
+}
+
+/// A `macros` body line that begins a `\def` or `\let` definition. The keyword
+/// must be a whole control word, so a longer word like `\define` is not caught.
+fn is_macro_def_line(line: &str) -> bool {
+    let t = line.trim_start();
+    ["\\def", "\\let"].iter().any(|kw| {
+        t.strip_prefix(kw)
+            .is_some_and(|rest| !rest.chars().next().is_some_and(|c| c.is_ascii_alphabetic()))
+    })
 }
 
 fn fence_open(line: &str) -> Option<usize> {
@@ -238,7 +279,12 @@ fn render_paragraph(text: &str, math: &mut Vec<Math>) -> Result<String, Markdown
     Ok(format!("<p>{out}</p>"))
 }
 
-fn render_fence(info: &str, body: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
+fn render_fence(
+    info: &str,
+    body: &str,
+    math: &mut Vec<Math>,
+    preamble: &mut String,
+) -> Result<String, MarkdownError> {
     match parse_fence_info(info)? {
         Fence::Math(label) => Ok(render_math(label.as_deref(), body, math)),
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
@@ -250,6 +296,16 @@ fn render_fence(info: &str, body: &str, math: &mut Vec<Math>) -> Result<String, 
                 None => String::new(),
             };
             Ok(format!("<pre><code{class}>{}</code></pre>", prose::escape(body)))
+        }
+        Fence::Macros(label) => {
+            // The body is normal prose with `\def`/`\let` lines; render it macro-
+            // aware. The `\def`/`\let`s append to `preamble` so KaTeX expands them
+            // everywhere (§6.4). Rendered inline here; slice C makes it a node.
+            let inner = render_ctx(body, math, preamble, true)?;
+            Ok(format!(
+                "<div class=\"macros\" id=\"{}\">{inner}</div>",
+                prose::escape(&label)
+            ))
         }
     }
 }
@@ -267,6 +323,57 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
     format!(
         "<div class=\"equation\"{attr}><span data-cob-math=\"{idx}\"></span></div>"
     )
+}
+
+fn render_macro_def(src: &str, preamble: &mut String) -> Result<String, MarkdownError> {
+    for line in src.lines() {
+        match dialect::macrodef(line).map_err(|e| MarkdownError::Syntax(e.to_string()))? {
+            MacroDef::Def {
+                name,
+                params,
+                body,
+            } => {
+                let mut hashes = String::new();
+                let mut body = body;
+                for (i, p) in params.iter().enumerate() {
+                    let n = i + 1;
+                    hashes.push_str(&format!("#{n}"));
+                    body = replace_control_word(&body, p, &format!("#{n}"));
+                }
+                preamble.push_str(&format!("\\def{name}{hashes}{{{body}}}\n"));
+            }
+            MacroDef::Let { name, target } => {
+                preamble.push_str(&format!("\\let{name}={target}\n"));
+            }
+        }
+    }
+    // Show the definitions verbatim; the prose around them is the exposition, and
+    // the author chooses how to typeset it there (§6.4).
+    Ok(format!(
+        "<pre class=\"macro-src\"><code>{}</code></pre>",
+        prose::escape(src)
+    ))
+}
+
+/// Replace the control word `\name` in `body` with `to`, but only where `\name`
+/// is a whole control word — the next char is not a letter — so a parameter `\x`
+/// does not corrupt `\xi`. cob uses this to map forester params to KaTeX `#n`.
+fn replace_control_word(body: &str, name: &str, to: &str) -> String {
+    let needle = format!("\\{name}");
+    let mut out = String::new();
+    let mut rest = body;
+    while let Some(pos) = rest.find(&needle) {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + needle.len()..];
+        if after.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+            out.push_str(&needle);
+        } else {
+            out.push_str(to);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 fn render_figure(
@@ -340,6 +447,10 @@ enum Fence {
     Table(Option<String>),
     HtmlEscape,
     Verbatim(Option<String>),
+    /// A `def:`-labelled exposition of macros (§6.4). Its body is normal prose
+    /// with `\def`/`\let` definition lines; the label is required, because the
+    /// fence is a node.
+    Macros(String),
 }
 
 /// One header modifier: a float `\label` or a `verbatim` `\lang`.
@@ -347,7 +458,7 @@ enum Modifier {
     Label(String),
     Lang(String),
 }
-const KINDS: &str = "math, figure, table, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, macros, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -362,6 +473,10 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
         "math" => Ok(Fence::Math(label_of(&mods, kind, "eq:")?)),
         "figure" => Ok(Fence::Figure(label_of(&mods, kind, "fig:")?)),
         "table" => Ok(Fence::Table(label_of(&mods, kind, "tbl:")?)),
+        "macros" => match label_of(&mods, kind, "def:")? {
+            Some(l) => Ok(Fence::Macros(l)),
+            None => Err(fence_err("a `macros` fence needs a `\\label{def:…}`")),
+        },
         "html-escape" => {
             reject_modifiers(&mods, kind)?;
             Ok(Fence::HtmlEscape)
@@ -454,6 +569,18 @@ peg::parser! {
             / "\\lang{" v:$(cb_atom()*) "}" { Modifier::Lang(unescape_braces(v)) }
         pub rule caption() -> (String, usize)
             = ws() "\\caption{" v:$(cb_atom()*) "}" p:position!() [_]* { (v.to_string(), p) }
+
+        pub rule macrodef() -> MacroDef
+            = ws() "\\def" name:cs() params:param()* "{" body:$(cb_atom()*) "}" ws()
+                { MacroDef::Def {
+                    name: name.to_string(),
+                    params: params.iter().map(|p| p.to_string()).collect(),
+                    body: body.to_string(),
+                } }
+            / ws() "\\let" name:cs() ws() "=" ws() target:cs() ws()
+                { MacroDef::Let { name: name.to_string(), target: target.to_string() } }
+        rule cs() -> &'input str = $("\\" ['a'..='z' | 'A'..='Z']+)
+        rule param() -> &'input str = "[" p:$(['a'..='z' | 'A'..='Z']+) "]" { p }
     }
 }
 
@@ -466,6 +593,22 @@ enum Inline {
     Math { src: String, display: bool },
     Ref(String),
     Transclude(String),
+}
+
+/// A parsed `\def`/`\let` line from a `macros` body (§6.4). `name` and `target`
+/// keep their leading backslash, so they round-trip straight into the preamble.
+/// `params` are forester's named brackets (`\def\abs[x]{…}`); cob maps each to a
+/// KaTeX `#n`.
+enum MacroDef {
+    Def {
+        name: String,
+        params: Vec<String>,
+        body: String,
+    },
+    Let {
+        name: String,
+        target: String,
+    },
 }
 
 fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
@@ -542,7 +685,7 @@ mod tests {
 
     fn run(input: &str) -> (String, Vec<Math>) {
         let mut math = Vec::new();
-        let html = render(input, &mut math).expect("renders");
+        let html = render(input, &mut math, &mut String::new()).expect("renders");
         (html, math)
     }
 
@@ -682,7 +825,7 @@ mod tests {
     fn mismatched_label_namespace_is_e030() {
         let mut math = Vec::new();
         let err =
-            render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math).unwrap_err();
+            render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut String::new()).unwrap_err();
         assert!(matches!(err, MarkdownError::Fence { code: "E030", .. }));
         assert!(err.to_string().contains("fig:"));
     }
@@ -696,19 +839,19 @@ mod tests {
     #[test]
     fn a_bare_or_unknown_fence_is_e034() {
         let mut math = Vec::new();
-        let bare = render("```\nx\n```", &mut math).unwrap_err();
+        let bare = render("```\nx\n```", &mut math, &mut String::new()).unwrap_err();
         assert!(matches!(bare, MarkdownError::Fence { code: "E034", .. }));
-        let unknown = render("```rust\nx\n```", &mut math).unwrap_err();
+        let unknown = render("```rust\nx\n```", &mut math, &mut String::new()).unwrap_err();
         assert!(matches!(unknown, MarkdownError::Fence { code: "E034", .. }));
         // A `\lang{}` on any kind but verbatim is a bad modifier (E030).
-        let misplaced = render("```math \\lang{rust}\nx\n```", &mut math).unwrap_err();
+        let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut String::new()).unwrap_err();
         assert!(matches!(misplaced, MarkdownError::Fence { code: "E030", .. }));
     }
 
     #[test]
     fn round_trips_through_math_substitution() {
         let mut math = Vec::new();
-        let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math).unwrap();
+        let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math, &mut String::new()).unwrap();
         // Document order: inline `$x$` is index 0, the fenced display is index 1.
         assert_eq!((math[0].source.as_str(), math[0].display), ("x", false));
         assert_eq!((math[1].source.as_str(), math[1].display), ("y", true));
@@ -718,5 +861,46 @@ mod tests {
         );
         assert!(out.contains("<INLINE/>"));
         assert!(out.contains("<div class=\"equation\" id=\"eq:y\"><DISPLAY/></div>"));
+    }
+
+    #[test]
+    fn macros_fence_registers_and_shows_source() {
+        let mut math = Vec::new();
+        let mut preamble = String::new();
+        let html = render(
+            "```macros \\label{def:basics}\n\\def\\RR{\\mathbb{R}}\nThe reals.\n\
+             \\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR\n```",
+            &mut math,
+            &mut preamble,
+        )
+        .expect("a macros fence renders");
+        // Definitions accumulate into the preamble for KaTeX; a param macro is
+        // translated to KaTeX #1, replacing the whole control word only.
+        assert!(preamble.contains("\\def\\RR{\\mathbb{R}}"));
+        assert!(preamble.contains("\\def\\abs#1{\\lvert #1 \\rvert}"));
+        assert!(preamble.contains("\\let\\R=\\RR"));
+        // The exposition is a node div with the label id; the prose renders.
+        assert!(html.contains("<div class=\"macros\" id=\"def:basics\">"));
+        assert!(html.contains("<p>The reals.</p>"));
+        // The definitions show verbatim (the author's forester source, not KaTeX #1),
+        // as a code block, but are not typeset. A run of them is one block.
+        assert!(html.contains("<pre class=\"macro-src\"><code>\\def\\RR{\\mathbb{R}}</code></pre>"));
+        assert!(html.contains("\\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR"));
+        assert!(!html.contains("\\def\\abs#1")); // #1 goes only to the preamble
+        assert!(math.is_empty());
+
+        // The label is required.
+        let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut String::new())
+            .unwrap_err();
+        assert!(matches!(err, MarkdownError::Fence { .. }));
+    }
+
+    #[test]
+    fn def_line_is_inert_in_prose() {
+        let mut math = Vec::new();
+        let mut preamble = String::new();
+        let html = render("\\let\\R=\\RR here", &mut math, &mut preamble).expect("prose renders");
+        assert!(preamble.is_empty());
+        assert!(html.contains("\\let\\R=\\RR here"));
     }
 }

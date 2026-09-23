@@ -1,5 +1,21 @@
 # cob.lock — generated (§7.1). label → frozen opaque id.
 # Edit only to retire a label; ids never change once minted.
+["/tmp/args2.cob"."sec:m"]
+id = "n5w8"
+kind = "section"
+
+["/tmp/macdemo.cob"."def:basics"]
+id = "DRWM"
+kind = "macro"
+
+["/tmp/macdemo.cob"."sec:later"]
+id = "VrJQ"
+kind = "section"
+
+["/tmp/macdemo.cob"."sec:notation"]
+id = "pkBD"
+kind = "section"
+
 ["cobito.cob"."sec:4y6v"]
 id = "4y6v"
 kind = "section"
@@ -114,6 +130,10 @@ kind = "section"
 
 ["fixtures/txf.cob"."sec:reuse"]
 id = "fpIK"
+kind = "section"
+
+["flake.nix.cob"."sec:1XOf"]
+id = "1XOf"
 kind = "section"
 
 ["flake.nix.cob"."sec:3OSt"]
@@ -278,6 +298,10 @@ kind = "section"
 
 ["src/lock.rs.cob"."sec:oaLc"]
 id = "oaLc"
+kind = "section"
+
+["src/markdown.rs.cob"."sec:JT0X"]
+id = "JT0X"
 kind = "section"
 
 ["src/markdown.rs.cob"."sec:TAUn"]
@@ -466,6 +490,10 @@ kind = "section"
 
 ["src/transclude.rs.cob"."sec:Lm2S"]
 id = "wVXB"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:SJwf"]
+id = "SJwf"
 kind = "section"
 
 ["src/transclude.rs.cob"."sec:node-pages"]

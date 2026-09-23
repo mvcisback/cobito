@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::model::Lint;
 use crate::prose;
 use crate::resolve::Resolution;
-use crate::rewrite::{anchor_of, Heading, Scan};
+use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
 
 /// The island a dialect lowers `\transclude{addr}` to (§6.4). The expander
 /// matches this exact opening and tail, so its own output — a `<section
@@ -87,12 +87,16 @@ impl Context {
                 .iter()
                 .position(|n| n.level <= h.level)
                 .map(|k| pos[i + 1 + k]);
+            // A `macros` island is a homeless node (§10): it shows only on its own
+            // page and where it is transcluded, so strip it from a heading node's
+            // body too — not just the reading flow.
+            let raw = slice_body(bodies, pos[i], end);
             nodes.insert(
                 res.heading_anchors[i].clone(),
                 Node {
                     title: h.text.clone(),
                     page: res.section_page[h.section],
-                    body: slice_body(bodies, pos[i], end),
+                    body: strip_macros(&raw).unwrap_or(raw),
                 },
             );
         }
@@ -187,7 +191,13 @@ impl Context {
                 title: node.title.clone(),
                 body: node.body.clone(),
                 page: label.page,
-                context: format!("../{page_file}#{anchor}"),
+                // A homeless macro node has no in-flow anchor (§10), so it has no
+                // "read in context" link; every other float links to its place.
+                context: if label.kind == "macro" {
+                    String::new()
+                } else {
+                    format!("../{page_file}#{anchor}")
+                },
                 crumbs,
                 transcluded_by: backlinks(tx_by.get(anchor), heads, res),
                 referenced_by: backlinks(ref_by.get(anchor), heads, res),
@@ -437,6 +447,7 @@ fn float_title(html: &str, kind: &str) -> String {
             "figure" => "Figure",
             "table" => "Table",
             "equation" => "Equation",
+            "macro" => "Notation",
             _ => "Float",
         }
         .to_string(),

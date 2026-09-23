@@ -43,6 +43,7 @@ pub enum Kind {
     Equation,
     Section,
     Chunk,
+    Macro,
 }
 
 impl Kind {
@@ -53,6 +54,7 @@ impl Kind {
             Kind::Equation => "Equation",
             Kind::Section => "Section",
             Kind::Chunk => "Chunk",
+            Kind::Macro => "Notation",
         }
     }
 
@@ -64,6 +66,7 @@ impl Kind {
             Kind::Equation => "equation",
             Kind::Section => "section",
             Kind::Chunk => "chunk",
+            Kind::Macro => "macro",
         }
     }
 
@@ -75,6 +78,7 @@ impl Kind {
             "eq" => Some(Kind::Equation),
             "sec" => Some(Kind::Section),
             "chunk" => Some(Kind::Chunk),
+            "def" => Some(Kind::Macro),
             _ => None,
         }
     }
@@ -277,6 +281,23 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         Ok(())
                     }
                 }),
+                element!(".macros", {
+                    let st = st.clone();
+                    move |el| {
+                        // A `macros` exposition is a `def:` node (§10). Record it so
+                        // weave mints its opaque id, the same as a float.
+                        if let Some(id) = el.get_attribute("id") {
+                            if Kind::from_label(&id) == Some(Kind::Macro) {
+                                st.borrow_mut().labels.push(LabelDef {
+                                    id,
+                                    kind: Kind::Macro,
+                                    section,
+                                });
+                            }
+                        }
+                        Ok(())
+                    }
+                }),
                 element!("a[data-ref]", {
                     let st = st.clone();
                     move |el| {
@@ -454,6 +475,20 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 }
                 Ok(())
             }),
+            element!(".macros", move |el| {
+                // A `def:` node (§10). Stamp its opaque id and rewrite the colon
+                // anchor, the same as a float. It carries no node link, because it
+                // is homeless: the weaver removes it from the flow after cutting it.
+                if let Some(opaque) = id_of(el) {
+                    el.set_attribute("data-id", &opaque).ok();
+                }
+                if let Some(label) = el.get_attribute("id") {
+                    if Kind::from_label(&label).is_some() {
+                        el.set_attribute("id", &anchor_of(&label)).ok();
+                    }
+                }
+                Ok(())
+            }),
             element!("a[data-ref]", |el| {
                 let mut i = ref_idx.borrow_mut();
                 if let Some(r) = refs.get(*i) {
@@ -470,6 +505,13 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     plan.heading = heading_idx.into_inner();
     plan.reference = ref_idx.into_inner();
     Ok(out)
+}
+
+pub fn strip_macros(html: &str) -> Result<String, RewriteError> {
+    run(html, vec![element!(".macros", |el| {
+        el.remove();
+        Ok(())
+    })])
 }
 
 #[cfg(test)]

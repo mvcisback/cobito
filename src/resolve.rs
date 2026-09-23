@@ -280,7 +280,14 @@ pub fn plan(
                 target: r.target.clone(),
             })?;
         let ref_page = section_page[r.section];
-        let href = if info.page == ref_page {
+        let href = if info.kind == Kind::Macro {
+            // A `def:` node is homeless (§10): it has no in-flow anchor, so a ref
+            // points at the node's own page instead of a same-page fragment.
+            match &info.id {
+                Some(uid) => format!("n/{uid}.html"),
+                None => format!("#{}", info.anchor),
+            }
+        } else if info.page == ref_page {
             format!("#{}", info.anchor)
         } else {
             format!("{}#{}", pages[info.page].filename, info.anchor)
