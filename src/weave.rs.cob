@@ -124,6 +124,7 @@ that ties them together: config for the manifest, highlight for the colors, lock
 for the frozen ids, the prose and markdown pipeline, the math renderer, the model,
 the resolver, the rewriter, and the site JSON shape.
 <<imports>>=
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -411,7 +412,7 @@ fn render_frags(
     doc: &DocModel,
     lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
     lints: &mut Vec<Lint>,
 ) -> Result<Vec<Frag>, WeaveError> {
     let mut frags: Vec<Frag> = Vec::with_capacity(doc.sections.len());
@@ -419,7 +420,7 @@ fn render_frags(
         match &section.kind {
             SectionKind::Docs { spans } => {
                 let reassembled = prose::reassemble(spans);
-                let body = markdown::render(&reassembled, math, preamble).map_err(|err| {
+                let body = markdown::render(&reassembled, math, defs).map_err(|err| {
                     WeaveError::Markdown {
                         file: section.file.clone(),
                         line: section.line,
@@ -499,11 +500,11 @@ pub fn mint_lock(
     minter: &mut Minter,
 ) -> Result<(), WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let mut preamble = String::new();
+    let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut lints: Vec<Lint> = Vec::new();
     // Minting only needs labels/floats, not colors, so the language config is empty.
     let lang_cfg = LangConfig::default();
-    let frags = render_frags(doc, &lang_cfg, &mut math, &mut preamble, &mut lints)?;
+    let frags = render_frags(doc, &lang_cfg, &mut math, &mut defs, &mut lints)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -557,9 +558,9 @@ pub fn render(
     minter: &mut Minter,
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let mut preamble = String::new();
+    let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut preamble, &mut hl_lints)?;
+    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut defs, &mut hl_lints)?;
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -595,7 +596,7 @@ pub fn render(
 
     // Steps 5–6: serialize is implicit in the rewriter; now render math and
     // wrap each section in its provenance envelope.
-    let rendered = Renderer::new(cache_root, &preamble)
+    let rendered = Renderer::new(cache_root, &defs)
         .render_all(&math)
         .map_err(WeaveError::Math)?;
     let mut wrapped: Vec<String> = Vec::with_capacity(frags.len());
@@ -1039,6 +1040,8 @@ mod tests {
 
     <<math is rendered not left as a placeholder>>
 
+    <<a page carries only the enhancement scripts>>
+
     <<quoted code renders as escaped code>>
 
     <<an escaped dollar survives to output>>
@@ -1269,6 +1272,22 @@ fn math_is_rendered_not_left_as_placeholder() {
     assert!(html.contains("katex"));
     // The angle-bracket case must survive as an entity, never a tag.
     assert!(!html.contains("<span>a < b</span>"));
+}
+@
+A page carries only the two progressive-enhancement aids — the \code{nav-spy} and
+\code{cob-transclude} scripts — and no other script. This is the §6.3 modularity guard:
+math renders at weave time and transclusion is a lazy element, so nothing the
+content depends on is ever a script, and none leaks in.
+<<a page carries only the enhancement scripts>>=
+#[test]
+fn a_page_carries_only_the_enhancement_scripts() {
+    let html = &dev_render(&fixture(), "").pages[0].html;
+    let total = html.matches("<script").count();
+    let named = html.matches("<script id=\"nav-spy\">").count()
+        + html.matches("<script id=\"cob-transclude\">").count();
+    assert_eq!(total, named, "a page carried a script that is not an enhancement aid");
+    assert!(html.contains("<script id=\"nav-spy\">"));
+    assert!(html.contains("<script id=\"cob-transclude\">"));
 }
 @
 A \code{\code{…}} span in prose renders as an escaped inline code element.

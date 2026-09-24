@@ -561,6 +561,13 @@
           # so KaTeX output is present. An unknown macro would be a hard E020 and fail the
           # weave.
           grep -q 'katex' a/index.html
+          # Modularity guard (§6.4): a macro goes through KaTeX's `macros` option, never
+          # prepended to a formula, so no formula's copy-paste annotation carries a `\def`
+          # or the translated `#1` form. This is the leak we must not reintroduce.
+          if grep -qE 'application/x-tex">[^<]*\\\\def' a/index.html; then
+            echo "a \\def leaked into a formula annotation; macros must use KaTeX's macros option (§6.4)" >&2
+            exit 1
+          fi
 
           # The node is homeless (§10): no canonical `def-` anchor is left in the flow.
           if grep -qE 'id="def-[0-9A-Za-z]{4}"' a/index.html; then

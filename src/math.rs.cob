@@ -91,6 +91,7 @@ no client JavaScript, and a slow engine that must be cached.
 @
 Just paths, formatting, and the \code{Math} fragment the prose pass hands us.
 <<imports>>=
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -125,16 +126,22 @@ preamble is folded in too (§6.4), so a change to a \code{\def} invalidates ever
 cached formula that could use it.
 <<the cache key>>=
 /// FNV-1a. Stable across toolchains, which `DefaultHasher` does not promise —
-/// a cache key that silently changes would quietly cost a full re-render.
-fn hash(s: &str, display: bool, preamble: &str) -> String {
+/// a cache key that silently changes would quietly cost a full re-render. The
+/// macro map is folded in (sorted, since it is a `BTreeMap`), so editing a macro
+/// invalidates every formula that could use it (§6.4).
+fn hash(s: &str, display: bool, macros: &BTreeMap<String, String>) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in s
-        .bytes()
-        .chain(std::iter::once(display as u8))
-        .chain(preamble.bytes())
-    {
+    let mut byte = |b: u8| {
         h ^= b as u64;
         h = h.wrapping_mul(0x1000_0000_01b3);
+    };
+    s.bytes().for_each(&mut byte);
+    byte(display as u8);
+    for (k, v) in macros {
+        k.bytes().for_each(&mut byte);
+        byte(b'=');
+        v.bytes().for_each(&mut byte);
+        byte(b';');
     }
     format!("{h:016x}")
 }
@@ -145,10 +152,10 @@ batch; \code{render} does the work.
 <<the renderer>>=
 pub struct Renderer {
     dir: Option<PathBuf>,
-    /// The document macro preamble: every `macros` fence body, joined in source
-    /// order (§6.4). It prepends to each formula so KaTeX expands the author's
-    /// `\def`s. Empty means no macros, so the source passes through untouched.
-    preamble: String,
+    /// The document macro table: name → expansion, from every `macros` fence
+    /// (§6.4). It goes through KaTeX's `macros` option, *not* prepended to the
+    /// source, so a formula's copy-paste annotation stays just the formula.
+    macros: BTreeMap<String, String>,
 }
 
 impl Renderer {
@@ -163,13 +170,13 @@ Creating the cache directory is best-effort: on failure \code{dir} stays \code{N
 renderer simply runs uncached.
 <<create the renderer>>=
 /// A cache that cannot be created is not fatal; weaving just gets slower. The
-/// preamble is every `macros` fence's `\define`s, lowered to `\def` lines and
-/// joined in source order (§6.4); it prepends to each formula.
-pub fn new(cache_root: &Path, preamble: &str) -> Self {
+/// macro table is every `macros` fence's definitions (name → expansion, §6.4),
+/// passed to KaTeX's `macros` option so the formula source stays clean.
+pub fn new(cache_root: &Path, macros: &BTreeMap<String, String>) -> Self {
     let dir = cache_root.join("math");
     Renderer {
         dir: std::fs::create_dir_all(&dir).ok().map(|()| dir),
-        preamble: preamble.to_string(),
+        macros: macros.clone(),
     }
 }
 @
@@ -188,29 +195,31 @@ fn render(&self, m: &Math) -> Result<String, MathError> {
     let path = self
         .dir
         .as_ref()
-        .map(|d| d.join(format!("{}.html", hash(&m.source, m.display, &self.preamble))));
+        .map(|d| d.join(format!("{}.html", hash(&m.source, m.display, &self.macros))));
     if let Some(p) = &path {
         if let Ok(cached) = std::fs::read_to_string(p) {
             return Ok(cached);
         }
     }
 
+    // The author's macros go through KaTeX's `macros` option, never prepended to
+    // the source (§6.4), so the formula's `<annotation>` — the copy-paste TeX —
+    // stays just the formula, with no `\def` preamble leaking into it.
+    let macros: HashMap<String, String> = self
+        .macros
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     let opts = katex::Opts::builder()
         .display_mode(m.display)
+        .macros(macros)
         .build()
         .map_err(|e| MathError {
             source: m.source.clone(),
             message: e.to_string(),
         })?;
-    // Prepend the document macro preamble (§6.4) so KaTeX expands the author's
-    // `\def`/`\let`s, then the formula. An empty preamble leaves it untouched.
-    let source = if self.preamble.is_empty() {
-        m.source.clone()
-    } else {
-        format!("{}\n{}", self.preamble, m.source)
-    };
     // Hard error, never a silent fallback to raw text (§6.3).
-    let out = katex::render_with_opts(&source, &opts).map_err(|e| MathError {
+    let out = katex::render_with_opts(&m.source, &opts).map_err(|e| MathError {
         source: m.source.clone(),
         message: e.to_string(),
     })?;
@@ -252,9 +261,13 @@ mod tests {
         d
     }
 
+    fn defs(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    }
+
     #[test]
     fn renders_inline_and_display() {
-        let r = Renderer::new(&tmpdir("render"), "");
+        let r = Renderer::new(&tmpdir("render"), &BTreeMap::new());
         let out = r
             .render_all(&[
                 Math {
@@ -280,12 +293,12 @@ mod tests {
             source: r"\frac{1}{2}".into(),
             display: false,
         };
-        let first = Renderer::new(&dir, "")
+        let first = Renderer::new(&dir, &BTreeMap::new())
             .render_all(std::slice::from_ref(&m))
             .unwrap();
         assert!(dir.join("math").read_dir().unwrap().count() > 0);
         // Second Renderer reads from disk rather than the JS engine.
-        let second = Renderer::new(&dir, "")
+        let second = Renderer::new(&dir, &BTreeMap::new())
             .render_all(std::slice::from_ref(&m))
             .unwrap();
         assert_eq!(first, second);
@@ -293,29 +306,38 @@ mod tests {
 
     #[test]
     fn display_mode_is_part_of_the_key() {
-        assert_ne!(hash("x", true, ""), hash("x", false, ""));
+        assert_ne!(hash("x", true, &BTreeMap::new()), hash("x", false, &BTreeMap::new()));
     }
 
     #[test]
-    fn preamble_is_part_of_the_key() {
-        // Editing a macro must invalidate the cache, so the preamble is hashed.
-        assert_ne!(hash("\\RR", false, ""), hash("\\RR", false, "\\def\\RR{\\mathbb{R}}"));
+    fn macros_are_part_of_the_key() {
+        // Editing a macro must invalidate the cache, so the macro table is hashed.
+        assert_ne!(
+            hash("\\RR", false, &BTreeMap::new()),
+            hash("\\RR", false, &defs(&[("\\RR", "\\mathbb{R}")]))
+        );
     }
 
     #[test]
-    fn preamble_macros_expand() {
-        // A `\def` in the preamble prepends to every formula, so `\RR` renders as
-        // its expansion rather than failing as an unknown control sequence.
-        let r = Renderer::new(&tmpdir("macros"), "\\def\\RR{\\mathbb{R}}");
-        let out = r
+    fn macros_expand_and_do_not_leak_into_the_annotation() {
+        // A macro in the table expands the formula, so `\RR` renders instead of
+        // failing as an unknown control sequence.
+        let r = Renderer::new(&tmpdir("macros"), &defs(&[("\\RR", "\\mathbb{R}")]));
+        let out = &r
             .render_all(&[Math {
                 source: "\\RR".into(),
                 display: false,
             }])
-            .expect("a macro from the preamble expands");
-        assert!(out[0].contains("katex"));
-        // Without the preamble, `\RR` is undefined and KaTeX errors (E020).
-        let bare = Renderer::new(&tmpdir("macros-bare"), "");
+            .expect("a macro from the table expands")[0];
+        assert!(out.contains("katex"));
+        // The macro goes through KaTeX's `macros` option, NOT prepended to the
+        // source — so the copy-paste annotation is just the formula, with no
+        // definition leaking in. This is the modularity guard (§6.4).
+        assert!(out.contains("<annotation encoding=\"application/x-tex\">\\RR</annotation>"));
+        assert!(!out.contains("\\def"));
+        assert!(!out.contains("\\mathbb"));
+        // Without the macro, `\RR` is undefined and KaTeX errors (E020).
+        let bare = Renderer::new(&tmpdir("macros-bare"), &BTreeMap::new());
         assert!(bare
             .render_all(&[Math {
                 source: "\\RR".into(),
@@ -326,7 +348,7 @@ mod tests {
 
     #[test]
     fn bad_math_is_e020() {
-        let r = Renderer::new(&tmpdir("bad"), "");
+        let r = Renderer::new(&tmpdir("bad"), &BTreeMap::new());
         let err = r
             .render_all(&[Math {
                 source: r"\frac{1".into(),

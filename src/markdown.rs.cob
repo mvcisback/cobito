@@ -92,12 +92,13 @@ a \code{\def} or a \code{\let} line defines one macro:
 
 The fence follows forester: it uses \code{\def} and \code{\let}, not \code{\newcommand}, and
 its parameters are named brackets, not \code{#1}. cob owns these two directives and does
-two things with each. First, it adds the definition to a document-wide preamble.
-The math renderer prepends this preamble to every formula (§6.3), so a macro works
-in every formula — in this block and in the whole document. cob maps each forester
-parameter to a KaTeX \code{#n} in order, so KaTeX does the argument substitution.
-Second, cob shows the definition verbatim, as a code block, so the reader sees the
-source.
+two things with each. First, it records the definition in a document-wide macro
+table (name to expansion). The math renderer passes this table to KaTeX's \code{macros}
+option — it does **not** prepend it to any formula (§6.3) — so a macro works in every
+formula, and a formula's copy-paste annotation stays just the formula, with no
+definition leaking into it. cob maps each forester parameter to a KaTeX \code{#n} in
+order, so KaTeX does the argument substitution. Second, cob shows the definition
+verbatim, as a code block, so the reader sees the source.
 
 cob does not typeset a definition — it does not render \code{\RR} as its expansion.
 The writer explains the macros in the prose, where they are in scope, and so
@@ -178,6 +179,7 @@ The banner states where the dialect sits and what it owns.
 @
 Formatting, the shared prose helpers, and the \code{peg} runtime.
 <<imports>>=
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::prose::{self, Math};
@@ -231,28 +233,29 @@ order, and joins them. It appends any math it meets to \code{math}, so
 pub fn render(
     input: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
-    render_ctx(input, math, preamble, false)
+    render_ctx(input, math, defs, false)
 }
 
 /// The block loop. `macros` is true only while rendering a `macros` fence body,
 /// where a `\def`/`\let` line is a macro definition (§6.4), not prose. A `macros`
-/// body appends its `\def`/`\let`s to `preamble`; every other block ignores it.
+/// body records its definitions in `defs` (name → expansion); every other block
+/// ignores it.
 fn render_ctx(
     input: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
     macros: bool,
 ) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
     for block in split_blocks(input, macros) {
         let html = match block {
-            RawBlock::Fence { info, body } => render_fence(&info, &body, math, preamble)?,
+            RawBlock::Fence { info, body } => render_fence(&info, &body, math, defs)?,
             RawBlock::Heading { level, text } => render_heading(level, &text, math)?,
             RawBlock::List { ordered, items } => render_list(ordered, &items, math)?,
             RawBlock::Paragraph(text) => render_paragraph(&text, math)?,
-            RawBlock::MacroDef(src) => render_macro_def(&src, preamble)?,
+            RawBlock::MacroDef(src) => render_macro_def(&src, defs)?,
         };
         if !html.is_empty() {
             out.push(html);
@@ -497,7 +500,7 @@ fn render_fence(
     info: &str,
     body: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
     match parse_fence_info(info)? {
         Fence::Math(label) => Ok(render_math(label.as_deref(), body, math)),
@@ -513,9 +516,10 @@ fn render_fence(
         }
         Fence::Macros(label) => {
             // The body is normal prose with `\def`/`\let` lines; render it macro-
-            // aware. The `\def`/`\let`s append to `preamble` so KaTeX expands them
-            // everywhere (§6.4). Rendered inline here; slice C makes it a node.
-            let inner = render_ctx(body, math, preamble, true)?;
+            // aware. Each definition is recorded in `defs` (name → expansion) and
+            // passed to KaTeX's `macros` option, so it expands everywhere without
+            // leaking into any formula's source (§6.4).
+            let inner = render_ctx(body, math, defs, true)?;
             Ok(format!(
                 "<div class=\"macros\" id=\"{}\">{inner}</div>",
                 prose::escape(&label)
@@ -544,14 +548,19 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
 }
 @
 A run of \code{\def}/\code{\let} lines in a \code{macros} body does two things (§6.4). It
-appends each definition to \code{preamble}, so every formula expands the macro. It also
-shows the definitions verbatim, as one code block, so the reader sees the source.
-cob does not typeset them — the prose around them is the exposition, where the
-macros are in scope. A \code{\def} may take forester named parameters
-(\code{\def\abs[x]{…\x…}}); cob maps each name to a KaTeX \code{#n} in order, replacing a
-whole control word only (so \code{\x} does not touch \code{\xi}). A malformed line is E022.
+records each definition in \code{defs} — name to expansion — which the math renderer
+feeds to KaTeX's \code{macros} option, so a macro expands in every formula and never
+leaks into a formula's source. It also shows the definitions verbatim, as one code
+block, so the reader sees the source. cob does not typeset them — the prose around
+them is the exposition, where the macros are in scope. A \code{\def} may take forester
+named parameters (\code{\def\abs[x]{…\x…}}); cob maps each name to a KaTeX \code{#n} in
+order, replacing a whole control word only (so \code{\x} does not touch \code{\xi}). A
+malformed line is E022.
 <<render a macro definition>>=
-fn render_macro_def(src: &str, preamble: &mut String) -> Result<String, MarkdownError> {
+fn render_macro_def(
+    src: &str,
+    defs: &mut BTreeMap<String, String>,
+) -> Result<String, MarkdownError> {
     for line in src.lines() {
         match dialect::macrodef(line).map_err(|e| MarkdownError::Syntax(e.to_string()))? {
             MacroDef::Def {
@@ -559,17 +568,18 @@ fn render_macro_def(src: &str, preamble: &mut String) -> Result<String, Markdown
                 params,
                 body,
             } => {
-                let mut hashes = String::new();
+                // Map each forester parameter to a KaTeX `#n` in the expansion;
+                // KaTeX infers the arity from the highest `#n`, so no arity marker
+                // is needed on the name.
                 let mut body = body;
                 for (i, p) in params.iter().enumerate() {
-                    let n = i + 1;
-                    hashes.push_str(&format!("#{n}"));
-                    body = replace_control_word(&body, p, &format!("#{n}"));
+                    body = replace_control_word(&body, p, &format!("#{}", i + 1));
                 }
-                preamble.push_str(&format!("\\def{name}{hashes}{{{body}}}\n"));
+                defs.insert(name, body);
             }
             MacroDef::Let { name, target } => {
-                preamble.push_str(&format!("\\let{name}={target}\n"));
+                // `\let\R=\RR` is an alias; KaTeX resolves the target macro in turn.
+                defs.insert(name, target);
             }
         }
     }
@@ -963,7 +973,7 @@ mod tests {
 
     fn run(input: &str) -> (String, Vec<Math>) {
         let mut math = Vec::new();
-        let html = render(input, &mut math, &mut String::new()).expect("renders");
+        let html = render(input, &mut math, &mut BTreeMap::new()).expect("renders");
         (html, math)
     }
 
@@ -1008,26 +1018,28 @@ mod tests {
     <<a def line is inert in prose>>
 }
 @
-A \code{macros} fence appends its \code{\def}/\code{\let} to the preamble, shows them
-verbatim as a code block, and renders the prose between them. A definition is not
-typeset; forester named params map to KaTeX \code{#n}. The label is required (§6.4).
+A \code{macros} fence records its \code{\def}/\code{\let} in the macro table (name →
+expansion), shows them verbatim as a code block, and renders the prose between
+them. A definition is not typeset; forester named params map to KaTeX \code{#n}, and
+the translated \code{#n} form never appears in the rendered HTML — only in the table.
+The label is required (§6.4).
 <<a macros fence defines and typesets>>=
 #[test]
 fn macros_fence_registers_and_shows_source() {
     let mut math = Vec::new();
-    let mut preamble = String::new();
+    let mut defs = BTreeMap::new();
     let html = render(
         "```macros \\label{def:basics}\n\\def\\RR{\\mathbb{R}}\nThe reals.\n\
          \\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR\n```",
         &mut math,
-        &mut preamble,
+        &mut defs,
     )
     .expect("a macros fence renders");
-    // Definitions accumulate into the preamble for KaTeX; a param macro is
-    // translated to KaTeX #1, replacing the whole control word only.
-    assert!(preamble.contains("\\def\\RR{\\mathbb{R}}"));
-    assert!(preamble.contains("\\def\\abs#1{\\lvert #1 \\rvert}"));
-    assert!(preamble.contains("\\let\\R=\\RR"));
+    // Each definition is recorded in the macro table (name → expansion) for KaTeX;
+    // a param macro is translated to `#1`, replacing the whole control word only.
+    assert_eq!(defs.get("\\RR").map(String::as_str), Some("\\mathbb{R}"));
+    assert_eq!(defs.get("\\abs").map(String::as_str), Some("\\lvert #1 \\rvert"));
+    assert_eq!(defs.get("\\R").map(String::as_str), Some("\\RR"));
     // The exposition is a node div with the label id; the prose renders.
     assert!(html.contains("<div class=\"macros\" id=\"def:basics\">"));
     assert!(html.contains("<p>The reals.</p>"));
@@ -1035,24 +1047,25 @@ fn macros_fence_registers_and_shows_source() {
     // as a code block, but are not typeset. A run of them is one block.
     assert!(html.contains("<pre class=\"macro-src\"><code>\\def\\RR{\\mathbb{R}}</code></pre>"));
     assert!(html.contains("\\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR"));
-    assert!(!html.contains("\\def\\abs#1")); // #1 goes only to the preamble
+    // The translated `#1` form is table-only — it must never leak into the HTML.
+    assert!(!html.contains("#1"));
     assert!(math.is_empty());
 
     // The label is required.
-    let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut String::new())
+    let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut BTreeMap::new())
         .unwrap_err();
     assert!(matches!(err, MarkdownError::Fence { .. }));
 }
 @
 Outside a \code{macros} fence a \code{\def}/\code{\let} line is ordinary prose, so it adds
-nothing to the preamble.
+nothing to the macro table.
 <<a def line is inert in prose>>=
 #[test]
 fn def_line_is_inert_in_prose() {
     let mut math = Vec::new();
-    let mut preamble = String::new();
-    let html = render("\\let\\R=\\RR here", &mut math, &mut preamble).expect("prose renders");
-    assert!(preamble.is_empty());
+    let mut defs = BTreeMap::new();
+    let html = render("\\let\\R=\\RR here", &mut math, &mut defs).expect("prose renders");
+    assert!(defs.is_empty());
     assert!(html.contains("\\let\\R=\\RR here"));
 }
 @
@@ -1225,7 +1238,7 @@ A label whose namespace does not match its fence kind is E030.
 fn mismatched_label_namespace_is_e030() {
     let mut math = Vec::new();
     let err =
-        render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut String::new()).unwrap_err();
+        render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(err, MarkdownError::Fence { code: "E030", .. }));
     assert!(err.to_string().contains("fig:"));
 }
@@ -1242,12 +1255,12 @@ fn verbatim_lang_modifier_adds_a_language_class() {
 #[test]
 fn a_bare_or_unknown_fence_is_e034() {
     let mut math = Vec::new();
-    let bare = render("```\nx\n```", &mut math, &mut String::new()).unwrap_err();
+    let bare = render("```\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(bare, MarkdownError::Fence { code: "E034", .. }));
-    let unknown = render("```rust\nx\n```", &mut math, &mut String::new()).unwrap_err();
+    let unknown = render("```rust\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(unknown, MarkdownError::Fence { code: "E034", .. }));
     // A `\lang{}` on any kind but verbatim is a bad modifier (E030).
-    let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut String::new()).unwrap_err();
+    let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(misplaced, MarkdownError::Fence { code: "E030", .. }));
 }
 @
@@ -1256,7 +1269,7 @@ Both math placeholders resolve by index through the substitution pass.
 #[test]
 fn round_trips_through_math_substitution() {
     let mut math = Vec::new();
-    let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math, &mut String::new()).unwrap();
+    let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math, &mut BTreeMap::new()).unwrap();
     // Document order: inline `$x$` is index 0, the fenced display is index 1.
     assert_eq!((math[0].source.as_str(), math[0].display), ("x", false));
     assert_eq!((math[1].source.as_str(), math[1].display), ("y", true));
