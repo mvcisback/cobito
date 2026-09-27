@@ -552,10 +552,17 @@
           $cob lock mac.cob | grep -q 'newly minted'
           $cob labels mac.cob | grep -qE '^def:basics[[:space:]]+[0-9A-Za-z]{4}[[:space:]]+Notation$'
 
-          # Weave twice, byte-diff: the macros path is deterministic.
-          $cob weave --locked mac.cob --out a
-          $cob weave --locked mac.cob --out b
+          # Weave twice, byte-diff: the macros path is deterministic. --archive also emits
+          # the forest index, so the diff proves it is deterministic too.
+          $cob weave --locked --archive mac.cob --out a
+          $cob weave --locked --archive mac.cob --out b
           diff -r a b
+
+          # §13 the forest index: `forest.json` exports the macro table so another forest can
+          # `\import` it — name → expansion, including the parametered macro (as KaTeX #1).
+          grep -q '"schema": 1' a/forest.json
+          grep -q '"\\\\RR": "\\\\mathbb{R}"' a/forest.json
+          grep -q '"\\\\abs": "\\\\lvert #1 \\\\rvert"' a/forest.json
 
           # The macros expand everywhere: `\RR`/`\R` and the parametered `\abs{…}` render,
           # so KaTeX output is present. An unknown macro would be a hard E020 and fail the

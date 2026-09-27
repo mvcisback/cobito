@@ -370,6 +370,10 @@ pub struct Site {
     /// The §8 document model, always assembled but only written under
     /// `--archive`. `meta` is a placeholder here; `write_site` fills it in.
     pub json: SiteJson,
+    /// This document's macro table (name → expansion) from its `macros` fences
+    /// (§6.4). Written to `forest.json` under `--archive` so another forest can
+    /// `\import` it (§13).
+    pub macros: BTreeMap<String, String>,
 }
 
 impl Site {
@@ -773,6 +777,7 @@ pub fn render(
         math_count: math.len(),
         lints,
         json,
+        macros: defs,
     })
 }
 @
@@ -1011,6 +1016,10 @@ pub fn write_site(
                 site::page_json(&site.json, &id).expect("page id came from site.json.pages");
             std::fs::write(out.join(format!("{id}.json")), json).map_err(WeaveError::Io)?;
         }
+        // The forest index (§13): the importable macro table, so another forest can
+        // `\import` this one without re-rendering it.
+        std::fs::write(out.join("forest.json"), site::to_forest_json(&site.macros))
+            .map_err(WeaveError::Io)?;
     }
     Ok(site)
 }

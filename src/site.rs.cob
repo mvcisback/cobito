@@ -111,6 +111,8 @@ that write the whole document and one page.
 
 <<serialize one page>>
 
+<<the forest index>>
+
 <<the tests>>
 @
 The banner states the contract, the determinism rule, and the sidenote hoist —
@@ -596,6 +598,28 @@ pub fn page_json(site: &SiteJson, page_id: &str) -> Option<String> {
     Some(to_json(&one))
 }
 @
+A forest's importable index (§13) is a separate, small artifact: what another
+forest reads to \code{\import} this one. For now it is the exported macro table
+(name → expansion); the label index for cross-document \code{\ref}/\code{\transclude}
+joins it with those slices. \code{schema} is versioned like \code{site.json}.
+<<the forest index>>=
+/// The importable index of a forest (§13): the macro table another forest reads
+/// to `\import` this one. `schema` is versioned; labels arrive with cross-document
+/// `\ref`/`\transclude`.
+#[derive(Serialize)]
+struct ForestJson<'a> {
+    schema: u32,
+    macros: &'a BTreeMap<String, String>,
+}
+
+/// Pretty, deterministic JSON for `forest.json` (§13): schema + the macro table.
+pub fn to_forest_json(macros: &BTreeMap<String, String>) -> String {
+    let mut s = serde_json::to_string_pretty(&ForestJson { schema: 1, macros })
+        .expect("ForestJson serializes");
+    s.push('\n');
+    s
+}
+@
 The tests pin the hoist: one sidenote is lifted and id-tagged on both sides, the
 counter carries across sections, a non-sidenote aside is untouched, and nested
 asides collapse into a single outer margin.
@@ -611,6 +635,25 @@ mod tests {
     <<a non-sidenote aside is untouched>>
 
     <<nested asides match the outer close>>
+
+    <<the forest index carries the macros>>
+}
+@
+The forest index (§13) serializes the schema and the exported macro table, sorted
+and deterministic, so another forest can \code{\import} it.
+<<the forest index carries the macros>>=
+#[test]
+fn forest_index_carries_the_macros() {
+    let mut macros = BTreeMap::new();
+    macros.insert("\\RR".to_string(), "\\mathbb{R}".to_string());
+    macros.insert("\\abs".to_string(), "\\lvert #1 \\rvert".to_string());
+    let json = to_forest_json(&macros);
+    assert!(json.contains("\"schema\": 1"));
+    assert!(json.contains("\"\\\\RR\": \"\\\\mathbb{R}\""));
+    assert!(json.contains("\"\\\\abs\": \"\\\\lvert #1 \\\\rvert\""));
+    // Deterministic: BTreeMap fixes the order by byte, so `\RR` (uppercase R,
+    // 0x52) sorts before `\abs` (lowercase a, 0x61).
+    assert!(json.find("\\\\RR").unwrap() < json.find("\\\\abs").unwrap());
 }
 @
 A single sidenote is removed from the JSON body, kept inline on the page with its
