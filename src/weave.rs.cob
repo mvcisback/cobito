@@ -588,7 +588,7 @@ pub fn render(
     doc: &DocModel,
     cache_root: &Path,
     lang_cfg: &LangConfig,
-    loaded: &BTreeMap<String, BTreeMap<String, String>>,
+    loaded: &BTreeMap<String, site::ForestRef>,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
@@ -603,7 +603,20 @@ pub fn render(
     // (main reads the files), then merge the content-id macros into the table. A
     // content id colliding with a local macro of different content is E036.
     let decls = collect_import_decls(doc);
-    let imp = import::resolve(loaded, &decls).map_err(WeaveError::Import)?;
+    // `import::resolve` reads only the exported macro tables; peel them off the
+    // loaded forests, keyed by the `[import.<name>]` name.
+    let sources: BTreeMap<String, BTreeMap<String, String>> = loaded
+        .iter()
+        .map(|(name, fr)| (name.clone(), fr.index.macros.clone()))
+        .collect();
+    let imp = import::resolve(&sources, &decls).map_err(WeaveError::Import)?;
+    // Cross-document `\ref`/`\transclude` resolve against the forest behind an
+    // alias, so re-key the loaded forests by the document's alias (from the
+    // `imports` fence), not the config name.
+    let by_alias: BTreeMap<String, site::ForestRef> = decls
+        .iter()
+        .filter_map(|(name, alias)| loaded.get(name).map(|fr| (alias.clone(), fr.clone())))
+        .collect();
     // The import edges for the page chrome's "Imports" list and for `site.json`.
     let import_links: Vec<site::ImportLink> = decls
         .iter()
@@ -646,7 +659,8 @@ pub fn render(
         label_ids.insert(label.to_string(), id);
     }
 
-    let res = resolve::plan(doc, &scan, &first_tags, &label_ids).map_err(WeaveError::Resolve)?;
+    let res = resolve::plan(doc, &scan, &first_tags, &label_ids, &by_alias)
+        .map_err(WeaveError::Resolve)?;
 
     // Step 4b: rewrite each docs body against the resolved plan.
     let mut plan = Plan::new(&res.heading_anchors, &res.heading_uids, &res.refs, &label_ids);
@@ -719,7 +733,7 @@ pub fn render(
     // it carries a directive, and the archival JSON (built above from
     // pre-expansion bodies) is untouched. The scope counter is document-wide, so
     // every copy's scoped ids are unique and the output stays deterministic (§8).
-    let mut tx = transclude::Context::build(&scan, &res, &bodies);
+    let mut tx = transclude::Context::build(&scan, &res, &bodies, &by_alias);
     // §10 a `def:` (macros) node is homeless: the table has just captured it, so
     // drop the canonical island from the reading flow and the archival JSON before
     // transclusion runs. No transcluded copy exists yet, so every island is
@@ -1036,7 +1050,7 @@ pub fn write_site(
     lock_path: &Path,
     meta: site::Meta,
     lang_cfg: &LangConfig,
-    loaded: &BTreeMap<String, BTreeMap<String, String>>,
+    loaded: &BTreeMap<String, site::ForestRef>,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
@@ -1077,10 +1091,14 @@ pub fn write_site(
                 site::page_json(&site.json, &id).expect("page id came from site.json.pages");
             std::fs::write(out.join(format!("{id}.json")), json).map_err(WeaveError::Io)?;
         }
-        // The forest index (§13): the importable macro table, so another forest can
-        // `\import` this one without re-rendering it.
-        std::fs::write(out.join("forest.json"), site::to_forest_json(&site.macros))
-            .map_err(WeaveError::Io)?;
+        // The forest index (§13): the importable macro table and label index, so
+        // another forest can `\import`/`\ref`/`\transclude` this one without
+        // re-rendering it.
+        std::fs::write(
+            out.join("forest.json"),
+            site::to_forest_json(&site.macros, &site.json.labels),
+        )
+        .map_err(WeaveError::Io)?;
     }
     Ok(site)
 }

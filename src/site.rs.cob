@@ -179,10 +179,10 @@ also records whether the chunk continues an earlier definition. \code{Chunk} gat
 chunk's defs and uses under its slug.
 <<the cross-reference tables>>=
 #[derive(Serialize, Clone)]
-struct Label {
-    page: String,
-    anchor: String,
-    kind: &'static str,
+pub struct Label {
+    pub page: String,
+    pub anchor: String,
+    pub kind: &'static str,
     /// The frozen opaque id (§7.1); absent for section/chunk targets.
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<String>,
@@ -273,7 +273,7 @@ pub struct SiteJson {
     pub schema: u32,
     pub meta: Meta,
     nav: Vec<Nav>,
-    labels: BTreeMap<String, Label>,
+    pub labels: BTreeMap<String, Label>,
     chunks: BTreeMap<String, Chunk>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<ImportLink>,
@@ -612,38 +612,70 @@ pub fn page_json(site: &SiteJson, page_id: &str) -> Option<String> {
 }
 @
 A forest's importable index (§13) is a separate, small artifact: what another
-forest reads to \code{\import} this one. For now it is the exported macro table
-(name → expansion); the label index for cross-document \code{\ref}/\code{\transclude}
-joins it with those slices. \code{schema} is versioned like \code{site.json}.
+forest reads to \code{\import} this one. It carries the exported macro table (name →
+expansion) and the label index — each public label's id, kind, page, and anchor —
+so a cross-document \code{\ref}/\code{\transclude} can resolve against it. The label index
+reuses \code{site.json}'s own label table. \code{schema} is versioned like \code{site.json}.
 <<the forest index>>=
-/// The importable index of a forest (§13): the macro table another forest reads
-/// to `\import` this one. `schema` is versioned; labels arrive with cross-document
-/// `\ref`/`\transclude`.
+/// The importable index of a forest (§13): the macro table and the label table
+/// another forest reads to `\import` this one. The labels reuse `site.json`'s own.
 #[derive(Serialize)]
 struct ForestJson<'a> {
     schema: u32,
     macros: &'a BTreeMap<String, String>,
+    labels: &'a BTreeMap<String, Label>,
 }
 
-/// Pretty, deterministic JSON for `forest.json` (§13): schema + the macro table.
-pub fn to_forest_json(macros: &BTreeMap<String, String>) -> String {
-    let mut s = serde_json::to_string_pretty(&ForestJson { schema: 1, macros })
-        .expect("ForestJson serializes");
+/// Pretty, deterministic JSON for `forest.json` (§13): schema, the macro table,
+/// and the label index (`site.json`'s own label table).
+pub fn to_forest_json(macros: &BTreeMap<String, String>, labels: &BTreeMap<String, Label>) -> String {
+    let fj = ForestJson {
+        schema: 1,
+        macros,
+        labels,
+    };
+    let mut s = serde_json::to_string_pretty(&fj).expect("ForestJson serializes");
     s.push('\n');
     s
 }
 
-/// Read the macro table out of an imported forest's `forest.json` (§13). A file
-/// that does not parse yields `None`; the import then surfaces as E036 when a
-/// document actually `\import`s it.
-#[derive(serde::Deserialize)]
-struct ForestIn {
+/// One label as another forest reads it (§13): owned, because the producer's
+/// `Label.kind` is a `&'static str` that serializes to a string the consumer
+/// deserializes into an owned one. Read by cross-document `\ref`/`\transclude`.
+#[derive(serde::Deserialize, Clone)]
+pub struct ForestLabel {
     #[serde(default)]
-    macros: BTreeMap<String, String>,
+    pub id: Option<String>,
+    #[allow(dead_code)]
+    pub kind: String,
+    pub page: String,
+    pub anchor: String,
 }
 
-pub fn read_forest_macros(json: &str) -> Option<BTreeMap<String, String>> {
-    serde_json::from_str::<ForestIn>(json).ok().map(|f| f.macros)
+/// An imported forest's index (§13): its exported macros and label table. A file
+/// that does not parse yields `None`; the import then surfaces as E036 when a
+/// document actually `\import`s it.
+#[derive(serde::Deserialize, Default, Clone)]
+pub struct ForestIndex {
+    #[serde(default)]
+    pub macros: BTreeMap<String, String>,
+    /// The label index, read by cross-document `\ref`/`\transclude` (§13).
+    #[serde(default)]
+    pub labels: BTreeMap<String, ForestLabel>,
+}
+
+/// An imported forest the consumer resolves against (§13): the `url` its pages
+/// are deployed at (from `cob.toml`), plus the index it exports. A cross-document
+/// `\ref{x@alias}` lands on `<url>/<page>.html#<anchor>`; a `\transclude{x@alias}`
+/// points a `<cob-transclude src>` at `<url>/n/<id>.html`.
+#[derive(Clone, Default)]
+pub struct ForestRef {
+    pub url: String,
+    pub index: ForestIndex,
+}
+
+pub fn read_forest(json: &str) -> Option<ForestIndex> {
+    serde_json::from_str(json).ok()
 }
 @
 The tests pin the hoist: one sidenote is lifted and id-tagged on both sides, the
@@ -673,13 +705,27 @@ fn forest_index_carries_the_macros() {
     let mut macros = BTreeMap::new();
     macros.insert("\\RR".to_string(), "\\mathbb{R}".to_string());
     macros.insert("\\abs".to_string(), "\\lvert #1 \\rvert".to_string());
-    let json = to_forest_json(&macros);
+    let mut labels = BTreeMap::new();
+    labels.insert(
+        "eq:cost".to_string(),
+        Label {
+            page: "index.html".to_string(),
+            anchor: "eq-cost".to_string(),
+            kind: "equation",
+            id: Some("k3f9".to_string()),
+        },
+    );
+    let json = to_forest_json(&macros, &labels);
     assert!(json.contains("\"schema\": 1"));
     assert!(json.contains("\"\\\\RR\": \"\\\\mathbb{R}\""));
     assert!(json.contains("\"\\\\abs\": \"\\\\lvert #1 \\\\rvert\""));
     // Deterministic: BTreeMap fixes the order by byte, so `\RR` (uppercase R,
     // 0x52) sorts before `\abs` (lowercase a, 0x61).
     assert!(json.find("\\\\RR").unwrap() < json.find("\\\\abs").unwrap());
+    // The label index is carried too, so a cross-document ref can resolve.
+    assert!(json.contains("\"eq:cost\""));
+    assert!(json.contains("\"anchor\": \"eq-cost\""));
+    assert!(json.contains("\"kind\": \"equation\""));
 }
 @
 A single sidenote is removed from the JSON body, kept inline on the page with its

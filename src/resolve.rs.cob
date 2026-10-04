@@ -102,6 +102,7 @@ use std::fmt;
 
 use crate::model::{DocModel, Lint};
 use crate::rewrite::{anchor_of, slug, Kind, ResolvedRef, Scan};
+use crate::site::ForestRef;
 @
 The label-id map carries every labelled float's human label to its frozen opaque
 id (§7.1). Weave builds it from \code{cob.lock} before planning.
@@ -233,6 +234,7 @@ pub fn plan(
     scan: &Scan,
     first_tags: &[Option<String>],
     label_ids: &LabelIds,
+    imports: &BTreeMap<String, ForestRef>,
 ) -> Result<Resolution, ResolveError> {
     let n = doc.sections.len();
 
@@ -415,10 +417,40 @@ code. A repeat id is E014.
 Each ref resolves to an href — a bare fragment when the target is on the same
 page, page-qualified when it crosses — and to display text, kept from the author
 if present, otherwise the label's own text. An unknown target is E015.
+
+A target of the form \code{label@alias} points into an imported forest (§13). cob
+reads that forest's label index (from its \code{forest.json}), so the href lands on the
+deployed page \code{<url>/<page>.html#<anchor>}, and the display text is the kind word
+and the target's frozen opaque id, the same shape a local ref shows. An unknown
+alias or an unknown label in a known forest is E015, the same as any other
+undefined reference.
 <<resolve every ref>>=
     // --- Resolve refs -----------------------------------------------------
     let mut refs = Vec::with_capacity(scan.refs.len());
     for r in &scan.refs {
+        // A `label@alias` target resolves against an imported forest (§13): its
+        // href lands on the deployed page, its text is the kind word plus the
+        // target's frozen opaque id.
+        if let Some((label, alias)) = r.target.rsplit_once('@') {
+            let fr = imports.get(alias).ok_or_else(|| ResolveError::UnknownRef {
+                target: r.target.clone(),
+            })?;
+            let fl = fr.index.labels.get(label).ok_or_else(|| ResolveError::UnknownRef {
+                target: r.target.clone(),
+            })?;
+            let base = fr.url.trim_end_matches('/');
+            let href = format!("{base}/{}.html#{}", fl.page, fl.anchor);
+            let text = match (Kind::from_label(label).map(Kind::word), &fl.id) {
+                (Some(word), Some(id)) => format!("{word} {id}"),
+                (_, Some(id)) => id.clone(),
+                _ => label.to_string(),
+            };
+            refs.push(ResolvedRef {
+                href,
+                text: if r.has_text { None } else { Some(text) },
+            });
+            continue;
+        }
         let info = labels
             .get(&r.target)
             .ok_or_else(|| ResolveError::UnknownRef {
@@ -562,6 +594,8 @@ mod tests {
 
     <<cross-page refs qualify, same-page refs are fragments>>
 
+    <<a cross-document ref targets the imported forest>>
+
     <<chunk refs target the defining section>>
 
     <<author ref text is kept>>
@@ -639,7 +673,7 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
         .iter()
         .map(|l| (l.id.clone(), fake_id(&l.id)))
         .collect();
-    let res = plan(&doc, &sc, &first_tags, &label_ids).unwrap();
+    let res = plan(&doc, &sc, &first_tags, &label_ids, &BTreeMap::new()).unwrap();
     (doc, res)
 }
 @
@@ -712,6 +746,60 @@ fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
     assert_eq!(r.refs[2].href, "#eq-c");
 }
 @
+A \code{label@alias} ref resolves against the imported forest's label index: the href
+lands on the deployed page, and the text is the kind word with the frozen opaque
+id. An unknown alias (or an unknown label in a known forest) is E015.
+<<a cross-document ref targets the imported forest>>=
+#[test]
+fn a_cross_document_ref_targets_the_imported_forest() {
+    use crate::site::{ForestIndex, ForestLabel, ForestRef};
+    let doc = DocModel {
+        files: vec!["t.cob".into()],
+        sections: vec![crate::model::Section {
+            id: "sec-1".into(),
+            file: "t.cob".into(),
+            line: 1,
+            kind: SectionKind::Docs { spans: vec![] },
+        }],
+        chunks: BTreeMap::new(),
+    };
+    let mut labels = BTreeMap::new();
+    labels.insert(
+        "eq:cost".to_string(),
+        ForestLabel {
+            id: Some("k3f9".into()),
+            kind: "equation".into(),
+            page: "index".into(),
+            anchor: "eq-cost".into(),
+        },
+    );
+    let mut imports = BTreeMap::new();
+    imports.insert(
+        "alg".to_string(),
+        ForestRef {
+            url: "https://alg.example/".into(),
+            index: ForestIndex {
+                macros: BTreeMap::new(),
+                labels,
+            },
+        },
+    );
+
+    let mut sc = Scan::default();
+    scan("<h1>I</h1><a data-ref=\"eq:cost@alg\"></a>", 0, &mut sc).unwrap();
+    let r = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new(), &imports).unwrap();
+    // The href lands on the deployed page; the trailing slash on the url does not
+    // double. The text is the kind word with the frozen opaque id.
+    assert_eq!(r.refs[0].href, "https://alg.example/index.html#eq-cost");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Equation k3f9"));
+
+    // An unknown alias is E015, like any other undefined reference.
+    let mut sc2 = Scan::default();
+    scan("<h1>I</h1><a data-ref=\"eq:cost@ghost\"></a>", 0, &mut sc2).unwrap();
+    let err = plan(&doc, &sc2, &[Some("h1".into())], &LabelIds::new(), &imports).unwrap_err();
+    assert!(err.to_string().starts_with("error[E015]"));
+}
+@
 A \code{chunk:} ref points at the chunk's defining section, with the chunk name as
 text.
 <<chunk refs target the defining section>>=
@@ -760,7 +848,8 @@ fn duplicate_label_is_e014() {
         }],
         chunks: BTreeMap::new(),
     };
-    let err = plan(&doc, &sc, &[Some("figure".into())], &LabelIds::new()).unwrap_err();
+    let err = plan(&doc, &sc, &[Some("figure".into())], &LabelIds::new(), &BTreeMap::new())
+        .unwrap_err();
     assert!(err.to_string().starts_with("error[E014]"));
 }
 @
@@ -780,7 +869,8 @@ fn unknown_ref_is_e015() {
         }],
         chunks: BTreeMap::new(),
     };
-    let err = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new()).unwrap_err();
+    let err = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new(), &BTreeMap::new())
+        .unwrap_err();
     assert!(err.to_string().starts_with("error[E015]"));
 }
 @

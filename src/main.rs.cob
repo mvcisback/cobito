@@ -258,15 +258,17 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // §13 imports: main reads each local import's forest.json into a macro table and
-    // hands them to the weave, so the weave itself reads no files (and stays
-    // offline). A git import is fetched by `cob fetch` into a path first (deferred).
-    let mut loaded: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    // §13 imports: main reads each local import's forest.json into a forest ref
+    // (its index plus the deployed url) and hands them to the weave, so the weave
+    // itself reads no files (and stays offline). A git import is fetched by
+    // `cob fetch` into a path first (deferred).
+    let mut loaded: BTreeMap<String, site::ForestRef> = BTreeMap::new();
     for (name, imp) in &cfg.imports {
         if let Some(path) = &imp.path {
             if let Ok(json) = std::fs::read_to_string(Path::new(path).join("forest.json")) {
-                if let Some(macros) = site::read_forest_macros(&json) {
-                    loaded.insert(name.clone(), macros);
+                if let Some(index) = site::read_forest(&json) {
+                    let url = imp.url.clone().unwrap_or_default();
+                    loaded.insert(name.clone(), site::ForestRef { url, index });
                 }
             }
         }

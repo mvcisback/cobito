@@ -234,10 +234,39 @@ review} (M6), and a reserved slot for the annotation-layer fallback (M7).
 
 Phase 3 is done in its shipped slices: the Markdown dialect (M8), stable ids and
 the lock file (M11), self-hosting and the flip (M13), syntax highlighting (M14),
-and the node model with same-document transclusion (M12, first slice). Math macros
-(M9) and citations (M10) are the remaining phase-3 work. The deferred transclusion
-slices — floats as nodes, per-node atomic pages, and cross-document transclusion —
-are recorded in \code{transclude.rs.cob}.
+the node model with same-document transclusion (M12, first slice), and math macros
+(M9 — the \code{macros} fence, forester \code{\def}/\code{\let}, a homeless \code{def:} node). Citations
+(M10) are the remaining phase-3 work.
+
+## The forest (M16) {#sec:forest}
+
+M16 makes cob a forest: one project's documents, and other forests, reachable by a
+local namespace alias (§13). The slices, in order:
+
+- **Lazy transclusion — done.** \code{\transclude} lowers to a \code{<cob-transclude>}
+  element that fetches a node's own \code{n/} page into a shadow root, with a link
+  fallback. The body is stored once; a copy is a reference, so a big forest does not
+  multiply the bytes (§10).
+- **Macro import — done.** An \code{imports} fence binds a source to an alias
+  (\code{\import algebra as alg}); \code{\alg.RR} uses its macros. Each imported macro gets a
+  content id (a merkle hash), so it is clash-free and shared across forests
+  (\code{import.rs.cob}). A forest exports its macro table as \code{forest.json}.
+- **Cross-document \code{\ref}/\code{\transclude} — done.** \code{\ref{sec:x@alg}} and
+  \code{\transclude{def:y@alg}} resolve against the import's \code{forest.json}, which now
+  carries a label index (\code{label} to id, kind, page, and anchor). A reference lands on
+  the forest's deployed page, \code{<url>/<page>.html#<anchor>}, with the kind-qualified
+  opaque id as its text; the \code{url} comes from the \code{[import.<alias>]} table
+  (\code{config.rs.cob}). A cross-document \code{\transclude} is just a \code{<cob-transclude src>}
+  at the other forest's node page (\code{<url>/n/<id>.html}), so the lazy element already
+  handles it. An unknown alias or label is E015 for a \code{\ref}, W106 for a
+  \code{\transclude}, the same as any local miss.
+- **\code{cob fetch} — later.** A \code{git}-URL import is pinned into a local cache by a
+  separate \code{cob fetch} step, so a weave reads only a path and stays offline.
+- **Reverse backlinks — later.** A forest-wide index computes "imported by" and
+  cross-forest "referenced by", which a single document's build cannot see.
+
+The deferred node-model slices — floats as nodes and per-node pages — are shipped;
+the remaining transclusion notes are in \code{transclude.rs.cob}.
 
 The native reader is the first slice of M15: cob reads its own \code{.cob} source with a
 Rust reader (\code{markup.rs}), so no \code{markup} process runs at read time and cob can ship

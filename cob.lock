@@ -56,6 +56,10 @@ kind = "section"
 id = "av7Q"
 kind = "section"
 
+["cobito.cob"."sec:forest"]
+id = "umoy"
+kind = "section"
+
 ["cobito.cob"."sec:lxbi"]
 id = "lxbi"
 kind = "section"
@@ -506,6 +510,10 @@ kind = "section"
 
 ["src/transclude.rs.cob"."sec:SJwf"]
 id = "SJwf"
+kind = "section"
+
+["src/transclude.rs.cob"."sec:foreign-tx"]
+id = "BwEn"
 kind = "section"
 
 ["src/transclude.rs.cob"."sec:node-pages"]

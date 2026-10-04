@@ -72,11 +72,18 @@ leads with the same ⧉ node-page link a heading gets: on a figure or a table th
 link rides the caption; an equation has no caption, so the link rides the block
 and CSS drops it in the left margin.
 
-What is still deferred:
+## Foreign (cross-document) transclusion {#sec:foreign-tx}
 
-- **Foreign (cross-document) transclusion.** The forest (§13) lets one project
-  transclude another's node by its opaque id. The element and its shadow-root
-  isolation are the same; only the \code{src} points at another forest's node page.
+The forest (§13) lets one project transclude another's node. The author writes
+\code{\transclude{sec:name@alias}}, where \code{alias} is an imported forest (a
+\code{[import.<alias>]} table, §6.1). cob reads that forest's label index (from its
+\code{forest.json}) to get the node's frozen opaque id, then points the
+\code{<cob-transclude>} \code{src} at the other forest's own node page,
+\code{<url>/n/<id>.html}. The element and its shadow-root isolation are exactly the
+same as for a local node; only the \code{src} is foreign. So the body stays stored
+once, in the forest that owns it, and a reader with no JavaScript still reaches it
+by the fallback link. An unknown alias or an unknown label is W106, an inert
+marker, the same as a local unknown target.
 
 ## A homeless macro node {#sec:SJwf}
 
@@ -169,6 +176,7 @@ use crate::model::Lint;
 use crate::prose;
 use crate::resolve::Resolution;
 use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
+use crate::site::ForestRef;
 @
 A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
 carries the address. The expander scans for this exact opening and tail, so its own
@@ -209,6 +217,9 @@ pub struct Context {
     node_pages: Vec<NodePage>,
     /// Anchor → document page filename, to rebase links that leave a node page.
     link_pages: BTreeMap<String, String>,
+    /// Alias → imported forest (§13). A `\transclude{addr@alias}` points its
+    /// `<cob-transclude src>` at that forest's own node page.
+    imports: BTreeMap<String, ForestRef>,
 }
 @
 A node page is the data the \code{node} template reads: the node's opaque id (its
@@ -254,7 +265,12 @@ impl Context {
     /// bodies. A node runs from its heading to the next heading at the same or a
     /// shallower level (the heading nesting is the node tree); cob cuts the body
     /// at the heading tags, across section bodies when the node spans chunks.
-    pub fn build(scan: &Scan, res: &Resolution, bodies: &[String]) -> Context {
+    pub fn build(
+        scan: &Scan,
+        res: &Resolution,
+        bodies: &[String],
+        imports: &BTreeMap<String, ForestRef>,
+    ) -> Context {
         let heads = &scan.headings;
         // (section, byte offset) of each heading's opening tag in the final
         // bodies, found by the `id` that `apply` stamps on every heading.
@@ -317,6 +333,7 @@ impl Context {
             uids,
             node_pages,
             link_pages,
+            imports: imports.clone(),
         }
     }
 @
@@ -471,6 +488,44 @@ cycle is now a client-side guard, not a build-time lint.
     /// unknown one. `src` is the node's own page under `n/`; the fallback link is
     /// the same page, so the content is reachable with no JavaScript (§6.3).
     fn element(&self, addr: &str, prefix: &str, lints: &mut Vec<Lint>, file: &str, line: u32) -> String {
+        // A `addr@alias` target lives in an imported forest (§13): point the `src`
+        // at that forest's own node page (`<url>/n/<id>.html`), which the client
+        // lifts into a shadow root exactly as for a local node. The fallback link
+        // names the target by its kind and frozen opaque id. An unknown alias, an
+        // unknown label, or a label with no node id falls through to the W106
+        // marker, the same as any other unknown target.
+        if let Some((label, alias)) = addr.rsplit_once('@') {
+            if let Some(uid) = self
+                .imports
+                .get(alias)
+                .and_then(|fr| fr.index.labels.get(label).map(|fl| (fr, fl)))
+                .and_then(|(fr, fl)| fl.id.as_ref().map(|id| (fr, id)))
+            {
+                let (fr, id) = uid;
+                let base = fr.url.trim_end_matches('/');
+                let url = format!("{base}/n/{id}.html");
+                let title = match crate::rewrite::Kind::from_label(label) {
+                    Some(k) => format!("{} {id}", k.word()),
+                    None => addr.to_string(),
+                };
+                return format!(
+                    "<cob-transclude src=\"{url}\" data-transclude=\"{a}\">\
+                     <a href=\"{url}\">{t} &rarr;</a></cob-transclude>",
+                    a = prose::escape(addr),
+                    t = prose::escape(&title)
+                );
+            }
+            lints.push(Lint {
+                code: "W106",
+                message: format!("transclusion of unknown target `{addr}`"),
+                file: file.to_string(),
+                line,
+            });
+            return format!(
+                "<div class=\"transclusion-missing\" data-transclude=\"{}\">unknown transclusion target</div>",
+                prose::escape(addr)
+            );
+        }
         let anchor = anchor_of(addr);
         match (self.nodes.get(&anchor), self.uids.get(&anchor)) {
             (Some(node), Some(uid)) => {
@@ -882,6 +937,7 @@ fn ctx() -> Context {
         uids,
         node_pages: Vec::new(),
         link_pages: BTreeMap::new(),
+        imports: BTreeMap::new(),
     }
 }
 

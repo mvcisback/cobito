@@ -157,15 +157,22 @@ pub struct Config {
 An \code{[import.<alias>]} table binds another forest to the alias, so \code{label@alias}
 addresses resolve against it (§13). \code{path} names a local forest to read now; \code{git}
 plus \code{rev} name a remote one that \code{cob fetch} pins into the import cache before a
-weave reads it offline.
+weave reads it offline. \code{url} is where that forest's pages are deployed, so a
+cross-document \code{\ref} or \code{\transclude} makes a link that lands on the real site.
 <<an import>>=
 /// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
 /// local `path`, or a `git` URL pinned by `rev`. `cob fetch` turns a git import
-/// into a cached path; a weave only ever reads a path, so it stays offline.
+/// into a cached path; a weave only ever reads a path, so it stays offline. `url`
+/// is the deployed base a cross-document `\ref`/`\transclude` links into.
 #[derive(Deserialize, Default, Clone)]
 pub struct Import {
     #[serde(default)]
     pub path: Option<String>,
+    /// The deployed base URL of the imported forest (§13); a cross-document
+    /// reference lands on `<url>/<page>.html#<anchor>`. Empty when unset, which
+    /// makes a site-root-relative link.
+    #[serde(default)]
+    pub url: Option<String>,
     // `git`/`rev` are read by `cob fetch` (§13), which pins a remote import into a
     // local path before a weave reads it; a weave itself only uses `path`.
     #[allow(dead_code)]

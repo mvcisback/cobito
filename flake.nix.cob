@@ -1025,11 +1025,14 @@ touch $out
 @
 ### imports
 
-One forest imports another's macros (§13). This check weaves a producer forest
-that exports a \code{forest.json}, then a consumer that declares \code{[import.algebra]}
-in \code{cob.toml}, imports it with \code{\import algebra as alg}, and uses \code{\alg.RR} and
-\code{\alg.abs{x}}. It proves the imported macros resolve and render, and that no
-definition leaks into a formula's annotation.
+One forest imports another's macros and references its nodes (§13). This check
+weaves a producer forest that exports a \code{forest.json}, then a consumer that
+declares \code{[import.algebra]} in \code{cob.toml}, imports it with \code{\import algebra as
+alg}, and uses \code{\alg.RR} and \code{\alg.abs{x}}. The consumer also makes a
+cross-document \code{\ref{sec:conv@alg}} and a \code{\transclude{def:basics@alg}}. It
+proves the imported macros resolve and render, the cross-document reference lands
+on the producer's deployed page, the cross-document transclusion points at the
+producer's node page, and no definition leaks into a formula's annotation.
 <<the imports check>>=
 imports = pkgs.runCommand "cob-imports" { } ''
   <<imports check script>>
@@ -1040,11 +1043,12 @@ cob=${self.packages.${system}.cob}/bin/cob
 work=$TMPDIR/imp
 mkdir -p $work/alg $work/topo
 
-# The producer forest exports \RR and a parametered \abs.
+# The producer forest exports \RR and a parametered \abs, and gives its Notation
+# section a stable label so a cross-document \ref can name it.
 cat > $work/alg/algebra.cob <<'DOC'
 # Algebra
 
-## Notation
+## Notation {#sec:conv}
 
 ```macros \label{def:basics}
 \def\RR{\mathbb{R}}
@@ -1052,13 +1056,17 @@ cat > $work/alg/algebra.cob <<'DOC'
 ```
 DOC
 ( cd $work/alg && $cob lock algebra.cob >/dev/null && $cob weave --locked --archive algebra.cob --out _site )
-# forest.json carries the exported macro table.
+# forest.json carries the exported macro table and the label index.
 grep -q '"\\\\RR": "\\\\mathbb{R}"' $work/alg/_site/forest.json
+grep -q '"sec:conv"' $work/alg/_site/forest.json
+grep -q '"def:basics"' $work/alg/_site/forest.json
 
-# The consumer declares the import in cob.toml and uses it under an alias.
+# The consumer declares the import in cob.toml, with the producer's deployed url so
+# a cross-document reference makes a real link, and uses it under an alias.
 cat > $work/topo/cob.toml <<DOC
 [import.algebra]
 path = "$work/alg/_site"
+url = "https://alg.example"
 DOC
 cat > $work/topo/topo.cob <<'DOC'
 # Topology
@@ -1070,12 +1078,23 @@ cat > $work/topo/topo.cob <<'DOC'
 ```
 
 The reals are $\alg.RR$, and $\alg.abs{x}$ is the absolute value.
+
+See the conventions in \ref{sec:conv@alg}.
+
+\transclude{def:basics@alg}
 DOC
 ( cd $work/topo && $cob lock topo.cob >/dev/null && $cob weave --locked topo.cob --out _site )
 
 # The imported macros resolved and rendered — `\alg.RR`/`\alg.abs{x}` became KaTeX.
 # An unresolved macro would be a hard E020 and fail the weave.
 grep -q 'katex' $work/topo/_site/index.html
+
+# §13 cross-document \ref: the reference lands on the producer's deployed page and
+# anchor (the label `sec:conv` → anchor `sec-conv`), with the kind-qualified id text.
+grep -q 'href="https://alg.example/index.html#sec-conv"' $work/topo/_site/index.html
+# §13 cross-document \transclude: a lazy `<cob-transclude>` whose `src` is the
+# producer's own node page, so the body stays stored once in the forest that owns it.
+grep -q 'cob-transclude src="https://alg.example/n/' $work/topo/_site/index.html
 # An import is a declaration, not content (§13): the `\import` line renders nothing
 # in the body, but the import shows in the page chrome's "Imports" list.
 if grep -q 'import algebra as alg' $work/topo/_site/index.html; then
