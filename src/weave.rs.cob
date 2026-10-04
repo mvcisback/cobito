@@ -129,6 +129,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::highlight::{self, Lang, LangConfig};
+use crate::import;
 use crate::lock::{LockError, LockFile, LockMode, Minter};
 use crate::markdown;
 use crate::math::{MathError, Renderer};
@@ -154,6 +155,7 @@ pub enum WeaveError {
     Rewrite(RewriteError),
     Resolve(ResolveError),
     Lock(LockError),
+    Import(crate::import::ImportError),
     Assets(String),
     Io(std::io::Error),
     Template(String),
@@ -173,6 +175,7 @@ impl fmt::Display for WeaveError {
             WeaveError::Rewrite(e) => write!(f, "{e}"),
             WeaveError::Resolve(e) => write!(f, "{e}"),
             WeaveError::Lock(e) => write!(f, "{e}"),
+            WeaveError::Import(e) => write!(f, "{e}"),
             WeaveError::Assets(m) => write!(f, "error[E023]: {m}"),
             WeaveError::Io(e) => write!(f, "error[E024]: writing site: {e}"),
             WeaveError::Template(m) => write!(f, "error[E025]: template: {m}"),
@@ -464,6 +467,35 @@ fn render_frags(
     }
     Ok(frags)
 }
+
+/// Scan every docs chunk for `imports` fences and collect each
+/// `\import <name> as <alias>` line (§13). It is a plain line scan, not a full
+/// markdown parse, because an import declaration is one fixed shape.
+fn collect_import_decls(doc: &DocModel) -> Vec<(String, String)> {
+    let mut decls = Vec::new();
+    for section in &doc.sections {
+        let SectionKind::Docs { spans } = &section.kind else {
+            continue;
+        };
+        let prose = prose::reassemble(spans);
+        let mut in_imports = false;
+        for line in prose.lines() {
+            let t = line.trim();
+            if in_imports {
+                if t.starts_with("```") {
+                    in_imports = false;
+                } else if let Some(rest) = t.strip_prefix("\\import ") {
+                    if let Some((name, alias)) = rest.split_once(" as ") {
+                        decls.push((name.trim().to_string(), alias.trim().to_string()));
+                    }
+                }
+            } else if t.starts_with("```") && t.trim_start_matches('`').trim() == "imports" {
+                in_imports = true;
+            }
+        }
+    }
+    decls
+}
 @
 The scan pass walks every docs body once, in order, so every labelled float is seen
 before any id is assigned. It returns the collected scan and, per fragment, the
@@ -556,6 +588,7 @@ pub fn render(
     doc: &DocModel,
     cache_root: &Path,
     lang_cfg: &LangConfig,
+    loaded: &BTreeMap<String, BTreeMap<String, String>>,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
@@ -565,6 +598,31 @@ pub fn render(
     let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
     let mut frags = render_frags(doc, lang_cfg, &mut math, &mut defs, &mut hl_lints)?;
+
+    // §13 imports: resolve each `\import … as …` against the loaded forest tables
+    // (main reads the files), then merge the content-id macros into the table. A
+    // content id colliding with a local macro of different content is E036.
+    let decls = collect_import_decls(doc);
+    let imp = import::resolve(loaded, &decls).map_err(WeaveError::Import)?;
+    // The import edges for the page chrome's "Imports" list and for `site.json`.
+    let import_links: Vec<site::ImportLink> = decls
+        .iter()
+        .map(|(name, alias)| site::ImportLink {
+            name: name.clone(),
+            alias: alias.clone(),
+        })
+        .collect();
+    for (name, expansion) in &imp.macros {
+        match defs.get(name) {
+            Some(existing) if existing != expansion => {
+                return Err(WeaveError::Import(import::ImportError::Collision(name.clone())));
+            }
+            _ => {
+                defs.insert(name.clone(), expansion.clone());
+            }
+        }
+    }
+
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -600,7 +658,7 @@ pub fn render(
 
     // Steps 5–6: serialize is implicit in the rewriter; now render math and
     // wrap each section in its provenance envelope.
-    let rendered = Renderer::new(cache_root, &defs)
+    let rendered = Renderer::new(cache_root, &defs, &imp.rewrites)
         .render_all(&math)
         .map_err(WeaveError::Math)?;
     let mut wrapped: Vec<String> = Vec::with_capacity(frags.len());
@@ -721,6 +779,7 @@ pub fn render(
                 nav,
                 prev,
                 next,
+                imports => &import_links,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         pages.push(RenderedPage {
@@ -764,7 +823,8 @@ pub fn render(
         node_pages.push((format!("n/{}.html", np.id), html));
     }
 
-    let json = site::build(doc, &res, &raws, site::Meta::default());
+    let mut json = site::build(doc, &res, &raws, site::Meta::default());
+    json.imports = import_links;
 
     let mut lints = res.lints;
     lints.extend(hl_lints);
@@ -976,12 +1036,13 @@ pub fn write_site(
     lock_path: &Path,
     meta: site::Meta,
     lang_cfg: &LangConfig,
+    loaded: &BTreeMap<String, BTreeMap<String, String>>,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, lang_cfg, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, lang_cfg, loaded, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -1149,6 +1210,7 @@ fn dev_render_lang(doc: &DocModel, lang: Option<Lang>, embed: &str) -> Site {
         doc,
         &cache(),
         &lang_cfg,
+        &BTreeMap::new(),
         embed,
         &mut lock,
         LockMode::Mint,
@@ -1171,6 +1233,7 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
         &book(),
         &cache(),
         &lang_cfg,
+        &BTreeMap::new(),
         "",
         &mut lock,
         LockMode::Locked,

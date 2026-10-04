@@ -606,6 +606,63 @@
           fi
           touch $out
         '';
+
+        imports = pkgs.runCommand "cob-imports" { } ''
+          cob=${self.packages.${system}.cob}/bin/cob
+          work=$TMPDIR/imp
+          mkdir -p $work/alg $work/topo
+
+          # The producer forest exports \RR and a parametered \abs.
+          cat > $work/alg/algebra.cob <<'DOC'
+          # Algebra
+
+          ## Notation
+
+          ```macros \label{def:basics}
+          \def\RR{\mathbb{R}}
+          \def\abs[x]{\lvert \x \rvert}
+          ```
+          DOC
+          ( cd $work/alg && $cob lock algebra.cob >/dev/null && $cob weave --locked --archive algebra.cob --out _site )
+          # forest.json carries the exported macro table.
+          grep -q '"\\\\RR": "\\\\mathbb{R}"' $work/alg/_site/forest.json
+
+          # The consumer declares the import in cob.toml and uses it under an alias.
+          cat > $work/topo/cob.toml <<DOC
+          [import.algebra]
+          path = "$work/alg/_site"
+          DOC
+          cat > $work/topo/topo.cob <<'DOC'
+          # Topology
+
+          ## Setup
+
+          ```imports
+          \import algebra as alg
+          ```
+
+          The reals are $\alg.RR$, and $\alg.abs{x}$ is the absolute value.
+          DOC
+          ( cd $work/topo && $cob lock topo.cob >/dev/null && $cob weave --locked topo.cob --out _site )
+
+          # The imported macros resolved and rendered — `\alg.RR`/`\alg.abs{x}` became KaTeX.
+          # An unresolved macro would be a hard E020 and fail the weave.
+          grep -q 'katex' $work/topo/_site/index.html
+          # An import is a declaration, not content (§13): the `\import` line renders nothing
+          # in the body, but the import shows in the page chrome's "Imports" list.
+          if grep -q 'import algebra as alg' $work/topo/_site/index.html; then
+            echo "an \\import line rendered in the body; it is a declaration (§13)" >&2
+            exit 1
+          fi
+          grep -q 'class="doc-imports"' $work/topo/_site/index.html
+          # Modularity guard: no definition leaks into a formula annotation — the import is a
+          # content-id macro, not a prepended `\def` (§13).
+          if grep -qE 'application/x-tex">[^<]*\\\\def' $work/topo/_site/index.html; then
+            echo "an imported \\def leaked into a formula annotation (§13)" >&2
+            exit 1
+          fi
+          touch $out
+        '';
       });
     };
 }

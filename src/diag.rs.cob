@@ -57,6 +57,7 @@ pub fn explain(code: &str) -> Option<&'static str> {
         <<manifest diagnostics>>
         <<float-directive diagnostics>>
         <<lock diagnostics>>
+        <<import diagnostics>>
         _ => return None,
     };
     Some(text)
@@ -167,6 +168,16 @@ could not be read, parsed, or written.
            carries the underlying I/O or TOML error. The lock is generated \
            TOML (§7.1); edit it only to retire a label, and never by hand in \
            a way that corrupts its structure.",
+@
+This code comes from macro import (§13). E036 is an \code{\import} fault: an import
+with no \code{[import.…]} in \code{cob.toml}, a macro that expands into itself, or the rare
+content-id clash with a local macro.
+<<import diagnostics>>=
+"E036" => "An `\\import … as …` failed. Either it names an import with no \
+           `[import.<name>]` in cob.toml, or an imported macro expands into \
+           itself, or an imported macro's content id collided with a local \
+           macro. Imports are content-addressed (§13); a collision is \
+           improbable, so it usually means a missing or misnamed import.",
 @
 The tests pin two properties: a few known codes explain and are case-insensitive,
 and an unknown code is \code{None}.

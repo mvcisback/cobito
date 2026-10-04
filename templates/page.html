@@ -18,7 +18,10 @@
 <main>
 {% for section in sections %}{{ section }}
 {% endfor %}</main>
-{% include "scripts" %}
+{% if imports %}<section class="doc-imports" aria-label="Imports"><h2>Imports</h2>
+<ul>{% for i in imports %}<li><span class="import-alias">{{ i.alias }}</span> &larr; <span class="import-name">{{ i.name }}</span></li>{% endfor %}</ul>
+</section>
+{% endif %}{% include "scripts" %}
 <footer class="pagination">
 {% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% else %}<span></span>{% endif %}
 <a class="sitemap-link" href="sitemap.html">Sitemap</a>

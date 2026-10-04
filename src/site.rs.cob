@@ -259,6 +259,15 @@ struct Page {
     sections: Vec<Section>,
 }
 
+/// One import edge (§13): a forest this document depends on, under a local alias.
+/// It feeds the "Imports" list in the page chrome and is recorded in `site.json`
+/// for a forest index to compute reverse "imported by" backlinks later.
+#[derive(Serialize, Clone)]
+pub struct ImportLink {
+    pub name: String,
+    pub alias: String,
+}
+
 #[derive(Serialize)]
 pub struct SiteJson {
     pub schema: u32,
@@ -266,6 +275,8 @@ pub struct SiteJson {
     nav: Vec<Nav>,
     labels: BTreeMap<String, Label>,
     chunks: BTreeMap<String, Chunk>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<ImportLink>,
     pages: Vec<Page>,
 }
 @
@@ -535,6 +546,7 @@ pub fn build(doc: &DocModel, res: &Resolution, raw: &[RawSection], meta: Meta) -
         nav: res.nav.iter().map(nav_of).collect(),
         labels,
         chunks,
+        imports: Vec::new(),
         pages,
     }
 }
@@ -593,6 +605,7 @@ pub fn page_json(site: &SiteJson, page_id: &str) -> Option<String> {
         nav: site.nav.clone(),
         labels: site.labels.clone(),
         chunks: site.chunks.clone(),
+        imports: site.imports.clone(),
         pages: vec![page.clone()],
     };
     Some(to_json(&one))
@@ -618,6 +631,19 @@ pub fn to_forest_json(macros: &BTreeMap<String, String>) -> String {
         .expect("ForestJson serializes");
     s.push('\n');
     s
+}
+
+/// Read the macro table out of an imported forest's `forest.json` (§13). A file
+/// that does not parse yields `None`; the import then surfaces as E036 when a
+/// document actually `\import`s it.
+#[derive(serde::Deserialize)]
+struct ForestIn {
+    #[serde(default)]
+    macros: BTreeMap<String, String>,
+}
+
+pub fn read_forest_macros(json: &str) -> Option<BTreeMap<String, String>> {
+    serde_json::from_str::<ForestIn>(json).ok().map(|f| f.macros)
 }
 @
 The tests pin the hoist: one sidenote is lifted and id-tagged on both sides, the

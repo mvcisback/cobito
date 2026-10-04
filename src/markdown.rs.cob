@@ -514,6 +514,13 @@ fn render_fence(
             };
             Ok(format!("<pre><code{class}>{}</code></pre>", prose::escape(body)))
         }
+        Fence::Imports => {
+            // An import is a declaration, not content (§13): it renders nothing in
+            // the reading flow. The weaver scans the `\import … as …` lines to
+            // resolve the macros and to list the document's imports in the page
+            // chrome (like references), and records the edge in `site.json`.
+            Ok(String::new())
+        }
         Fence::Macros(label) => {
             // The body is normal prose with `\def`/`\let` lines; render it macro-
             // aware. Each definition is recorded in `defs` (name → expansion) and
@@ -702,6 +709,10 @@ enum Fence {
     /// with `\def`/`\let` definition lines; the label is required, because the
     /// fence is a node.
     Macros(String),
+    /// A declaration of imports (§13): `\import <name> as <alias>` lines. The
+    /// weaver scans the body to resolve `@alias` addresses; here it just renders
+    /// the lines verbatim so the reader sees what the document imports.
+    Imports,
 }
 
 /// One header modifier: a float `\label` or a `verbatim` `\lang`.
@@ -714,7 +725,7 @@ The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
 <<parse the fence info>>=
-const KINDS: &str = "math, figure, table, macros, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -733,6 +744,10 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
             Some(l) => Ok(Fence::Macros(l)),
             None => Err(fence_err("a `macros` fence needs a `\\label{def:…}`")),
         },
+        "imports" => {
+            reject_modifiers(&mods, kind)?;
+            Ok(Fence::Imports)
+        }
         "html-escape" => {
             reject_modifiers(&mods, kind)?;
             Ok(Fence::HtmlEscape)

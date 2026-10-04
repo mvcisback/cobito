@@ -153,9 +153,13 @@ batch; \code{render} does the work.
 pub struct Renderer {
     dir: Option<PathBuf>,
     /// The document macro table: name → expansion, from every `macros` fence
-    /// (§6.4). It goes through KaTeX's `macros` option, *not* prepended to the
-    /// source, so a formula's copy-paste annotation stays just the formula.
+    /// (§6.4) plus the content-id macros of every import (§13). It goes through
+    /// KaTeX's `macros` option, *not* prepended to the source, so a formula's
+    /// copy-paste annotation stays just the formula.
     macros: BTreeMap<String, String>,
+    /// `alias.name` → `\<content-id>` for imported macros (§13). The renderer
+    /// rewrites `\alias.name` in a formula to the id before KaTeX.
+    rewrites: BTreeMap<String, String>,
 }
 
 impl Renderer {
@@ -172,12 +176,50 @@ renderer simply runs uncached.
 /// A cache that cannot be created is not fatal; weaving just gets slower. The
 /// macro table is every `macros` fence's definitions (name → expansion, §6.4),
 /// passed to KaTeX's `macros` option so the formula source stays clean.
-pub fn new(cache_root: &Path, macros: &BTreeMap<String, String>) -> Self {
+pub fn new(
+    cache_root: &Path,
+    macros: &BTreeMap<String, String>,
+    rewrites: &BTreeMap<String, String>,
+) -> Self {
     let dir = cache_root.join("math");
     Renderer {
         dir: std::fs::create_dir_all(&dir).ok().map(|()| dir),
         macros: macros.clone(),
+        rewrites: rewrites.clone(),
     }
+}
+
+/// Rewrite each `\alias.name` to its imported macro's content id (§13), so KaTeX
+/// sees a plain control word. The scan matches a whole `\letters.letters` token,
+/// so `\alg.RR` and `\alg.RRR` never confuse. A `\alias.name` with no import is
+/// left as written.
+fn apply_rewrites(&self, src: &str) -> String {
+    if self.rewrites.is_empty() {
+        return src.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(p) = rest.find('\\') {
+        out.push_str(&rest[..p]);
+        let after = &rest[p + 1..];
+        let a = after.chars().take_while(|c| c.is_ascii_alphabetic()).count();
+        if a > 0 && after[a..].starts_with('.') {
+            let tail = &after[a + 1..];
+            let b = tail.chars().take_while(|c| c.is_ascii_alphabetic()).count();
+            if b > 0 {
+                let key = format!("{}.{}", &after[..a], &tail[..b]);
+                if let Some(id) = self.rewrites.get(&key) {
+                    out.push_str(id);
+                    rest = &tail[b..];
+                    continue;
+                }
+            }
+        }
+        out.push('\\');
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 @
 One formula at a time, short-circuiting on the first error.
@@ -192,19 +234,22 @@ rather than falling back to raw text. The fresh result is written back through t
 atomic writer.
 <<render one formula>>=
 fn render(&self, m: &Math) -> Result<String, MathError> {
+    // Rewrite any `\alias.name` import reference to its content id (§13) first; the
+    // cache key is the actual KaTeX input.
+    let source = self.apply_rewrites(&m.source);
     let path = self
         .dir
         .as_ref()
-        .map(|d| d.join(format!("{}.html", hash(&m.source, m.display, &self.macros))));
+        .map(|d| d.join(format!("{}.html", hash(&source, m.display, &self.macros))));
     if let Some(p) = &path {
         if let Ok(cached) = std::fs::read_to_string(p) {
             return Ok(cached);
         }
     }
 
-    // The author's macros go through KaTeX's `macros` option, never prepended to
-    // the source (§6.4), so the formula's `<annotation>` — the copy-paste TeX —
-    // stays just the formula, with no `\def` preamble leaking into it.
+    // The macros go through KaTeX's `macros` option, never prepended to the source
+    // (§6.4), so the formula's `<annotation>` — the copy-paste TeX — stays just the
+    // formula, with no `\def` preamble leaking into it.
     let macros: HashMap<String, String> = self
         .macros
         .iter()
@@ -219,7 +264,7 @@ fn render(&self, m: &Math) -> Result<String, MathError> {
             message: e.to_string(),
         })?;
     // Hard error, never a silent fallback to raw text (§6.3).
-    let out = katex::render_with_opts(&m.source, &opts).map_err(|e| MathError {
+    let out = katex::render_with_opts(&source, &opts).map_err(|e| MathError {
         source: m.source.clone(),
         message: e.to_string(),
     })?;
@@ -267,7 +312,7 @@ mod tests {
 
     #[test]
     fn renders_inline_and_display() {
-        let r = Renderer::new(&tmpdir("render"), &BTreeMap::new());
+        let r = Renderer::new(&tmpdir("render"), &BTreeMap::new(), &BTreeMap::new());
         let out = r
             .render_all(&[
                 Math {
@@ -293,12 +338,12 @@ mod tests {
             source: r"\frac{1}{2}".into(),
             display: false,
         };
-        let first = Renderer::new(&dir, &BTreeMap::new())
+        let first = Renderer::new(&dir, &BTreeMap::new(), &BTreeMap::new())
             .render_all(std::slice::from_ref(&m))
             .unwrap();
         assert!(dir.join("math").read_dir().unwrap().count() > 0);
         // Second Renderer reads from disk rather than the JS engine.
-        let second = Renderer::new(&dir, &BTreeMap::new())
+        let second = Renderer::new(&dir, &BTreeMap::new(), &BTreeMap::new())
             .render_all(std::slice::from_ref(&m))
             .unwrap();
         assert_eq!(first, second);
@@ -322,7 +367,7 @@ mod tests {
     fn macros_expand_and_do_not_leak_into_the_annotation() {
         // A macro in the table expands the formula, so `\RR` renders instead of
         // failing as an unknown control sequence.
-        let r = Renderer::new(&tmpdir("macros"), &defs(&[("\\RR", "\\mathbb{R}")]));
+        let r = Renderer::new(&tmpdir("macros"), &defs(&[("\\RR", "\\mathbb{R}")]), &BTreeMap::new());
         let out = &r
             .render_all(&[Math {
                 source: "\\RR".into(),
@@ -337,7 +382,7 @@ mod tests {
         assert!(!out.contains("\\def"));
         assert!(!out.contains("\\mathbb"));
         // Without the macro, `\RR` is undefined and KaTeX errors (E020).
-        let bare = Renderer::new(&tmpdir("macros-bare"), &BTreeMap::new());
+        let bare = Renderer::new(&tmpdir("macros-bare"), &BTreeMap::new(), &BTreeMap::new());
         assert!(bare
             .render_all(&[Math {
                 source: "\\RR".into(),
@@ -348,7 +393,7 @@ mod tests {
 
     #[test]
     fn bad_math_is_e020() {
-        let r = Renderer::new(&tmpdir("bad"), &BTreeMap::new());
+        let r = Renderer::new(&tmpdir("bad"), &BTreeMap::new(), &BTreeMap::new());
         let err = r
             .render_all(&[Math {
                 source: r"\frac{1".into(),

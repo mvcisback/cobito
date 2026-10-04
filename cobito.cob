@@ -126,6 +126,7 @@ Each module carries the specification for its own job. This is the reading order
 | The weaver: rendering a code chunk | \code{src/weave.rs.cob} |
 | Syntax highlighting | \code{src/highlight.rs.cob} |
 | The node model and transclusion | \code{src/transclude.rs.cob} |
+| Importing macros from another forest | \code{src/import.rs.cob} |
 | Tangling | \code{src/tangle.rs.cob} |
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
@@ -299,6 +300,7 @@ introduces a code, it claims the next free number in this registry.
 | E033 | a highlight key names an unknown language | \code{main.rs} |
 | E034 | bare or unknown fence kind | \code{markdown.rs} |
 | E035 | recursive chunk expansion (cycle) | \code{tangle.rs} |
+| E036 | a macro import fails (unknown, cycle, or id clash) | \code{import.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

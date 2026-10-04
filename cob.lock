@@ -268,6 +268,18 @@ kind = "section"
 id = "vXmF"
 kind = "section"
 
+["src/import.rs.cob"."sec:code"]
+id = "uyrn"
+kind = "section"
+
+["src/import.rs.cob"."sec:out"]
+id = "eXKm"
+kind = "section"
+
+["src/import.rs.cob"."sec:why"]
+id = "7OfN"
+kind = "section"
+
 ["src/lock.rs.cob"."sec:5II3"]
 id = "5II3"
 kind = "section"

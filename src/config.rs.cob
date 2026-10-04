@@ -166,8 +166,12 @@ weave reads it offline.
 pub struct Import {
     #[serde(default)]
     pub path: Option<String>,
+    // `git`/`rev` are read by `cob fetch` (§13), which pins a remote import into a
+    // local path before a weave reads it; a weave itself only uses `path`.
+    #[allow(dead_code)]
     #[serde(default)]
     pub git: Option<String>,
+    #[allow(dead_code)]
     #[serde(default)]
     pub rev: Option<String>,
 }

@@ -55,6 +55,7 @@ this is the crate root. Adding a module means adding one line.
 mod config;
 mod diag;
 mod highlight;
+mod import;
 mod lock;
 mod markdown;
 mod markup;
@@ -257,6 +258,19 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // §13 imports: main reads each local import's forest.json into a macro table and
+    // hands them to the weave, so the weave itself reads no files (and stays
+    // offline). A git import is fetched by `cob fetch` into a path first (deferred).
+    let mut loaded: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for (name, imp) in &cfg.imports {
+        if let Some(path) = &imp.path {
+            if let Ok(json) = std::fs::read_to_string(Path::new(path).join("forest.json")) {
+                if let Some(macros) = site::read_forest_macros(&json) {
+                    loaded.insert(name.clone(), macros);
+                }
+            }
+        }
+    }
     match weave::write_site(
         &doc,
         Path::new(&out),
@@ -264,6 +278,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         Path::new("cob.lock"),
         meta,
         &lang_cfg,
+        &loaded,
         archive,
         mode,
     ) {
