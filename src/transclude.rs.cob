@@ -77,7 +77,7 @@ and CSS drops it in the left margin.
 The forest (§13) lets one project transclude another's node. The author writes
 \code{\transclude{sec:name@alias}}, where \code{alias} is an imported forest (a
 \code{[import.<alias>]} table, §6.1). cob reads that forest's label index (from its
-\code{forest.json}) to get the node's frozen opaque id, then points the
+\code{cob-exports.json}) to get the node's frozen opaque id, then points the
 \code{<cob-transclude>} \code{src} at the other forest's own node page,
 \code{<url>/n/<id>.html}. The element and its shadow-root isolation are exactly the
 same as for a local node; only the \code{src} is foreign. So the body stays stored

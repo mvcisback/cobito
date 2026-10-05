@@ -190,9 +190,12 @@ pub fn new(
 }
 
 /// Rewrite each `\alias.name` to its imported macro's content id (§13), so KaTeX
-/// sees a plain control word. The scan matches a whole `\letters.letters` token,
-/// so `\alg.RR` and `\alg.RRR` never confuse. A `\alias.name` with no import is
-/// left as written.
+/// sees a plain, letters-only control word. The alias is a letter then
+/// alphanumerics (so a versioned alias like `alg2` works); the macro name is a
+/// KaTeX control word (letters). The alias never reaches KaTeX — it is replaced by
+/// the content id — so a digit in the alias is fine. The scan matches a whole
+/// token, so `\alg.RR` and `\alg.RRR` never confuse; a `\alias.name` with no import
+/// is left as written.
 fn apply_rewrites(&self, src: &str) -> String {
     if self.rewrites.is_empty() {
         return src.to_string();
@@ -202,8 +205,10 @@ fn apply_rewrites(&self, src: &str) -> String {
     while let Some(p) = rest.find('\\') {
         out.push_str(&rest[..p]);
         let after = &rest[p + 1..];
-        let a = after.chars().take_while(|c| c.is_ascii_alphabetic()).count();
-        if a > 0 && after[a..].starts_with('.') {
+        // The alias must start with a letter, then may carry digits (`alg2`).
+        let starts_alpha = after.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+        let a = after.chars().take_while(|c| c.is_ascii_alphanumeric()).count();
+        if starts_alpha && after[a..].starts_with('.') {
             let tail = &after[a + 1..];
             let b = tail.chars().take_while(|c| c.is_ascii_alphabetic()).count();
             if b > 0 {
@@ -389,6 +394,30 @@ mod tests {
                 display: false,
             }])
             .is_err());
+    }
+
+    #[test]
+    fn a_versioned_alias_with_a_digit_rewrites_to_its_content_id() {
+        // An import alias may carry a digit (`alg2`), e.g. two versions of one
+        // forest. `\alg2.RR` is rewritten to the letters-only content id before
+        // KaTeX, which only ever sees the id (§13).
+        let mut rewrites = BTreeMap::new();
+        rewrites.insert("alg2.RR".to_string(), "\\aliasid".to_string());
+        let r = Renderer::new(
+            &tmpdir("digit-alias"),
+            &defs(&[("\\aliasid", "\\mathbb{R}")]),
+            &rewrites,
+        );
+        let out = &r
+            .render_all(&[Math {
+                source: "\\alg2.RR".into(),
+                display: false,
+            }])
+            .expect("a digit-bearing alias is recognized and rewritten")[0];
+        assert!(out.contains("katex"));
+        // KaTeX never saw `\alg2` — the alias was rewritten to the content id, so
+        // the scanner recognized it despite the digit.
+        assert!(!out.contains("alg2"));
     }
 
     #[test]

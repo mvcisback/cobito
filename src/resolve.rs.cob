@@ -419,7 +419,7 @@ page, page-qualified when it crosses — and to display text, kept from the auth
 if present, otherwise the label's own text. An unknown target is E015.
 
 A target of the form \code{label@alias} points into an imported forest (§13). cob
-reads that forest's label index (from its \code{forest.json}), so the href lands on the
+reads that forest's label index (from its \code{cob-exports.json}), so the href lands on the
 deployed page \code{<url>/<page>.html#<anchor>}, and the display text is the kind word
 and the target's frozen opaque id, the same shape a local ref shows. An unknown
 alias or an unknown label in a known forest is E015, the same as any other
@@ -781,6 +781,7 @@ fn a_cross_document_ref_targets_the_imported_forest() {
             index: ForestIndex {
                 macros: BTreeMap::new(),
                 labels,
+                ..Default::default()
             },
         },
     );

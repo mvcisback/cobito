@@ -81,7 +81,7 @@ pub struct Imports {
 }
 @
 Two faults. An \code{\import} can name a source that was not loaded (no \code{[import.…]},
-or no \code{forest.json}). A source's macros can refer to themselves in a loop. Both
+or no \code{cob-exports.json}). A source's macros can refer to themselves in a loop. Both
 are E036.
 <<the import error>>=
 #[derive(Debug, PartialEq, Eq)]

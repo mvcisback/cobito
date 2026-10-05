@@ -615,26 +615,33 @@ A forest's importable index (§13) is a separate, small artifact: what another
 forest reads to \code{\import} this one. It carries the exported macro table (name →
 expansion) and the label index — each public label's id, kind, page, and anchor —
 so a cross-document \code{\ref}/\code{\transclude} can resolve against it. The label index
-reuses \code{site.json}'s own label table. \code{schema} is versioned like \code{site.json}.
+reuses \code{site.json}'s own label table. \code{schema} is a semver string: a consumer
+accepts the same major (a newer minor only adds fields it ignores) and rejects a
+newer major (E038), so a forest cannot be read by a cob too old to understand it.
 <<the forest index>>=
+/// The current `cob-exports.json` schema (§13). Semver: a consumer rejects a newer
+/// major (E038).
+pub const EXPORTS_SCHEMA: &str = "1.0.0";
+const EXPORTS_SCHEMA_MAJOR: u64 = 1;
+
 /// The importable index of a forest (§13): the macro table and the label table
 /// another forest reads to `\import` this one. The labels reuse `site.json`'s own.
 #[derive(Serialize)]
-struct ForestJson<'a> {
-    schema: u32,
+struct ExportsJson<'a> {
+    schema: &'static str,
     macros: &'a BTreeMap<String, String>,
     labels: &'a BTreeMap<String, Label>,
 }
 
-/// Pretty, deterministic JSON for `forest.json` (§13): schema, the macro table,
+/// Pretty, deterministic JSON for `cob-exports.json` (§13): schema, the macro table,
 /// and the label index (`site.json`'s own label table).
-pub fn to_forest_json(macros: &BTreeMap<String, String>, labels: &BTreeMap<String, Label>) -> String {
-    let fj = ForestJson {
-        schema: 1,
+pub fn to_exports_json(macros: &BTreeMap<String, String>, labels: &BTreeMap<String, Label>) -> String {
+    let fj = ExportsJson {
+        schema: EXPORTS_SCHEMA,
         macros,
         labels,
     };
-    let mut s = serde_json::to_string_pretty(&fj).expect("ForestJson serializes");
+    let mut s = serde_json::to_string_pretty(&fj).expect("ExportsJson serializes");
     s.push('\n');
     s
 }
@@ -642,7 +649,7 @@ pub fn to_forest_json(macros: &BTreeMap<String, String>, labels: &BTreeMap<Strin
 /// One label as another forest reads it (§13): owned, because the producer's
 /// `Label.kind` is a `&'static str` that serializes to a string the consumer
 /// deserializes into an owned one. Read by cross-document `\ref`/`\transclude`.
-#[derive(serde::Deserialize, Clone)]
+#[derive(serde::Deserialize, Clone, Debug)]
 pub struct ForestLabel {
     #[serde(default)]
     pub id: Option<String>,
@@ -652,11 +659,14 @@ pub struct ForestLabel {
     pub anchor: String,
 }
 
-/// An imported forest's index (§13): its exported macros and label table. A file
-/// that does not parse yields `None`; the import then surfaces as E036 when a
-/// document actually `\import`s it.
-#[derive(serde::Deserialize, Default, Clone)]
+/// An imported forest's index (§13): its schema, exported macros, and label table.
+/// A file that does not parse yields `None`; the import then surfaces as E036 when
+/// a document actually `\import`s it.
+#[derive(serde::Deserialize, Default, Clone, Debug)]
 pub struct ForestIndex {
+    /// The producer's `cob-exports.json` schema (semver); checked by `read_exports`.
+    #[serde(default)]
+    pub schema: String,
     #[serde(default)]
     pub macros: BTreeMap<String, String>,
     /// The label index, read by cross-document `\ref`/`\transclude` (§13).
@@ -674,8 +684,25 @@ pub struct ForestRef {
     pub index: ForestIndex,
 }
 
-pub fn read_forest(json: &str) -> Option<ForestIndex> {
-    serde_json::from_str(json).ok()
+/// Parse a `cob-exports.json`. A file that does not parse is `Ok(None)` — a
+/// lenient skip, as before. A file whose major schema is newer than this cob
+/// understands is a hard error (E038), so a forest is never read by a cob too old
+/// to understand it; a newer minor only adds fields cob ignores, so it is accepted.
+pub fn read_exports(json: &str) -> Result<Option<ForestIndex>, String> {
+    let index = match serde_json::from_str::<ForestIndex>(json) {
+        Ok(i) => i,
+        Err(_) => return Ok(None),
+    };
+    if let Ok(v) = semver::Version::parse(&index.schema) {
+        if v.major > EXPORTS_SCHEMA_MAJOR {
+            return Err(format!(
+                "error[E038]: cob-exports.json schema {} is newer than this cob \
+                 supports ({EXPORTS_SCHEMA}); upgrade cob",
+                index.schema
+            ));
+        }
+    }
+    Ok(Some(index))
 }
 @
 The tests pin the hoist: one sidenote is lifted and id-tagged on both sides, the
@@ -715,8 +742,12 @@ fn forest_index_carries_the_macros() {
             id: Some("k3f9".to_string()),
         },
     );
-    let json = to_forest_json(&macros, &labels);
-    assert!(json.contains("\"schema\": 1"));
+    let json = to_exports_json(&macros, &labels);
+    assert!(json.contains("\"schema\": \"1.0.0\""));
+    // A consumer accepts the same major and rejects a newer one.
+    assert!(read_exports(&json).unwrap().is_some());
+    let newer = json.replace("1.0.0", "2.0.0");
+    assert!(read_exports(&newer).unwrap_err().starts_with("error[E038]"));
     assert!(json.contains("\"\\\\RR\": \"\\\\mathbb{R}\""));
     assert!(json.contains("\"\\\\abs\": \"\\\\lvert #1 \\\\rvert\""));
     // Deterministic: BTreeMap fixes the order by byte, so `\RR` (uppercase R,

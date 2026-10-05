@@ -55,20 +55,36 @@ its opaque id, which is rename- and move-proof.
 
 ## The lock file {#sec:GIRD}
 
-\code{cob.lock} is a committed, human-readable, greppable map from \code{label} to
-\code{{ id, kind }}, keyed by source file so note-local labels stay distinct:
+\code{cob.lock} is a committed JSON file cob owns — not meant for hand-editing, but
+still greppable. It has three parts: a \code{schema} version, a \code{labels} map from
+\code{label} to \code{{ id, kind }} keyed by source file (so note-local labels stay
+distinct), and a \code{fetch} section of remote-import pins (§13). The \code{fetch} section
+is absent when there are no remote imports.
 
-```verbatim \lang{toml}
-# cob.lock — generated; edit only to delete a retired label.
-["parser.cob"]
-"fig:pipeline" = { id = "k3f9", kind = "figure" }
-"tbl:api"      = { id = "7g2A", kind = "table" }
-"eq:wrap"      = { id = "Qx0m", kind = "equation" }
+```verbatim \lang{json}
+{
+  "schema": 1,
+  "labels": {
+    "parser.cob": {
+      "fig:pipeline": { "id": "k3f9", "kind": "figure" },
+      "tbl:api":      { "id": "7g2A", "kind": "table" },
+      "eq:wrap":      { "id": "Qx0m", "kind": "equation" }
+    }
+  },
+  "fetch": {
+    "algebra": { "git": "git+ssh://…/algebra.cob", "rev": "v1.2.0", "sha": "…" }
+  }
+}
 ```
 
 \code{kind} is carried from the fence or tag, not parsed off the id. The label prefix
 survives only as the E030 sanity check (§6.4); it no longer decides numbering or
 identity.
+
+One file holds both the ids and the fetch pins, so a project directory does not
+fill with cob's own dot-files. An older TOML \code{cob.lock} still loads — cob reads it
+and writes JSON on the next save, so the format upgrades in place and no id
+changes.
 
 ## Mint on miss, freeze under --locked {#sec:YZLc}
 
@@ -101,7 +117,11 @@ base62 speller, and the lock operations.
 
 <<a lock entry>>
 
+<<a fetch pin>>
+
 <<the lock mode>>
+
+<<the on-disk document>>
 
 <<the lock file>>
 
@@ -157,6 +177,27 @@ pub struct LockEntry {
     pub kind: Kind,
 }
 @
+A fetch pin records what a remote import resolved to, so a later weave reads a
+cached index offline and a build stays reproducible (§13). It is the \code{git} URL and
+the author's request — a semver requirement, or a raw \code{rev} for an escape-hatch
+import — the resolved semver \code{version} (absent for a \code{rev} import), and the concrete
+commit \code{sha} \code{cob fetch} pinned them to. \code{cob fetch} writes it; weave reads it to
+find the cache.
+<<a fetch pin>>=
+/// One resolved remote import (§13): the `git` URL, the author's request (`req` —
+/// a semver requirement, or a raw `rev`), the resolved semver `version` (absent for
+/// a `rev` import), and the commit `sha` `cob fetch` pinned to. Keyed by import
+/// alias in the lock's `fetch` section, it lets a later weave read the cached index
+/// offline and a `cob fetch` decide whether the pin still satisfies the request.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct FetchPin {
+    pub git: String,
+    pub req: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub sha: String,
+}
+@
 Whether a weave may mint fresh ids, or must find every label already present.
 \code{Locked} is CI and the read-only Nix sandbox, where minting is forbidden (§7.1).
 <<the lock mode>>=
@@ -168,16 +209,46 @@ pub enum LockMode {
     Locked,
 }
 @
-The lock is \code{file → (label → entry)}. \code{used} is a derived index of every id in
-play, so a mint rejects a collision in one lookup. It is rebuilt on load, never
-serialized.
+The on-disk document is the JSON cob reads and writes: a schema version, the labels
+map, and the fetch pins. The \code{fetch} map is skipped when empty, so a project with no
+remote imports keeps a clean two-key file. The \code{schema} is a semver string: cob
+accepts a lock of the same major (a newer minor only adds fields it can ignore) and
+rejects a newer major (E038), the way Cargo rejects a lock from a newer toolchain. A
+missing \code{schema} or \code{fetch} defaults, so a hand-trimmed or older JSON lock still
+loads.
+<<the on-disk document>>=
+/// The JSON shape of `cob.lock` (§7.1): a semver schema, the `file → (label →
+/// entry)` id map, and the remote-import pins (§13). `fetch` is skipped when empty
+/// so a project with no imports keeps a clean file.
+#[derive(Serialize, Deserialize, Default)]
+struct LockDoc {
+    #[serde(default = "default_schema")]
+    schema: String,
+    #[serde(default)]
+    labels: BTreeMap<String, BTreeMap<String, LockEntry>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    fetch: BTreeMap<String, FetchPin>,
+}
+
+/// The current `cob.lock` schema (§7.1). Semver: a newer major is rejected (E038).
+pub const SCHEMA: &str = "1.0.0";
+const SCHEMA_MAJOR: u64 = 1;
+
+fn default_schema() -> String {
+    SCHEMA.to_string()
+}
+@
+The lock is \code{file → (label → entry)} plus the fetch pins. \code{used} is a derived
+index of every id in play, so a mint rejects a collision in one lookup. It is
+rebuilt on load, never serialized.
 <<the lock file>>=
-/// `file → (label → entry)`. `used` is a derived index of every id in play, so a
-/// mint can reject a collision in one lookup; it is rebuilt on load, never
-/// serialized.
-#[derive(Default)]
+/// `file → (label → entry)`, the remote-import pins, and `used` — a derived index
+/// of every id in play, so a mint can reject a collision in one lookup. `used` is
+/// rebuilt on load, never serialized.
+#[derive(Default, Debug)]
 pub struct LockFile {
     files: BTreeMap<String, BTreeMap<String, LockEntry>>,
+    fetch: BTreeMap<String, FetchPin>,
     used: BTreeSet<String>,
 }
 @
@@ -191,6 +262,8 @@ pub enum LockError {
     /// E032 — `cob.lock` could not be read/parsed or written.
     Io(std::io::Error),
     Parse(String),
+    /// E038 — `cob.lock` has a newer major schema than this cob understands.
+    Schema { found: String },
 }
 
 impl fmt::Display for LockError {
@@ -203,6 +276,11 @@ impl fmt::Display for LockError {
             ),
             LockError::Io(e) => write!(f, "error[E032]: cob.lock: {e}"),
             LockError::Parse(m) => write!(f, "error[E032]: cob.lock: {m}"),
+            LockError::Schema { found } => write!(
+                f,
+                "error[E038]: cob.lock schema {found} is newer than this cob \
+                 supports ({SCHEMA}); upgrade cob"
+            ),
         }
     }
 }
@@ -282,41 +360,100 @@ impl LockFile {
 
     <<a file's labels>>
 
+    <<the fetch pins>>
+
     <<count of frozen ids>>
 }
 @
+The fetch pins are read and written by \code{cob fetch} and read by weave (§13).
+\code{fetch_pin} finds the pinned commit for an import alias; \code{set_fetch_pin} records
+one; \code{fetch_pins} lists them for a report.
+<<the fetch pins>>=
+/// The pinned commit for a remote import alias, if `cob fetch` recorded one (§13).
+pub fn fetch_pin(&self, alias: &str) -> Option<&FetchPin> {
+    self.fetch.get(alias)
+}
+
+/// Record (or replace) the pin for a remote import alias (§13).
+pub fn set_fetch_pin(&mut self, alias: String, pin: FetchPin) {
+    self.fetch.insert(alias, pin);
+}
+
+/// Every import alias and its pin, in sorted order (for `cob fetch` reporting).
+pub fn fetch_pins(&self) -> impl Iterator<Item = (&String, &FetchPin)> {
+    self.fetch.iter()
+}
+@
 An absent lock is an empty lock, not an error — the first \code{cob lock} or \code{weave}
-mints into it. Loading rebuilds the \code{used} index from every stored id.
+mints into it. cob reads the JSON document; a file that is not JSON is read as a
+legacy TOML label map and upgraded on the next save, so no id is lost. Loading
+rebuilds the \code{used} index from every stored id.
 <<load the lock>>=
 /// Load `cob.lock`; an absent file is an empty lock, not an error (the first
-/// `cob lock`/`weave` mints into it).
+/// `cob lock`/`weave` mints into it). The current format is JSON (§7.1); a legacy
+/// TOML label map still loads and upgrades to JSON on the next save.
 pub fn load(path: &Path) -> Result<LockFile, LockError> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(LockFile::default()),
         Err(e) => return Err(LockError::Io(e)),
     };
-    let files: BTreeMap<String, BTreeMap<String, LockEntry>> =
-        toml::from_str(&text).map_err(|e| LockError::Parse(e.to_string()))?;
+    let doc = Self::parse_lock(&text)?;
+    Self::check_schema(&doc.schema)?;
     let mut used = BTreeSet::new();
-    for inner in files.values() {
+    for inner in doc.labels.values() {
         for entry in inner.values() {
             used.insert(entry.id.clone());
         }
     }
-    Ok(LockFile { files, used })
+    Ok(LockFile {
+        files: doc.labels,
+        fetch: doc.fetch,
+        used,
+    })
+}
+
+/// Parse the lock text: JSON first (the current format), then — as a one-version
+/// bridge — a legacy TOML `file → (label → entry)` map with no fetch pins.
+fn parse_lock(text: &str) -> Result<LockDoc, LockError> {
+    if let Ok(doc) = serde_json::from_str::<LockDoc>(text) {
+        return Ok(doc);
+    }
+    let labels: BTreeMap<String, BTreeMap<String, LockEntry>> =
+        toml::from_str(text).map_err(|e| LockError::Parse(e.to_string()))?;
+    Ok(LockDoc {
+        schema: SCHEMA.to_string(),
+        labels,
+        fetch: BTreeMap::new(),
+    })
+}
+
+/// Reject a lock whose major schema is newer than this cob understands (E038);
+/// a newer minor only adds fields cob ignores, so it is accepted. An unparseable
+/// schema is treated as the current one, so a hand-edited lock is not fatal.
+fn check_schema(schema: &str) -> Result<(), LockError> {
+    match semver::Version::parse(schema) {
+        Ok(v) if v.major > SCHEMA_MAJOR => Err(LockError::Schema {
+            found: schema.to_string(),
+        }),
+        _ => Ok(()),
+    }
 }
 @
-Deterministic by construction: sorted keys from the BTreeMaps and no timestamp,
-behind a fixed two-line header. Byte-stable output is what lets CI diff the lock.
+Deterministic by construction: sorted keys from the BTreeMaps and no timestamp.
+\code{serde_json}'s pretty printer is stable for a fixed input, so the output is
+byte-stable, which is what lets CI diff the lock.
 <<save the lock>>=
-/// Write the lock deterministically (BTreeMaps → sorted keys, no timestamp).
+/// Write the lock deterministically as JSON (BTreeMaps → sorted keys, no timestamp).
 pub fn save(&self, path: &Path) -> Result<(), LockError> {
-    let body = toml::to_string(&self.files).map_err(|e| LockError::Parse(e.to_string()))?;
-    let text = format!(
-        "# cob.lock — generated (§7.1). label → frozen opaque id.\n\
-         # Edit only to retire a label; ids never change once minted.\n{body}"
-    );
+    let doc = LockDoc {
+        schema: SCHEMA.to_string(),
+        labels: self.files.clone(),
+        fetch: self.fetch.clone(),
+    };
+    let mut text =
+        serde_json::to_string_pretty(&doc).map_err(|e| LockError::Parse(e.to_string()))?;
+    text.push('\n');
     std::fs::write(path, text).map_err(LockError::Io)
 }
 @
@@ -428,8 +565,9 @@ pub fn count(&self) -> usize {
 }
 @
 The tests pin the frozen-id contract: minting is idempotent per label, distinct
-labels get distinct ids, a collision is re-rolled, the TOML round-trips and re-saves
-byte-stable, and an absent lock loads empty.
+labels get distinct ids, a collision is re-rolled, the JSON round-trips and re-saves
+byte-stable, a legacy TOML lock upgrades without changing an id, a fetch pin
+round-trips, a newer major schema is rejected, and an absent lock loads empty.
 <<the tests>>=
 #[cfg(test)]
 mod tests {
@@ -476,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn toml_round_trips() {
+    fn json_round_trips() {
         let dir = std::env::temp_dir().join("cob-lock-roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("cob.lock");
@@ -484,7 +622,21 @@ mod tests {
         let mut m = Minter::seeded(99);
         let fig = lock.mint("parser.cob", "fig:pipeline", Kind::Figure, &mut m);
         let tbl = lock.mint("parser.cob", "tbl:api", Kind::Table, &mut m);
+        // A fetch pin rides in the same file (§13).
+        lock.set_fetch_pin(
+            "algebra".to_string(),
+            FetchPin {
+                git: "ssh://h/a.cob".to_string(),
+                req: "^1.2".to_string(),
+                version: Some("1.3.0".to_string()),
+                sha: "deadbeef".to_string(),
+            },
+        );
         lock.save(&path).unwrap();
+        // The committed file is JSON with a semver schema.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.trim_start().starts_with('{'));
+        assert!(on_disk.contains("\"schema\": \"1.0.0\""));
 
         let reloaded = LockFile::load(&path).unwrap();
         assert_eq!(reloaded.get("parser.cob", "fig:pipeline").unwrap().id, fig);
@@ -492,15 +644,57 @@ mod tests {
             reloaded.get("parser.cob", "tbl:api").unwrap().kind,
             Kind::Table
         );
+        assert_eq!(reloaded.fetch_pin("algebra").unwrap().sha, "deadbeef");
+        assert_eq!(
+            reloaded.fetch_pin("algebra").unwrap().version.as_deref(),
+            Some("1.3.0")
+        );
         // The reload rebuilds `used`, so a mint after load still avoids collisions.
         let _ = tbl;
         // Saving the reloaded lock is byte-stable.
         let path2 = dir.join("cob.lock.2");
         reloaded.save(&path2).unwrap();
+        assert_eq!(on_disk, std::fs::read_to_string(&path2).unwrap());
+    }
+
+    #[test]
+    fn legacy_toml_lock_upgrades_without_changing_an_id() {
+        // An older TOML `cob.lock` must still load, keep its ids, and re-save as
+        // JSON (§7.1 in-place upgrade).
+        let dir = std::env::temp_dir().join("cob-lock-legacy");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cob.lock");
+        std::fs::write(
+            &path,
+            "[\"parser.cob\"]\n\"fig:pipeline\" = { id = \"k3f9\", kind = \"figure\" }\n",
+        )
+        .unwrap();
+        let lock = LockFile::load(&path).unwrap();
+        assert_eq!(lock.get("parser.cob", "fig:pipeline").unwrap().id, "k3f9");
+        // Re-save upgrades the format to JSON, id untouched.
+        lock.save(&path).unwrap();
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.trim_start().starts_with('{'));
+        assert!(on_disk.contains("\"k3f9\""));
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            std::fs::read_to_string(&path2).unwrap()
+            LockFile::load(&path).unwrap().get("parser.cob", "fig:pipeline").unwrap().id,
+            "k3f9"
         );
+    }
+
+    #[test]
+    fn a_newer_major_schema_is_rejected() {
+        // A lock written by a newer cob (major schema 2) must not load into this
+        // one (§7.1 E038); a same-major newer minor is fine.
+        let dir = std::env::temp_dir().join("cob-lock-schema");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cob.lock");
+        std::fs::write(&path, "{ \"schema\": \"2.0.0\", \"labels\": {} }").unwrap();
+        let err = LockFile::load(&path).unwrap_err();
+        assert!(err.to_string().starts_with("error[E038]"));
+        // A newer minor of the same major loads.
+        std::fs::write(&path, "{ \"schema\": \"1.9.0\", \"labels\": {} }").unwrap();
+        assert!(LockFile::load(&path).is_ok());
     }
 
     #[test]

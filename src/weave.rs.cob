@@ -374,7 +374,7 @@ pub struct Site {
     /// `--archive`. `meta` is a placeholder here; `write_site` fills it in.
     pub json: SiteJson,
     /// This document's macro table (name → expansion) from its `macros` fences
-    /// (§6.4). Written to `forest.json` under `--archive` so another forest can
+    /// (§6.4). Written to `cob-exports.json` under `--archive` so another forest can
     /// `\import` it (§13).
     pub macros: BTreeMap<String, String>,
 }
@@ -1095,8 +1095,8 @@ pub fn write_site(
         // another forest can `\import`/`\ref`/`\transclude` this one without
         // re-rendering it.
         std::fs::write(
-            out.join("forest.json"),
-            site::to_forest_json(&site.macros, &site.json.labels),
+            out.join("cob-exports.json"),
+            site::to_exports_json(&site.macros, &site.json.labels),
         )
         .map_err(WeaveError::Io)?;
     }

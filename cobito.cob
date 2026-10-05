@@ -127,6 +127,7 @@ Each module carries the specification for its own job. This is the reading order
 | Syntax highlighting | \code{src/highlight.rs.cob} |
 | The node model and transclusion | \code{src/transclude.rs.cob} |
 | Importing macros from another forest | \code{src/import.rs.cob} |
+| Fetching a remote forest import | \code{src/fetch.rs.cob} |
 | Tangling | \code{src/tangle.rs.cob} |
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
@@ -250,9 +251,9 @@ local namespace alias (§13). The slices, in order:
 - **Macro import — done.** An \code{imports} fence binds a source to an alias
   (\code{\import algebra as alg}); \code{\alg.RR} uses its macros. Each imported macro gets a
   content id (a merkle hash), so it is clash-free and shared across forests
-  (\code{import.rs.cob}). A forest exports its macro table as \code{forest.json}.
+  (\code{import.rs.cob}). A forest exports its macro table as \code{cob-exports.json}.
 - **Cross-document \code{\ref}/\code{\transclude} — done.** \code{\ref{sec:x@alg}} and
-  \code{\transclude{def:y@alg}} resolve against the import's \code{forest.json}, which now
+  \code{\transclude{def:y@alg}} resolve against the import's \code{cob-exports.json}, which now
   carries a label index (\code{label} to id, kind, page, and anchor). A reference lands on
   the forest's deployed page, \code{<url>/<page>.html#<anchor>}, with the kind-qualified
   opaque id as its text; the \code{url} comes from the \code{[import.<alias>]} table
@@ -260,8 +261,19 @@ local namespace alias (§13). The slices, in order:
   at the other forest's node page (\code{<url>/n/<id>.html}), so the lazy element already
   handles it. An unknown alias or label is E015 for a \code{\ref}, W106 for a
   \code{\transclude}, the same as any local miss.
-- **\code{cob fetch} — later.** A \code{git}-URL import is pinned into a local cache by a
-  separate \code{cob fetch} step, so a weave reads only a path and stays offline.
+- **\code{cob fetch} + versioning — done.** A \code{git}-URL import is pinned to a commit
+  and cached by a separate \code{cob fetch} step (\code{fetch.rs.cob}), so a weave reads only
+  the cache and stays offline. A forest publishes releases as **semver git tags**,
+  each tag's root carrying \code{cob-exports.json}; an import names a **semver
+  requirement** (\code{version = "^1.2"}), or a raw \code{rev} as an escape hatch. \code{cob fetch}
+  clones the ref with \code{gix}, picks the highest tag matching the requirement, reads
+  that one file, caches it at \code{.cob-cache/imports/<sha>/}, and records the pin
+  (\code{git}, \code{req}, \code{version}, \code{sha}) in the \code{fetch} section of \code{cob.lock}. \code{cob fetch}
+  **honors the lock** (resolves only what is new or changed); \code{cob update [alias]}
+  re-resolves to the newest matching release; a moved release tag is E037. The
+  \code{cob.lock} and \code{cob-exports.json} schemas are **semver and enforced**: a newer
+  major is E038. A weave resolves a \code{git} import through its pin; an unfetched one
+  is E037. A local \code{path} import needs no fetch and wins when both are set.
 - **Reverse backlinks — later.** A forest-wide index computes "imported by" and
   cross-forest "referenced by", which a single document's build cannot see.
 
@@ -330,6 +342,8 @@ introduces a code, it claims the next free number in this registry.
 | E034 | bare or unknown fence kind | \code{markdown.rs} |
 | E035 | recursive chunk expansion (cycle) | \code{tangle.rs} |
 | E036 | a macro import fails (unknown, cycle, or id clash) | \code{import.rs} |
+| E037 | a remote import fetch fails, or a git import is not fetched | \code{fetch.rs} |
+| E038 | a \code{cob.lock} or \code{cob-exports.json} has a newer major schema | \code{lock.rs}, \code{site.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

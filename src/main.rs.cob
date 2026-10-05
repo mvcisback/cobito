@@ -29,6 +29,8 @@ it does not.
 
 <<the weave command>>
 
+<<the fetch command>>
+
 <<build the document once>>
 
 <<the lock command>>
@@ -54,6 +56,7 @@ this is the crate root. Adding a module means adding one line.
 <<the module tree>>=
 mod config;
 mod diag;
+mod fetch;
 mod highlight;
 mod import;
 mod lock;
@@ -87,6 +90,8 @@ cob — web-first literate programming (early scaffold)
 
 USAGE:
     cob weave <file.cob>...        weave to _site/ (single page; M2 adds splitting)
+    cob fetch                     pin new/changed git imports, cache their index (§13)
+    cob update [alias]            re-resolve git imports to the newest matching release (§13)
     cob lock <file.cob>...         mint frozen ids for every label into cob.lock (§7.1)
     cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     cob labels <file.cob>          list the file's label → id map from cob.lock
@@ -127,6 +132,8 @@ fn main() -> ExitCode {
         Some(("dump-ir", files)) if !files.is_empty() => dump_ir(files),
         Some(("dump-model", files)) if !files.is_empty() => dump_model(files),
         Some(("weave", args)) if !args.is_empty() => weave_cmd(args),
+        Some(("fetch", rest)) if rest.is_empty() => fetch_cmd(),
+        Some(("update", rest)) if rest.len() <= 1 => update_cmd(rest.first().map(String::as_str)),
         Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
         Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
@@ -258,17 +265,39 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // §13 imports: main reads each local import's forest.json into a forest ref
-    // (its index plus the deployed url) and hands them to the weave, so the weave
-    // itself reads no files (and stays offline). A git import is fetched by
-    // `cob fetch` into a path first (deferred).
+    // §13 imports: main reads each import's cob-exports.json into a forest ref (its
+    // index plus the deployed url) and hands them to the weave, so the weave
+    // itself reads no files (and stays offline). A local `path` is read directly;
+    // a `git` import resolves through its `cob.lock` pin to the fetch cache
+    // (`cob fetch` put it there), and a `git` import with no pin is E037.
+    let import_lock = match lock::LockFile::load(Path::new("cob.lock")) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let cache_root = Path::new(".cob-cache");
     let mut loaded: BTreeMap<String, site::ForestRef> = BTreeMap::new();
     for (name, imp) in &cfg.imports {
-        if let Some(path) = &imp.path {
-            if let Ok(json) = std::fs::read_to_string(Path::new(path).join("forest.json")) {
-                if let Some(index) = site::read_forest(&json) {
+        let dir = match fetch::index_dir(name, imp, &import_lock, cache_root) {
+            Ok(Some(dir)) => dir,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Ok(json) = std::fs::read_to_string(dir.join("cob-exports.json")) {
+            match site::read_exports(&json) {
+                Ok(Some(index)) => {
                     let url = imp.url.clone().unwrap_or_default();
                     loaded.insert(name.clone(), site::ForestRef { url, index });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::FAILURE;
                 }
             }
         }
@@ -300,6 +329,59 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             if deny_warnings && warnings > 0 {
                 eprintln!("cob: {warnings} warning(s); failing due to --deny-warnings");
                 return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The fetch and update commands pin remote imports (§13). Both load \code{cob.toml} and
+the lock, resolve each \code{git} import into the cache, write the grown lock, and
+report each pinned commit; they never weave, so they are the commands that may
+touch the network. \code{fetch} honors existing pins (resolving only what is new or
+changed); \code{update} re-resolves to the newest matching release — all imports, or one
+named alias. They share one worker.
+<<the fetch command>>=
+fn fetch_cmd() -> ExitCode {
+    run_fetch(fetch::Mode::Fetch)
+}
+
+fn update_cmd(alias: Option<&str>) -> ExitCode {
+    run_fetch(fetch::Mode::Update(alias.map(str::to_string)))
+}
+
+fn run_fetch(mode: fetch::Mode) -> ExitCode {
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lock_path = Path::new("cob.lock");
+    let mut lock = match lock::LockFile::load(lock_path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match fetch::run(&cfg, &mut lock, Path::new(".cob-cache"), &mode) {
+        Ok(fetched) => {
+            if let Err(e) = lock.save(lock_path) {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+            if fetched.is_empty() {
+                println!("cob: imports are up to date");
+            }
+            for f in &fetched {
+                let short: String = f.sha.chars().take(12).collect();
+                println!("pinned {} @ {short}", f.alias);
             }
             ExitCode::SUCCESS
         }

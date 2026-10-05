@@ -11,10 +11,12 @@ description = "cobito — a web-first literate programming system (a small spide
 embed-assets = []
 
 [dependencies]
+gix = { version = "0.88.0", default-features = false, features = ["blocking-network-client", "sha1", "revision"] }
 katex = "0.4.6"
 lol_html = "3.0.1"
 minijinja = "2.24.0"
 peg = "0.8.6"
+semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.4"

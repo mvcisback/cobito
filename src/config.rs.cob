@@ -161,9 +161,11 @@ weave reads it offline. \code{url} is where that forest's pages are deployed, so
 cross-document \code{\ref} or \code{\transclude} makes a link that lands on the real site.
 <<an import>>=
 /// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
-/// local `path`, or a `git` URL pinned by `rev`. `cob fetch` turns a git import
-/// into a cached path; a weave only ever reads a path, so it stays offline. `url`
-/// is the deployed base a cross-document `\ref`/`\transclude` links into.
+/// local `path`, or a `git` URL resolved by a semver `version` requirement (the
+/// release model) or a raw `rev` (the escape hatch). `cob fetch` turns a git import
+/// into a cached index keyed by commit; a weave only ever reads the cache, so it
+/// stays offline. `url` is the deployed base a cross-document `\ref`/`\transclude`
+/// links into.
 #[derive(Deserialize, Default, Clone)]
 pub struct Import {
     #[serde(default)]
@@ -173,12 +175,18 @@ pub struct Import {
     /// makes a site-root-relative link.
     #[serde(default)]
     pub url: Option<String>,
-    // `git`/`rev` are read by `cob fetch` (§13), which pins a remote import into a
-    // local path before a weave reads it; a weave itself only uses `path`.
-    #[allow(dead_code)]
+    /// A `git` URL. `cob fetch` resolves it (by `version` or `rev`) into a cached
+    /// index keyed by commit; a weave then reads the cache offline and never
+    /// touches git itself.
     #[serde(default)]
     pub git: Option<String>,
-    #[allow(dead_code)]
+    /// A semver requirement (e.g. `^1.2`) resolved against the forest's semver
+    /// tags to the highest matching release — the primary version model (§13).
+    #[serde(default)]
+    pub version: Option<String>,
+    /// An exact git ref (tag, branch, or sha) used as-is, with no semver
+    /// resolution — the escape hatch for importing an unreleased branch. Exactly
+    /// one of `version`/`rev` is given for a `git` import.
     #[serde(default)]
     pub rev: Option<String>,
 }

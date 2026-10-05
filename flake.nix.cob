@@ -315,6 +315,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the macros check>>
 
 <<the imports check>>
+
+<<the fetch check>>
 @
 ### build {#sec:9hJs}
 
@@ -975,11 +977,11 @@ $cob weave --locked --archive mac.cob --out a
 $cob weave --locked --archive mac.cob --out b
 diff -r a b
 
-# §13 the forest index: `forest.json` exports the macro table so another forest can
+# §13 the forest index: `cob-exports.json` exports the macro table so another forest can
 # `\import` it — name → expansion, including the parametered macro (as KaTeX #1).
-grep -q '"schema": 1' a/forest.json
-grep -q '"\\\\RR": "\\\\mathbb{R}"' a/forest.json
-grep -q '"\\\\abs": "\\\\lvert #1 \\\\rvert"' a/forest.json
+grep -q '"schema": "1.0.0"' a/cob-exports.json
+grep -q '"\\\\RR": "\\\\mathbb{R}"' a/cob-exports.json
+grep -q '"\\\\abs": "\\\\lvert #1 \\\\rvert"' a/cob-exports.json
 
 # The macros expand everywhere: `\RR`/`\R` and the parametered `\abs{…}` render,
 # so KaTeX output is present. An unknown macro would be a hard E020 and fail the
@@ -1026,7 +1028,7 @@ touch $out
 ### imports
 
 One forest imports another's macros and references its nodes (§13). This check
-weaves a producer forest that exports a \code{forest.json}, then a consumer that
+weaves a producer forest that exports a \code{cob-exports.json}, then a consumer that
 declares \code{[import.algebra]} in \code{cob.toml}, imports it with \code{\import algebra as
 alg}, and uses \code{\alg.RR} and \code{\alg.abs{x}}. The consumer also makes a
 cross-document \code{\ref{sec:conv@alg}} and a \code{\transclude{def:basics@alg}}. It
@@ -1056,10 +1058,10 @@ cat > $work/alg/algebra.cob <<'DOC'
 ```
 DOC
 ( cd $work/alg && $cob lock algebra.cob >/dev/null && $cob weave --locked --archive algebra.cob --out _site )
-# forest.json carries the exported macro table and the label index.
-grep -q '"\\\\RR": "\\\\mathbb{R}"' $work/alg/_site/forest.json
-grep -q '"sec:conv"' $work/alg/_site/forest.json
-grep -q '"def:basics"' $work/alg/_site/forest.json
+# cob-exports.json carries the exported macro table and the label index.
+grep -q '"\\\\RR": "\\\\mathbb{R}"' $work/alg/_site/cob-exports.json
+grep -q '"sec:conv"' $work/alg/_site/cob-exports.json
+grep -q '"def:basics"' $work/alg/_site/cob-exports.json
 
 # The consumer declares the import in cob.toml, with the producer's deployed url so
 # a cross-document reference makes a real link, and uses it under an alias.
@@ -1108,5 +1110,108 @@ if grep -qE 'application/x-tex">[^<]*\\\\def' $work/topo/_site/index.html; then
   echo "an imported \\def leaked into a formula annotation (§13)" >&2
   exit 1
 fi
+touch $out
+@
+### fetch
+
+A remote import is pinned and cached by \code{cob fetch} (§13). This check proves the
+whole path with no network: it makes a local git repo that publishes a
+\code{cob-exports.json} at a tag (the committed-index convention), declares a \code{git} import
+of it, runs \code{cob fetch}, and then weaves. It asserts the pin lands in \code{cob.lock},
+the index is cached by commit, and a \code{git}-import weave resolves the macro and the
+cross-document \code{\ref} offline from the cache. \code{git} builds the fixture; cob reads
+it with \code{gix} over the pure-Rust \code{file://} transport, so the sandbox needs no
+network.
+<<the fetch check>>=
+fetch = pkgs.runCommand "cob-fetch" { nativeBuildInputs = [ pkgs.git ]; } ''
+  <<fetch check script>>
+'';
+@
+<<fetch check script>>=
+cob=${self.packages.${system}.cob}/bin/cob
+export HOME=$TMPDIR
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t
+export GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+work=$TMPDIR/fetch
+mkdir -p $work/consumer
+
+# The remote forest: a git repo that publishes cob-exports.json at semver tags
+# (§13). Two 1.x releases so a `^1` requirement resolves to the higher.
+remote=$work/algebra.git
+mkdir -p $remote && ( cd $remote && git init -q -b main )
+pub() {
+  cat > $remote/cob-exports.json <<DOC
+{
+  "schema": "$2",
+  "macros": { "\\\\RR": "\\\\mathbb{R}" },
+  "labels": { "sec:conv": { "page": "index", "anchor": "sec-conv", "kind": "section", "id": "qvcX" } }
+}
+DOC
+  ( cd $remote && git add cob-exports.json && git commit -q --allow-empty -m "$1" && git tag "$1" )
+}
+pub v1.0.0 1.0.0
+pub v1.1.0 1.0.0
+
+# The consumer imports by a semver requirement, under an alias.
+cat > $work/consumer/cob.toml <<DOC
+[import.algebra]
+git     = "file://$remote"
+version = "^1.0"
+url     = "https://alg.example"
+DOC
+cat > $work/consumer/doc.cob <<'DOC'
+# Consumer
+
+## Setup
+
+```imports
+\import algebra as alg
+```
+
+The reals are $\alg.RR$. See the conventions in \ref{sec:conv@alg}.
+DOC
+
+# cob fetch resolves ^1.0 to the highest matching release (1.1.0) and caches it —
+# the one networked step.
+( cd $work/consumer && $cob fetch )
+grep -q '"fetch"' $work/consumer/cob.lock
+grep -q '"req": "\^1.0"' $work/consumer/cob.lock
+grep -q '"version": "1.1.0"' $work/consumer/cob.lock
+# The index is cached, keyed by the resolved commit.
+test -f $work/consumer/.cob-cache/imports/*/cob-exports.json
+# A second fetch honors the lock and does not drift.
+( cd $work/consumer && $cob fetch | grep -q 'up to date' )
+
+# The weave reads only the cache — no git, no network — and resolves the import.
+( cd $work/consumer && $cob lock doc.cob >/dev/null && $cob weave --locked doc.cob --out _site )
+grep -q 'katex' $work/consumer/_site/index.html
+grep -q 'href="https://alg.example/index.html#sec-conv"' $work/consumer/_site/index.html
+
+# cob update re-resolves: a new 1.2.0 release moves the pin forward.
+pub v1.2.0 1.0.0
+( cd $work/consumer && $cob update )
+grep -q '"version": "1.2.0"' $work/consumer/cob.lock
+
+# An exports index with a newer major schema is rejected (E038). A 9.x tag
+# publishes schema 2.0.0; requiring it must fail the fetch.
+pub v9.0.0 2.0.0
+sed -i 's/\^1.0/^9/' $work/consumer/cob.toml
+if ( cd $work/consumer && $cob update ) 2>$work/err38; then
+  echo "an exports index with a newer major schema must be rejected (§13 E038)" >&2
+  exit 1
+fi
+grep -q 'E038' $work/err38
+# Restore the 1.x requirement for the remaining checks.
+sed -i 's/\^9/^1.0/' $work/consumer/cob.toml
+( cd $work/consumer && $cob update >/dev/null )
+
+# A weave with an unfetched git import is E037. Removing the pin + cache simulates it.
+rm -rf $work/consumer/.cob-cache $work/consumer/cob.lock
+if ( cd $work/consumer && $cob weave --locked doc.cob --out _site2 ) 2>$work/err; then
+  echo "a weave with an unfetched git import must fail (§13 E037)" >&2
+  exit 1
+fi
+grep -q 'E037' $work/err
 touch $out
 @
