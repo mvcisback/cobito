@@ -128,6 +128,7 @@ Each module carries the specification for its own job. This is the reading order
 | The node model and transclusion | \code{src/transclude.rs.cob} |
 | Importing macros from another forest | \code{src/import.rs.cob} |
 | Fetching a remote forest import | \code{src/fetch.rs.cob} |
+| Citations and the bibliography | \code{src/cite.rs.cob} |
 | Tangling | \code{src/tangle.rs.cob} |
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
@@ -235,9 +236,12 @@ review} (M6), and a reserved slot for the annotation-layer fallback (M7).
 
 Phase 3 is done in its shipped slices: the Markdown dialect (M8), stable ids and
 the lock file (M11), self-hosting and the flip (M13), syntax highlighting (M14),
-the node model with same-document transclusion (M12, first slice), and math macros
-(M9 — the \code{macros} fence, forester \code{\def}/\code{\let}, a homeless \code{def:} node). Citations
-(M10) are the remaining phase-3 work.
+the node model with same-document transclusion (M12, first slice), math macros
+(M9 — the \code{macros} fence, forester \code{\def}/\code{\let}, a homeless \code{def:} node), and
+citations (M10 — \code{\cite{key}} against a BibTeX bibliography, each cited work a node
+with a frozen \code{[id]} marker, a node page, "Cited by" backlinks, and a References
+list, \code{cite.rs}; cross-forest \code{\cite{key@alias}} resolves against a forest's
+exported citations index). Phase 3 is complete.
 
 ## The forest (M16) {#sec:forest}
 
@@ -344,6 +348,8 @@ introduces a code, it claims the next free number in this registry.
 | E036 | a macro import fails (unknown, cycle, or id clash) | \code{import.rs} |
 | E037 | a remote import fetch fails, or a git import is not fetched | \code{fetch.rs} |
 | E038 | a \code{cob.lock} or \code{cob-exports.json} has a newer major schema | \code{lock.rs}, \code{site.rs} |
+| E039 | the bibliography file does not read or parse | \code{cite.rs} |
+| E040 | a \code{\cite} names a key no bibliography has | \code{weave.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

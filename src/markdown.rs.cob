@@ -23,11 +23,13 @@ Marks are commands, not punctuation, so there is no flanking rule to get wrong:
   brace uses \code{\{} or \code{\}}.
 - \code{$…$} is inline math and \code{$$…$$} is display math. A literal dollar is \code{\$}.
 - \code{\ref{ns:name}} makes the same \code{<a data-ref>} the resolver reads (§7).
+- \code{\cite{key}} makes one \code{<a data-cite>} marker per key; \code{\cite{k1, k2}} makes two.
+  The weaver mints each cited work a node id and draws the \code{[id]} marker (§14).
 - \code{\transclude{sec:name}} makes the transclusion island the weaver expands (§10).
   A paragraph that is only a \code{\transclude} makes the bare island, not a \code{<p>}.
 
-A \code{\ref}, \code{\transclude}, or \code{$…$} inside a \code{\code{}} is literal text, because the
-code body is captured whole before any command is read.
+A \code{\ref}, \code{\cite}, \code{\transclude}, or \code{$…$} inside a \code{\code{}} is literal text, because
+the code body is captured whole before any command is read.
 
 ## The block grammar {#sec:k8T0}
 
@@ -824,7 +826,7 @@ peg::parser! {
         pub rule nodes() -> Vec<Inline> = node()*
 
         rule node() -> Inline
-            = strong() / emph() / code() / refc() / transclude() / dmath() / imath() / text()
+            = strong() / emph() / code() / refc() / citec() / transclude() / dmath() / imath() / text()
 
         rule strong() -> Inline = "\\strong{" ns:nodes() "}" { Inline::Strong(ns) }
         rule emph() -> Inline = "\\emph{" ns:nodes() "}" { Inline::Emph(ns) }
@@ -834,6 +836,7 @@ peg::parser! {
         rule braces() = "{" cb_atom()* "}"
 
         rule refc() -> Inline = "\\ref{" s:$((!"}" [_])*) "}" { Inline::Ref(s.to_string()) }
+        rule citec() -> Inline = "\\cite{" s:$((!"}" [_])*) "}" { Inline::Cite(s.to_string()) }
         rule transclude() -> Inline
             = "\\transclude{" s:$((!"}" [_])*) "}" { Inline::Transclude(s.to_string()) }
 
@@ -845,7 +848,7 @@ peg::parser! {
 
         rule text() -> Inline = s:$(t_atom()+) { Inline::Text(unescape_text(s)) }
         rule t_atom() = "\\$" {} / "\\{" {} / "\\}" {} / "\\\\" {} / (!marker() [_] {})
-        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\transclude{" / "$" / "{" / "}"
+        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "$" / "{" / "}"
 
         rule ws() = [' ' | '\t' | '\n' | '\r']*
         pub rule modifiers() -> Vec<Modifier> = ws() m:(x:modifier() ws() { x })* { m }
@@ -879,6 +882,7 @@ enum Inline {
     Code(String),
     Math { src: String, display: bool },
     Ref(String),
+    Cite(String),
     Transclude(String),
 }
 
@@ -923,6 +927,16 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
             }
             Inline::Ref(id) => {
                 out.push_str(&format!("<a data-ref=\"{}\"></a>", prose::escape(id.trim())))
+            }
+            Inline::Cite(keys) => {
+                // `\cite{k1, k2}` lowers to one inert marker per key; the weaver
+                // mints each a node id and draws the `[id]` marker (§14).
+                for key in keys.split(',') {
+                    let key = key.trim();
+                    if !key.is_empty() {
+                        out.push_str(&format!("<a data-cite=\"{}\"></a>", prose::escape(key)));
+                    }
+                }
             }
             Inline::Transclude(id) => out.push_str(&format!(
                 "<div class=\"transclusion\" data-transclude=\"{}\"></div>",
@@ -1017,6 +1031,8 @@ mod tests {
     <<a multiline caption balances braces>>
 
     <<a ref lowers to a data-ref>>
+
+    <<a cite lowers to data-cite markers>>
 
     <<a transclude lowers to a placeholder>>
 
@@ -1224,6 +1240,22 @@ fn ref_lowers_to_a_data_ref() {
     let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
     assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
     assert!(html.contains("<a data-ref=\"eq:wrap\"></a>"));
+}
+@
+A cite command lowers to one \code{data-cite} marker per key.
+<<a cite lowers to data-cite markers>>=
+#[test]
+fn cite_lowers_to_one_data_cite_per_key() {
+    // One key makes one marker; a comma list makes one per key (§14).
+    let (one, _) = run("as \\cite{smith2020} shows");
+    assert!(one.contains("<a data-cite=\"smith2020\"></a>"));
+    let (many, _) = run("see \\cite{smith2020, knuth1984}");
+    assert!(many.contains("<a data-cite=\"smith2020\"></a>"));
+    assert!(many.contains("<a data-cite=\"knuth1984\"></a>"));
+    // A `\cite` inside `\code` is literal.
+    let (code, _) = run("write \\code{\\cite{x}} here");
+    assert!(code.contains("<code>\\cite{x}</code>"));
+    assert!(!code.contains("data-cite=\"x\""));
 }
 @
 A lone-transclude paragraph lowers to the bare island the weaver expands.

@@ -22,11 +22,13 @@
 {% endif %}<article class="node-body">{{ body }}</article>
 {% if context %}<p class="node-context"><a href="{{ context }}">Read in context &rarr;</a></p>
 {% endif %}
-{% if transcluded_by or referenced_by %}<section class="backlinks">
+{% if transcluded_by or referenced_by or cited_by %}<section class="backlinks">
 {% if transcluded_by %}<h2>Transcluded by</h2>
 <ul>{% for b in transcluded_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
 {% endif %}{% if referenced_by %}<h2>Referenced by</h2>
 <ul>{% for b in referenced_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
+{% endif %}{% if cited_by %}<h2>Cited by</h2>
+<ul>{% for b in cited_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
 {% endif %}</section>
 {% endif %}</main>
 <footer class="pagination">

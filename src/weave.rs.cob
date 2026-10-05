@@ -128,6 +128,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::cite::{self, Bib};
 use crate::highlight::{self, Lang, LangConfig};
 use crate::import;
 use crate::lock::{LockError, LockFile, LockMode, Minter};
@@ -156,6 +157,10 @@ pub enum WeaveError {
     Resolve(ResolveError),
     Lock(LockError),
     Import(crate::import::ImportError),
+    /// E040 — a `\cite{key}` whose key is in no configured bibliography (§14).
+    UnknownCite {
+        key: String,
+    },
     Assets(String),
     Io(std::io::Error),
     Template(String),
@@ -176,6 +181,11 @@ impl fmt::Display for WeaveError {
             WeaveError::Resolve(e) => write!(f, "{e}"),
             WeaveError::Lock(e) => write!(f, "{e}"),
             WeaveError::Import(e) => write!(f, "{e}"),
+            WeaveError::UnknownCite { key } => write!(
+                f,
+                "error[E040]: \\cite{{{key}}} names no entry in the bibliography; \
+                 check the key, or set `[cite] bib` in cob.toml"
+            ),
             WeaveError::Assets(m) => write!(f, "error[E023]: {m}"),
             WeaveError::Io(e) => write!(f, "error[E024]: writing site: {e}"),
             WeaveError::Template(m) => write!(f, "error[E025]: template: {m}"),
@@ -377,6 +387,9 @@ pub struct Site {
     /// (§6.4). Written to `cob-exports.json` under `--archive` so another forest can
     /// `\import` it (§13).
     pub macros: BTreeMap<String, String>,
+    /// This document's cited works (key → {id, html}). Written to
+    /// `cob-exports.json` so another forest can `\cite{key@alias}` them (§14).
+    pub citations: BTreeMap<String, site::ForestCite>,
 }
 
 impl Site {
@@ -496,6 +509,60 @@ fn collect_import_decls(doc: &DocModel) -> Vec<(String, String)> {
     }
     decls
 }
+
+/// Every cited key in first-appearance order, deduplicated — scanned from the
+/// `data-cite` markers the Markdown lowering left in the rendered docs (§14).
+fn collect_cite_keys(frags: &[Frag]) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut order = Vec::new();
+    for frag in frags {
+        let Frag::Docs(html) = frag else { continue };
+        let mut i = 0;
+        while let Some(rel) = html[i..].find(" data-cite=\"") {
+            let s = i + rel + " data-cite=\"".len();
+            let Some(q) = html[s..].find('"') else { break };
+            let key = html[s..s + q].to_string();
+            if seen.insert(key.clone()) {
+                order.push(key);
+            }
+            i = s + q;
+        }
+    }
+    order
+}
+
+/// Lower each inert `<a data-cite="key"></a>` marker to its citation link (§14):
+/// `<a class="cite" data-id="<id>" href="#cite-<id>">`. CSS draws the bracketed id,
+/// so no citation text enters a text node. A key with no id (never minted) is left
+/// as written — the collect/mint pass already errored on an unknown key.
+fn rewrite_cites(html: &str, ids: &BTreeMap<String, String>) -> String {
+    let pat = "<a data-cite=\"";
+    if !html.contains(pat) {
+        return html.to_string();
+    }
+    let tail = "\"></a>";
+    let mut out = String::new();
+    let mut i = 0;
+    while let Some(rel) = html[i..].find(pat) {
+        let p = i + rel;
+        out.push_str(&html[i..p]);
+        let s = p + pat.len();
+        let Some(q) = html[s..].find(tail) else {
+            out.push_str(&html[p..]);
+            return out;
+        };
+        let key = &html[s..s + q];
+        match ids.get(key) {
+            Some(id) => out.push_str(&format!(
+                "<a class=\"cite\" data-id=\"{id}\" href=\"#cite-{id}\"></a>"
+            )),
+            None => out.push_str(&html[p..s + q + tail.len()]),
+        }
+        i = s + q + tail.len();
+    }
+    out.push_str(&html[i..]);
+    out
+}
 @
 The scan pass walks every docs body once, in order, so every labelled float is seen
 before any id is assigned. It returns the collected scan and, per fragment, the
@@ -546,6 +613,13 @@ pub fn mint_lock(
         let file = &doc.sections[section].file;
         lock.mint(file, label, kind, minter);
     }
+    // §14 citations are nodes too: mint each cited key a `cite:<key>` id, keyed by
+    // the document's first file exactly as `render` does, so a later `--locked`
+    // weave finds it. `cob lock` thus covers citations like any other label.
+    let cite_file = doc.files.first().cloned().unwrap_or_default();
+    for key in collect_cite_keys(&frags) {
+        lock.mint(&cite_file, &format!("cite:{key}"), Kind::Citation, minter);
+    }
     Ok(())
 }
 @
@@ -589,6 +663,7 @@ pub fn render(
     cache_root: &Path,
     lang_cfg: &LangConfig,
     loaded: &BTreeMap<String, site::ForestRef>,
+    bib: &Bib,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
@@ -657,6 +732,72 @@ pub fn render(
             },
         };
         label_ids.insert(label.to_string(), id);
+    }
+
+    // §14 citations: collect each cited key in first-appearance order, mint its
+    // node id like a float, and format its reference. A cited key with no
+    // bibliography entry is E040. The inline `[id]` marker is rewritten after
+    // wrapping (below); the formatted references become the References chrome.
+    let cite_file = doc.files.first().cloned().unwrap_or_default();
+    let mut cite_ids: BTreeMap<String, String> = BTreeMap::new();
+    // One References entry: (id, formatted html, node-page href the entry links to).
+    let mut references: Vec<(String, String, String)> = Vec::new();
+    let mut ref_nodes: Vec<transclude::RefNode> = Vec::new();
+    // The cited works this forest exports, so another forest may `\cite{key@alias}`.
+    let mut exported_citations: BTreeMap<String, site::ForestCite> = BTreeMap::new();
+    for key in collect_cite_keys(&frags) {
+        if let Some((bare, alias)) = key.split_once('@') {
+            // §14 cross-forest: resolve against the imported forest's exported
+            // citations; the entry links out to that forest's node page. A work the
+            // other forest did not cite has no node page, so it is E040.
+            let fr = by_alias
+                .get(alias)
+                .ok_or_else(|| WeaveError::UnknownCite { key: key.clone() })?;
+            let fc = fr
+                .index
+                .citations
+                .get(bare)
+                .ok_or_else(|| WeaveError::UnknownCite { key: key.clone() })?;
+            let base = fr.url.trim_end_matches('/');
+            references.push((fc.id.clone(), fc.html.clone(), format!("{base}/n/{}.html", fc.id)));
+            cite_ids.insert(key, fc.id.clone());
+            continue;
+        }
+        let Some(reference) = bib.get(&key) else {
+            return Err(WeaveError::UnknownCite { key });
+        };
+        let label = format!("cite:{key}");
+        let id = match mode {
+            LockMode::Mint => lock.mint(&cite_file, &label, Kind::Citation, minter),
+            LockMode::Locked => match lock.get(&cite_file, &label) {
+                Some(e) => e.id.clone(),
+                None => {
+                    return Err(WeaveError::Lock(LockError::Missing {
+                        file: cite_file.clone(),
+                        label,
+                    }))
+                }
+            },
+        };
+        let html = cite::format_html(reference);
+        references.push((id.clone(), html.clone(), format!("n/{id}.html")));
+        // The cited work is a node (§14): its page shows the formatted reference,
+        // with the nodes that cite it as "Cited by" backlinks. It is also exported,
+        // so another forest may cite it.
+        ref_nodes.push(transclude::RefNode {
+            key: key.clone(),
+            id: id.clone(),
+            title: cite::short_title(reference),
+            body: format!("<div class=\"reference\">{html}</div>"),
+        });
+        exported_citations.insert(
+            key.clone(),
+            site::ForestCite {
+                id: id.clone(),
+                html,
+            },
+        );
+        cite_ids.insert(key, id);
     }
 
     let res = resolve::plan(doc, &scan, &first_tags, &label_ids, &by_alias)
@@ -733,7 +874,7 @@ pub fn render(
     // it carries a directive, and the archival JSON (built above from
     // pre-expansion bodies) is untouched. The scope counter is document-wide, so
     // every copy's scoped ids are unique and the output stays deterministic (§8).
-    let mut tx = transclude::Context::build(&scan, &res, &bodies, &by_alias);
+    let mut tx = transclude::Context::build(&scan, &res, &bodies, &by_alias, &ref_nodes);
     // §10 a `def:` (macros) node is homeless: the table has just captured it, so
     // drop the canonical island from the reading flow and the archival JSON before
     // transclusion runs. No transcluded copy exists yet, so every island is
@@ -744,6 +885,17 @@ pub fn render(
     }
     for raw in raws.iter_mut() {
         raw.html = rewrite::strip_macros(&raw.html).map_err(WeaveError::Rewrite)?;
+    }
+    // §14: lower each inert `data-cite` marker to its `[id]` citation link, now
+    // that every cited key has an id. The link points at the References entry on
+    // the same page; CSS draws the bracketed id, so no number enters a text node.
+    if !cite_ids.is_empty() {
+        for w in wrapped.iter_mut() {
+            *w = rewrite_cites(w, &cite_ids);
+        }
+        for raw in raws.iter_mut() {
+            raw.html = rewrite_cites(&raw.html, &cite_ids);
+        }
     }
     let mut tx_lints: Vec<Lint> = Vec::new();
     for (k, w) in wrapped.iter_mut().enumerate() {
@@ -772,6 +924,14 @@ pub fn render(
         .get_template("page")
         .map_err(|e| WeaveError::Template(e.to_string()))?;
 
+    // §14 the References chrome: every cited work, formatted, with its `[id]`
+    // anchor — document-global, shown on each page like the Imports list. Each
+    // entry is anchored `cite-<id>` so an inline marker's `#cite-<id>` lands here.
+    let ref_ctx: Vec<minijinja::Value> = references
+        .iter()
+        .map(|(id, html, href)| minijinja::context! { id => id, html => html, href => href })
+        .collect();
+
     let mut pages = Vec::with_capacity(res.pages.len());
     for (pi, meta) in res.pages.iter().enumerate() {
         let sections: Vec<&str> = wrapped
@@ -794,6 +954,7 @@ pub fn render(
                 prev,
                 next,
                 imports => &import_links,
+                references => &ref_ctx,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         pages.push(RenderedPage {
@@ -830,6 +991,7 @@ pub fn render(
                 crumbs => links_context(&np.crumbs),
                 transcluded_by => links_context(&np.transcluded_by),
                 referenced_by => links_context(&np.referenced_by),
+                cited_by => links_context(&np.cited_by),
                 embed,
                 nav => based_nav,
             })
@@ -852,6 +1014,7 @@ pub fn render(
         lints,
         json,
         macros: defs,
+        citations: exported_citations,
     })
 }
 @
@@ -1051,12 +1214,13 @@ pub fn write_site(
     meta: site::Meta,
     lang_cfg: &LangConfig,
     loaded: &BTreeMap<String, site::ForestRef>,
+    bib: &Bib,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, lang_cfg, loaded, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, lang_cfg, loaded, bib, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -1096,7 +1260,7 @@ pub fn write_site(
         // re-rendering it.
         std::fs::write(
             out.join("cob-exports.json"),
-            site::to_exports_json(&site.macros, &site.json.labels),
+            site::to_exports_json(&site.macros, &site.json.labels, &site.citations),
         )
         .map_err(WeaveError::Io)?;
     }
@@ -1229,6 +1393,7 @@ fn dev_render_lang(doc: &DocModel, lang: Option<Lang>, embed: &str) -> Site {
         &cache(),
         &lang_cfg,
         &BTreeMap::new(),
+        &Bib::default(),
         embed,
         &mut lock,
         LockMode::Mint,
@@ -1252,6 +1417,7 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
         &cache(),
         &lang_cfg,
         &BTreeMap::new(),
+        &Bib::default(),
         "",
         &mut lock,
         LockMode::Locked,

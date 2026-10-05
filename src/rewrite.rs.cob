@@ -170,6 +170,7 @@ pub enum Kind {
     Section,
     Chunk,
     Macro,
+    Citation,
 }
 
 impl Kind {
@@ -181,6 +182,7 @@ impl Kind {
             Kind::Section => "Section",
             Kind::Chunk => "Chunk",
             Kind::Macro => "Notation",
+            Kind::Citation => "Citation",
         }
     }
 
@@ -193,6 +195,7 @@ impl Kind {
             Kind::Section => "section",
             Kind::Chunk => "chunk",
             Kind::Macro => "macro",
+            Kind::Citation => "citation",
         }
     }
 
@@ -205,6 +208,7 @@ impl Kind {
             "sec" => Some(Kind::Section),
             "chunk" => Some(Kind::Chunk),
             "def" => Some(Kind::Macro),
+            "cite" => Some(Kind::Citation),
             _ => None,
         }
     }

@@ -21,6 +21,9 @@
 {% if imports %}<section class="doc-imports" aria-label="Imports"><h2>Imports</h2>
 <ul>{% for i in imports %}<li><span class="import-alias">{{ i.alias }}</span> &larr; <span class="import-name">{{ i.name }}</span></li>{% endfor %}</ul>
 </section>
+{% endif %}{% if references %}<section class="doc-references" aria-label="References"><h2>References</h2>
+<ul>{% for r in references %}<li id="cite-{{ r.id }}"><a class="cite-uid" href="{{ r.href }}" data-id="{{ r.id }}"></a> {{ r.html }}</li>{% endfor %}</ul>
+</section>
 {% endif %}{% include "scripts" %}
 <footer class="pagination">
 {% if prev %}<a rel="prev" href="{{ prev.href }}">&larr; {{ prev.title }}</a>{% else %}<span></span>{% endif %}

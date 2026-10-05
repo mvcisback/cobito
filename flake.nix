@@ -560,7 +560,7 @@
 
           # §13 the forest index: `cob-exports.json` exports the macro table so another forest can
           # `\import` it — name → expansion, including the parametered macro (as KaTeX #1).
-          grep -q '"schema": "1.0.0"' a/cob-exports.json
+          grep -q '"schema": "1.1.0"' a/cob-exports.json
           grep -q '"\\\\RR": "\\\\mathbb{R}"' a/cob-exports.json
           grep -q '"\\\\abs": "\\\\lvert #1 \\\\rvert"' a/cob-exports.json
 
@@ -766,6 +766,122 @@
             exit 1
           fi
           grep -q 'E037' $work/err
+          touch $out
+        '';
+
+        cite = pkgs.runCommand "cob-cite" { } ''
+          cob=${self.packages.${system}.cob}/bin/cob
+          work=$TMPDIR/cite
+          mkdir -p $work
+
+          cat > $work/references.bib <<'DOC'
+          @article{smith2020,
+            author  = {Jane Smith and John Doe},
+            title   = {On the Nature of Things},
+            journal = {Journal of Things},
+            year    = {2020}
+          }
+          @book{knuth1984,
+            author    = {Donald E. Knuth},
+            title     = {The {\TeX}book},
+            publisher = {Addison-Wesley},
+            year      = {1984}
+          }
+          DOC
+          cat > $work/cob.toml <<'DOC'
+          [cite]
+          bib = "references.bib"
+          DOC
+          cat > $work/doc.cob <<'DOC'
+          # Citing
+
+          ## Background
+
+          Typesetting is old \cite{knuth1984}. Things have a nature \cite{smith2020, knuth1984}.
+
+          ## Elsewhere
+
+          The canonical reference, inlined:
+
+          \transclude{cite:knuth1984}
+          DOC
+
+          # `cob lock` mints the citation node ids (like any label); `--locked` then reads them.
+          ( cd $work && $cob lock doc.cob >/dev/null )
+          grep -q '"cite:knuth1984"' $work/cob.lock
+          # Two locked weaves are byte-identical — the cited ids are frozen in the lock (§14).
+          ( cd $work && $cob weave --locked doc.cob --out a >/dev/null && $cob weave --locked doc.cob --out b >/dev/null )
+          diff -r $work/a $work/b
+
+          # The inline marker is a CSS-drawn `[id]`: a `data-id` and a link to the References
+          # entry, with no citation text in a node (§14, §9.2).
+          grep -qE '<a class="cite" data-id="[^"]+" href="#cite-[^"]+"></a>' $work/a/index.html
+          # The same work cited twice reuses one id (stable identity, not a position): two
+          # cited works, so two distinct cite-marker ids.
+          ids=$(grep -oE '<a class="cite" data-id="[^"]+"' $work/a/index.html | sort -u | wc -l)
+          test "$ids" -eq 2
+          # The References list carries the formatted entries; `biblatex` renders the TeX.
+          grep -q 'class="doc-references"' $work/a/index.html
+          grep -q 'The TeXbook' $work/a/index.html
+          grep -q 'Journal of Things' $work/a/index.html
+          # No citation text leaked into a text node — only the CSS draws `[id]`.
+          if grep -qE 'class="cite"[^>]*>[^<]' $work/a/index.html; then
+            echo "a citation marker carried text; the id must be drawn by CSS (§14)" >&2
+            exit 1
+          fi
+
+          # §14 a cited work is a node: it has a node page `n/<id>.html` with the formatted
+          # reference and a "Cited by" backlink to the section that cites it.
+          knuth=$(grep -A1 '"cite:knuth1984"' $work/cob.lock | sed -n 's/.*"id": "\([^"]*\)".*/\1/p')
+          test -n "$knuth"
+          test -f $work/a/n/$knuth.html
+          grep -q 'The TeXbook' $work/a/n/$knuth.html
+          grep -q 'Cited by' $work/a/n/$knuth.html
+          # \transclude{cite:knuth1984} lowers to a lazy element at the reference node page.
+          grep -q "cob-transclude src=\"n/$knuth.html\" data-transclude=\"cite:knuth1984\"" $work/a/index.html
+          # The References entry links to that node page.
+          grep -q "class=\"cite-uid\" href=\"n/$knuth.html\"" $work/a/index.html
+
+          # §14 cross-forest: a consumer cites a work the producer exported. The producer
+          # cites knuth1984 (so it earns a node page) and exports it in cob-exports.json.
+          prod=$work/prod
+          cons=$work/cons
+          mkdir -p $prod $cons
+          cp $work/references.bib $prod/references.bib
+          printf '[cite]\nbib = "references.bib"\n' > $prod/cob.toml
+          printf '# Producer\n\n## Refs\n\nFoundational \\cite{knuth1984}.\n' > $prod/doc.cob
+          ( cd $prod && $cob lock doc.cob >/dev/null && $cob weave --archive doc.cob --out _site >/dev/null )
+          grep -q '"citations"' $prod/_site/cob-exports.json
+          grep -q '"knuth1984"' $prod/_site/cob-exports.json
+          cat > $cons/cob.toml <<DOC
+          [import.bibprod]
+          path = "$prod/_site"
+          url = "https://prod.example"
+          DOC
+          cat > $cons/doc.cob <<'DOC'
+          # Consumer
+
+          ## Uses
+
+          ```imports
+          \import bibprod as pub
+          ```
+
+          As the classic text shows \cite{knuth1984@pub}.
+          DOC
+          ( cd $cons && $cob lock doc.cob >/dev/null && $cob weave --locked doc.cob --out _site >/dev/null )
+          # The cross-forest marker is the producer's frozen `[id]`; the References entry
+          # links to the producer's deployed node page.
+          grep -qE '<a class="cite" data-id="[^"]+" href="#cite-[^"]+"></a>' $cons/_site/index.html
+          grep -q 'class="cite-uid" href="https://prod.example/n/' $cons/_site/index.html
+
+          # A cited key in no bibliography is E040.
+          printf '\nA ghost \\cite{nope}.\n' >> $work/doc.cob
+          if ( cd $work && $cob weave doc.cob --out _err ) 2>$work/e; then
+            echo "a \\cite to an unknown key must fail (§14 E040)" >&2
+            exit 1
+          fi
+          grep -q 'E040' $work/e
           touch $out
         '';
       });

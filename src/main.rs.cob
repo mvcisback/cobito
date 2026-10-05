@@ -54,6 +54,7 @@ it does not.
 Every module in the crate is declared here, in one alphabetical block, because
 this is the crate root. Adding a module means adding one line.
 <<the module tree>>=
+mod cite;
 mod config;
 mod diag;
 mod fetch;
@@ -302,6 +303,19 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             }
         }
     }
+    // §14 citations: load the bibliography named in `[cite] bib`, if any. A parse
+    // or read failure is E039; an absent `[cite]` means no bibliography (a `\cite`
+    // then fails E040 in the weave).
+    let bib = match &cfg.cite.bib {
+        Some(path) => match cite::load(Path::new(path)) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => cite::Bib::default(),
+    };
     match weave::write_site(
         &doc,
         Path::new(&out),
@@ -310,6 +324,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         meta,
         &lang_cfg,
         &loaded,
+        &bib,
         archive,
         mode,
     ) {

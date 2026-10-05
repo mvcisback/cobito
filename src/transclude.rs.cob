@@ -96,6 +96,14 @@ reading flow (\code{rewrite::strip_macros}). So the reader sees the macros only 
 node page, or where the author puts a \code{\transclude}. A \code{\ref{def:name}} links to
 the node page, not to a place in the text.
 
+A cited work (§14) is a homeless node too. The weaver injects one \code{RefNode} per
+cited key: its anchor is \code{cite-<key>}, its body the formatted reference, its page
+name the frozen id. It never renders in the reading flow — the inline \code{[id]}
+marker and the References list stand in for it — but it earns the same node page and
+the transclusion machinery, so \code{\transclude{cite:name}} inlines it. Its backlinks
+are the nodes that cite it ("Cited by"), found by the same scan that powers
+"Transcluded by" and "Referenced by", over the \code{data-cite} markers.
+
 ## A page for every node {#sec:node-pages}
 
 A node is a place a reader can go to. So every heading node and every labelled
@@ -249,6 +257,19 @@ pub struct NodePage {
     pub transcluded_by: Vec<Link>,
     /// Every node that refers to this one with `\ref`.
     pub referenced_by: Vec<Link>,
+    /// Every node that cites this one with `\cite` — only a reference node has
+    /// these (§14).
+    pub cited_by: Vec<Link>,
+}
+
+/// A reference node to inject (§14): a cited work, which is a node like any other.
+/// `key` is the cite key (its anchor is `cite-<key>`), `id` its frozen opaque id,
+/// `title` a short label, and `body` the formatted reference HTML.
+pub struct RefNode {
+    pub key: String,
+    pub id: String,
+    pub title: String,
+    pub body: String,
 }
 @
 Building the table walks the scanned headings in document order. A node runs from
@@ -270,6 +291,7 @@ impl Context {
         res: &Resolution,
         bodies: &[String],
         imports: &BTreeMap<String, ForestRef>,
+        ref_nodes: &[RefNode],
     ) -> Context {
         let heads = &scan.headings;
         // (section, byte offset) of each heading's opening tag in the final
@@ -326,8 +348,24 @@ impl Context {
                 );
             }
         }
+        // Reference nodes (§14): a cited work is a homeless node, like a `macros`
+        // node. Its anchor is `cite-<key>` (so `\transclude{cite:key}` resolves and
+        // `\ref{cite:key}` could too), its page name its frozen id, its body the
+        // formatted reference.
+        for rn in ref_nodes {
+            let anchor = anchor_of(&format!("cite:{}", rn.key));
+            uids.insert(anchor.clone(), rn.id.clone());
+            nodes.insert(
+                anchor,
+                Node {
+                    title: rn.title.clone(),
+                    page: 0,
+                    body: rn.body.clone(),
+                },
+            );
+        }
         let link_pages = anchor_pages(heads, res);
-        let node_pages = Self::build_node_pages(scan, &pos, res, bodies, &nodes);
+        let node_pages = Self::build_node_pages(scan, &pos, res, bodies, &nodes, ref_nodes);
         Context {
             nodes,
             uids,
@@ -353,9 +391,10 @@ directive shows the same inlined content its canonical page does.
         res: &Resolution,
         bodies: &[String],
         nodes: &BTreeMap<String, Node>,
+        ref_nodes: &[RefNode],
     ) -> Vec<NodePage> {
         let heads = &scan.headings;
-        let (tx_by, ref_by) = backlink_sources(bodies, pos);
+        let (tx_by, ref_by, cite_by) = backlink_sources(bodies, pos);
         let mut out = Vec::new();
         for (i, _h) in heads.iter().enumerate() {
             let Some(uid) = res.heading_uids[i].clone() else {
@@ -372,6 +411,7 @@ directive shows the same inlined content its canonical page does.
                 crumbs: crumbs(heads, res, i),
                 transcluded_by: backlinks(tx_by.get(anchor), heads, res),
                 referenced_by: backlinks(ref_by.get(anchor), heads, res),
+                cited_by: Vec::new(),
             });
         }
         // A float node's page (§10). Its breadcrumb is the heading it sits in,
@@ -412,6 +452,23 @@ directive shows the same inlined content its canonical page does.
                 crumbs,
                 transcluded_by: backlinks(tx_by.get(anchor), heads, res),
                 referenced_by: backlinks(ref_by.get(anchor), heads, res),
+                cited_by: Vec::new(),
+            });
+        }
+        // A reference node's page (§14): the formatted work on its own, with the
+        // nodes that cite it as backlinks ("Cited by"). It is homeless — no
+        // breadcrumb, no "read in context" — like a macro node.
+        for rn in ref_nodes {
+            let anchor = anchor_of(&format!("cite:{}", rn.key));
+            out.push(NodePage {
+                id: rn.id.clone(),
+                title: rn.title.clone(),
+                body: rn.body.clone(),
+                context: String::new(),
+                crumbs: Vec::new(),
+                transcluded_by: backlinks(tx_by.get(&anchor), heads, res),
+                referenced_by: Vec::new(),
+                cited_by: backlinks(cite_by.get(&anchor), heads, res),
             });
         }
         out
@@ -745,28 +802,39 @@ fn containing_head(pos: &[(usize, usize)], at: (usize, usize)) -> Option<usize> 
     found
 }
 
-/// Scan every body once for `\transclude` islands and resolved `\ref`s, mapping
-/// each target anchor to the heading indices of the nodes that use it.
+/// Scan every body once for `\transclude` islands, resolved `\ref`s, and `\cite`
+/// markers, mapping each target anchor to the heading indices of the nodes that use
+/// it — the "transcluded by", "referenced by", and "cited by" backlinks.
 fn backlink_sources(
     bodies: &[String],
     pos: &[(usize, usize)],
-) -> (BTreeMap<String, Vec<usize>>, BTreeMap<String, Vec<usize>>) {
+) -> (
+    BTreeMap<String, Vec<usize>>,
+    BTreeMap<String, Vec<usize>>,
+    BTreeMap<String, Vec<usize>>,
+) {
     let mut tx = BTreeMap::new();
     let mut rf = BTreeMap::new();
+    let mut ci = BTreeMap::new();
     for (s, body) in bodies.iter().enumerate() {
-        collect_sites(body, s, OPEN, pos, &mut tx);
-        collect_sites(body, s, " data-ref=\"", pos, &mut rf);
+        collect_sites(body, s, OPEN, pos, "", &mut tx);
+        collect_sites(body, s, " data-ref=\"", pos, "", &mut rf);
+        // A `data-cite="key"` names a reference node whose anchor is `cite-<key>`,
+        // so the key is prefixed before `anchor_of` to match the node (§14).
+        collect_sites(body, s, " data-cite=\"", pos, "cite:", &mut ci);
     }
-    (tx, rf)
+    (tx, rf, ci)
 }
 
-/// Record each `pat"label"` site in `body`: its target anchor and the node it
-/// sits in. A use above any heading (a preamble) is skipped.
+/// Record each `pat"label"` site in `body`: its target anchor (the label with
+/// `prefix` prepended, then `anchor_of`) and the node it sits in. A use above any
+/// heading (a preamble) is skipped.
 fn collect_sites(
     body: &str,
     section: usize,
     pat: &str,
     pos: &[(usize, usize)],
+    prefix: &str,
     map: &mut BTreeMap<String, Vec<usize>>,
 ) {
     let mut i = 0;
@@ -776,7 +844,9 @@ fn collect_sites(
         let Some(q) = body[vstart..].find('"') else { break };
         let label = &body[vstart..vstart + q];
         if let Some(h) = containing_head(pos, (section, p)) {
-            map.entry(anchor_of(label)).or_default().push(h);
+            map.entry(anchor_of(&format!("{prefix}{label}")))
+                .or_default()
+                .push(h);
         }
         i = vstart + q;
     }

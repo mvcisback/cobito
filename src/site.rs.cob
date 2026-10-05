@@ -621,25 +621,41 @@ newer major (E038), so a forest cannot be read by a cob too old to understand it
 <<the forest index>>=
 /// The current `cob-exports.json` schema (§13). Semver: a consumer rejects a newer
 /// major (E038).
-pub const EXPORTS_SCHEMA: &str = "1.0.0";
+pub const EXPORTS_SCHEMA: &str = "1.1.0";
 const EXPORTS_SCHEMA_MAJOR: u64 = 1;
 
-/// The importable index of a forest (§13): the macro table and the label table
-/// another forest reads to `\import` this one. The labels reuse `site.json`'s own.
+/// One cited work another forest may cite (§14): the frozen id naming its node page
+/// and the formatted reference HTML, so a consumer renders the `[id]` marker and the
+/// References entry without re-reading the producer's `.bib`.
+#[derive(Serialize, serde::Deserialize, Clone, Debug)]
+pub struct ForestCite {
+    pub id: String,
+    pub html: String,
+}
+
+/// The importable index of a forest (§13, §14): the macro table, the label table,
+/// and the cited works. The labels reuse `site.json`'s own.
 #[derive(Serialize)]
 struct ExportsJson<'a> {
     schema: &'static str,
     macros: &'a BTreeMap<String, String>,
     labels: &'a BTreeMap<String, Label>,
+    citations: &'a BTreeMap<String, ForestCite>,
 }
 
-/// Pretty, deterministic JSON for `cob-exports.json` (§13): schema, the macro table,
-/// and the label index (`site.json`'s own label table).
-pub fn to_exports_json(macros: &BTreeMap<String, String>, labels: &BTreeMap<String, Label>) -> String {
+/// Pretty, deterministic JSON for `cob-exports.json` (§13, §14): schema, the macro
+/// table, the label index (`site.json`'s own), and the cited works a consumer may
+/// `\cite{key@alias}`.
+pub fn to_exports_json(
+    macros: &BTreeMap<String, String>,
+    labels: &BTreeMap<String, Label>,
+    citations: &BTreeMap<String, ForestCite>,
+) -> String {
     let fj = ExportsJson {
         schema: EXPORTS_SCHEMA,
         macros,
         labels,
+        citations,
     };
     let mut s = serde_json::to_string_pretty(&fj).expect("ExportsJson serializes");
     s.push('\n');
@@ -672,6 +688,9 @@ pub struct ForestIndex {
     /// The label index, read by cross-document `\ref`/`\transclude` (§13).
     #[serde(default)]
     pub labels: BTreeMap<String, ForestLabel>,
+    /// The cited works, read by cross-document `\cite{key@alias}` (§14).
+    #[serde(default)]
+    pub citations: BTreeMap<String, ForestCite>,
 }
 
 /// An imported forest the consumer resolves against (§13): the `url` its pages
@@ -742,11 +761,11 @@ fn forest_index_carries_the_macros() {
             id: Some("k3f9".to_string()),
         },
     );
-    let json = to_exports_json(&macros, &labels);
-    assert!(json.contains("\"schema\": \"1.0.0\""));
+    let json = to_exports_json(&macros, &labels, &BTreeMap::new());
+    assert!(json.contains("\"schema\": \"1.1.0\""));
     // A consumer accepts the same major and rejects a newer one.
     assert!(read_exports(&json).unwrap().is_some());
-    let newer = json.replace("1.0.0", "2.0.0");
+    let newer = json.replace("1.1.0", "2.0.0");
     assert!(read_exports(&newer).unwrap_err().starts_with("error[E038]"));
     assert!(json.contains("\"\\\\RR\": \"\\\\mathbb{R}\""));
     assert!(json.contains("\"\\\\abs\": \"\\\\lvert #1 \\\\rvert\""));

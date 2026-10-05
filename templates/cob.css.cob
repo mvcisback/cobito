@@ -374,6 +374,48 @@ node, so it stays out of selections and quote selectors.
     transform: translateY(-50%);
     margin: 0;
   }
+
+  /* A citation marker (§14) is the cited work's opaque id, drawn bracketed from
+     data-id so no citation text enters a selection or the annotation layer's
+     quote selectors (§9.2); the <a> is the click target, linking to the entry in
+     the References list. It reads as the machine token it is: the warm sans accent
+     of a cross-reference, a hair smaller and raised like a reference call-out. */
+  a.cite {
+    font-family: var(--sans);
+    font-size: 0.75em;
+    color: var(--ref);
+    text-decoration: none;
+    vertical-align: 0.3em;
+
+    &::before {
+      content: "[" attr(data-id) "]";
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* Each References entry leads with the same bracketed opaque id, so a reader can
+     match an inline marker to its work. Generated from data-id, never a text node. */
+  .cite-uid {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.85em;
+    color: var(--ref);
+    text-decoration: none;
+    margin-right: 0.4em;
+
+    &::before {
+      content: "[" attr(data-id) "]";
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
 }
 @
 A transcluded node (§10) is one part of the document shown a second time in

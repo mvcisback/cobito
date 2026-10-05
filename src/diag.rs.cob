@@ -175,7 +175,9 @@ content-id clash with a local macro. E037 is a fetch fault: a failed git clone, 
 unsatisfiable \code{version} requirement, a moved release tag, a ref with no published
 \code{cob-exports.json}, or a \code{git} import a weave met before \code{cob fetch} pinned it.
 E038 is a format file (a \code{cob.lock} or an imported \code{cob-exports.json}) with a newer
-major schema than this cob understands.
+major schema than this cob understands. E039 and E040 are citations (§14): a
+bibliography that does not read or parse, and a \code{\cite} to a key no bibliography
+has.
 <<import diagnostics>>=
 "E036" => "An `\\import … as …` failed. Either it names an import with no \
            `[import.<name>]` in cob.toml, or an imported macro expands into \
@@ -194,6 +196,12 @@ major schema than this cob understands.
            newer cob. Schemas are semver: the same major is compatible (a newer \
            minor only adds fields cob ignores), a newer major is not. Upgrade cob \
            (§7.1, §13).",
+"E039" => "The bibliography file named in `[cite] bib` could not be read or \
+           parsed. The message carries the path and the BibTeX parser's reason; \
+           fix the file, or correct the path in cob.toml (§14).",
+"E040" => "A `\\cite{key}` names a key that is in no configured bibliography. \
+           Check the key's spelling, add the entry to the `.bib`, or set \
+           `[cite] bib` in cob.toml if no bibliography is configured yet (§14).",
 @
 The tests pin two properties: a few known codes explain and are case-insensitive,
 and an unknown code is \code{None}.

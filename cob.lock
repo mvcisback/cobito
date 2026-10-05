@@ -235,6 +235,24 @@
         "kind": "section"
       }
     },
+    "src/cite.rs.cob": {
+      "sec:cite-format": {
+        "id": "4p8f",
+        "kind": "section"
+      },
+      "sec:cite-impl": {
+        "id": "2P0y",
+        "kind": "section"
+      },
+      "sec:cite-source": {
+        "id": "8CO0",
+        "kind": "section"
+      },
+      "sec:cite-why": {
+        "id": "6oSj",
+        "kind": "section"
+      }
+    },
     "src/config.rs.cob": {
       "sec:E4N0": {
         "id": "E4N0",

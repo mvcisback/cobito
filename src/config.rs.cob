@@ -75,6 +75,8 @@ then the tests.
 
 <<an import>>
 
+<<the cite table>>
+
 <<the tangle table>>
 
 <<a tangle root>>
@@ -152,6 +154,21 @@ pub struct Config {
     /// order deterministic.
     #[serde(rename = "import", default)]
     pub imports: BTreeMap<String, Import>,
+    #[serde(default)]
+    pub cite: Cite,
+}
+@
+The \code{[cite]} table points at the bibliography (§14). \code{bib} is the path to a BibTeX
+file; \code{\cite{key}} resolves against its entries. Absent means the document has no
+bibliography, so a \code{\cite} is then the E040 unknown-citation error.
+<<the cite table>>=
+/// The `[cite]` table (§14): where the bibliography comes from. `bib` is the path
+/// to a BibTeX file; a `\cite{key}` resolves against its entries. Absent means no
+/// bibliography.
+#[derive(Deserialize, Default)]
+pub struct Cite {
+    #[serde(default)]
+    pub bib: Option<String>,
 }
 @
 An \code{[import.<alias>]} table binds another forest to the alias, so \code{label@alias}
