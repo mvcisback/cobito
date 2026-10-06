@@ -129,6 +129,7 @@ Each module carries the specification for its own job. This is the reading order
 | Importing macros from another forest | \code{src/import.rs.cob} |
 | Fetching a remote forest import | \code{src/fetch.rs.cob} |
 | Citations and the bibliography | \code{src/cite.rs.cob} |
+| Reverse backlinks across the forest | \code{src/backlinks.rs.cob} |
 | Tangling | \code{src/tangle.rs.cob} |
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
@@ -278,8 +279,13 @@ local namespace alias (§13). The slices, in order:
   \code{cob.lock} and \code{cob-exports.json} schemas are **semver and enforced**: a newer
   major is E038. A weave resolves a \code{git} import through its pin; an unfetched one
   is E037. A local \code{path} import needs no fetch and wins when both are set.
-- **Reverse backlinks — later.** A forest-wide index computes "imported by" and
-  cross-forest "referenced by", which a single document's build cannot see.
+- **Reverse backlinks — done (node-level).** A forest records its outgoing
+  cross-forest edges in \code{cob-exports.json} (schema 1.2.0); \code{cob backlinks
+  <site-dir>...} (\code{backlinks.rs.cob}) inverts them — joining on each forest's own
+  \code{[forest] url} — and writes a \code{n/<id>.backlinks.html} fragment per targeted node.
+  A node page fetches it lazily (the \code{<cob-backlinks>} element), so a forest shows
+  "Referenced by" / "Cited by" / "Transcluded by" from other forests without
+  re-weaving. Forest-level "imported by" is a cheap follow-up on the same inversion.
 
 The deferred node-model slices — floats as nodes and per-node pages — are shipped;
 the remaining transclusion notes are in \code{transclude.rs.cob}.
@@ -350,6 +356,7 @@ introduces a code, it claims the next free number in this registry.
 | E038 | a \code{cob.lock} or \code{cob-exports.json} has a newer major schema | \code{lock.rs}, \code{site.rs} |
 | E039 | the bibliography file does not read or parse | \code{cite.rs} |
 | E040 | a \code{\cite} names a key no bibliography has | \code{weave.rs} |
+| E041 | \code{cob backlinks} could not write a fragment | \code{backlinks.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

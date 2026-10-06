@@ -149,7 +149,7 @@
           # §6.3 the content needs no JavaScript: the only script a page may carry is
           # the inline nav-spy aid — no math script, no external src.
           for p in $TMPDIR/a/*.html; do
-            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
               echo "$p carries a script other than the nav-spy aid; math must render at weave time" >&2
               exit 1
             fi
@@ -195,7 +195,7 @@
           grep -qE 'id="eq-wrap" data-id="[0-9A-Za-z]{4}"' $TMPDIR/md-a/index.html
           grep -q 'href="#eq-wrap"' $TMPDIR/md-a/index.html
           grep -q 'href="#tbl-api"' $TMPDIR/md-a/index.html
-          if grep '<script' $TMPDIR/md-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' $TMPDIR/md-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "Markdown weave emitted a script other than the nav-spy aid; math must render at weave time" >&2
             exit 1
           fi
@@ -226,7 +226,7 @@
             exit 1
           fi
           # Highlighting is pure CSS classes — the only script is the nav-spy aid.
-          if grep '<script' $TMPDIR/hl-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' $TMPDIR/hl-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "highlighted weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
@@ -256,7 +256,7 @@
           test "$(grep -oE 'class="chunk-body"' $TMPDIR/tx-a/index.html | wc -l)" -eq 1
           # Transclusion duplicates finished HTML, so it adds no script: the only
           # script a page may carry is the nav-spy aid (§6.3).
-          if grep '<script' $TMPDIR/tx-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' $TMPDIR/tx-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "transcluded weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
@@ -274,7 +274,7 @@
           # A node page is archival too: the only scripts are the nav-spy and cob-transclude
           # aids, so a transclusion inside a node page lazy-loads and everything else holds.
           for p in $TMPDIR/tx-a/n/*.html; do
-            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
               echo "a node page emitted a script other than the enhancement aids" >&2
               exit 1
             fi
@@ -313,7 +313,7 @@
           grep -q 'Transcluded by' "$fig"
           # A float node page is archival too: only the nav-spy and cob-transclude aids.
           for p in $TMPDIR/txf-a/n/*.html; do
-            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+            if grep '<script' "$p" | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
               echo "a float node page emitted a script other than the enhancement aids" >&2
               exit 1
             fi
@@ -379,7 +379,7 @@
           $cob weave --locked sections.cob --out out
           grep -qE '<h2 id="sec-[0-9A-Za-z]{4}"><a class="sec-uid" href="#sec-[0-9A-Za-z]{4}" data-id="[0-9A-Za-z]{4}">' out/index.html
           # The only script the archival page carries is the nav-spy aid (§6.3).
-          if grep '<script' out/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' out/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "section weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
@@ -465,7 +465,7 @@
             exit 1
           fi
           # Pure CSS coloring: the only script here is the nav-spy aid too.
-          if grep '<script' $TMPDIR/df-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' $TMPDIR/df-a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "dogfood weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
             exit 1
           fi
@@ -500,7 +500,7 @@
           $cob weave --locked templates/cob.css.cob --out $TMPDIR/shcss
           grep -q 'class="tok-property">' $TMPDIR/shcss/index.html
           for page in $TMPDIR/sh $TMPDIR/shcss; do
-            if grep '<script' "$page"/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+            if grep '<script' "$page"/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
               echo "self-host weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
               exit 1
             fi
@@ -517,7 +517,7 @@
             if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
               echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
             fi
-            if grep '<script' $TMPDIR/m/*.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+            if grep '<script' $TMPDIR/m/*.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
               echo "$m wove a script other than the nav-spy aid (§6.3)" >&2; exit 1
             fi
           done
@@ -560,7 +560,7 @@
 
           # §13 the forest index: `cob-exports.json` exports the macro table so another forest can
           # `\import` it — name → expansion, including the parametered macro (as KaTeX #1).
-          grep -q '"schema": "1.1.0"' a/cob-exports.json
+          grep -q '"schema": "1.2.0"' a/cob-exports.json
           grep -q '"\\\\RR": "\\\\mathbb{R}"' a/cob-exports.json
           grep -q '"\\\\abs": "\\\\lvert #1 \\\\rvert"' a/cob-exports.json
 
@@ -600,7 +600,7 @@
           grep -q 'data-transclude="def:basics"' a/index.html
 
           # The archival page carries no script but the nav-spy aid (§6.3).
-          if grep '<script' a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude)"'; then
+          if grep '<script' a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|cob-backlinks)"'; then
             echo "macros weave emitted a script other than the nav-spy aid" >&2
             exit 1
           fi
@@ -882,6 +882,70 @@
             exit 1
           fi
           grep -q 'E040' $work/e
+          touch $out
+        '';
+
+        backlinks = pkgs.runCommand "cob-backlinks" { } ''
+          cob=${self.packages.${system}.cob}/bin/cob
+          work=$TMPDIR/bl
+          prod=$work/prod
+          cons=$work/cons
+          mkdir -p $prod $cons
+
+          # The producer cites a work (so it earns a node page) and declares its own url.
+          cat > $prod/references.bib <<'DOC'
+          @book{knuth1984,
+            author    = {Donald E. Knuth},
+            title     = {The {\TeX}book},
+            publisher = {Addison-Wesley},
+            year      = {1984}
+          }
+          DOC
+          cat > $prod/cob.toml <<'DOC'
+          [cite]
+          bib = "references.bib"
+          [forest]
+          url = "https://prod.example"
+          DOC
+          printf '# Producer\n\n## Refs\n\nFoundational \\cite{knuth1984}.\n' > $prod/doc.cob
+          ( cd $prod && $cob lock doc.cob >/dev/null && $cob weave --archive doc.cob --out _site >/dev/null )
+
+          # The consumer imports the producer and cites its work cross-forest.
+          cat > $cons/cob.toml <<DOC
+          [import.bibprod]
+          path = "$prod/_site"
+          url = "https://prod.example"
+          [forest]
+          url = "https://cons.example"
+          DOC
+          cat > $cons/doc.cob <<'DOC'
+          # Consumer
+
+          ## Uses
+
+          ```imports
+          \import bibprod as pub
+          ```
+
+          As the classic text shows \cite{knuth1984@pub}.
+          DOC
+          ( cd $cons && $cob lock doc.cob >/dev/null && $cob weave --archive doc.cob --out _site >/dev/null )
+          # The consumer exports its own url and the outgoing cite edge.
+          grep -q '"url": "https://cons.example"' $cons/_site/cob-exports.json
+          grep -q '"to_url": "https://prod.example"' $cons/_site/cob-exports.json
+
+          # Invert the forest's edges.
+          $cob backlinks $prod/_site $cons/_site
+
+          # The producer's cited node now has a reverse-backlink fragment pointing at the
+          # consumer's node, and its node page fetches it lazily. The target id is the
+          # consumer edge's `to_id` (the producer's cited node).
+          id=$(sed -n 's/.*"to_id": "\([^"]*\)".*/\1/p' $cons/_site/cob-exports.json | head -1)
+          test -n "$id"
+          test -f $prod/_site/n/$id.backlinks.html
+          grep -q '<h2>Cited by</h2>' $prod/_site/n/$id.backlinks.html
+          grep -q 'href="https://cons.example/n/' $prod/_site/n/$id.backlinks.html
+          grep -q "<cob-backlinks src=\"$id.backlinks.html\">" $prod/_site/n/$id.html
           touch $out
         '';
       });

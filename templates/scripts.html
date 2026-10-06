@@ -108,3 +108,34 @@
   customElements.define("cob-transclude", CobTransclude);
 })();
 </script>
+<script id="cob-backlinks">
+// Progressive enhancement (§16): a <cob-backlinks src="<id>.backlinks.html"> lazily
+// fetches the reverse backlinks a `cob backlinks` pass wrote for this node — who, across
+// the forest, references/cites/transcludes it — and shows them. Its links are absolute
+// (other forests), so no rebasing. Without the pass, the fragment, or JS it shows
+// nothing: a producer cannot know its consumers at its own build time.
+(function () {
+  if (!("IntersectionObserver" in window) || !window.customElements) return;
+  class CobBacklinks extends HTMLElement {
+    connectedCallback() {
+      if (this._wired) return;
+      this._wired = true;
+      var src = this.getAttribute("src");
+      if (!src) return;
+      var io = new IntersectionObserver((entries, obs) => {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) { obs.disconnect(); this.load(src); break; }
+        }
+      });
+      io.observe(this);
+    }
+    load(src) {
+      var host = this;
+      fetch(src).then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+        .then(function (html) { host.innerHTML = html; })
+        .catch(function () { /* no backlinks yet */ });
+    }
+  }
+  customElements.define("cob-backlinks", CobBacklinks);
+})();
+</script>

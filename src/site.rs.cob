@@ -621,7 +621,7 @@ newer major (E038), so a forest cannot be read by a cob too old to understand it
 <<the forest index>>=
 /// The current `cob-exports.json` schema (§13). Semver: a consumer rejects a newer
 /// major (E038).
-pub const EXPORTS_SCHEMA: &str = "1.1.0";
+pub const EXPORTS_SCHEMA: &str = "1.2.0";
 const EXPORTS_SCHEMA_MAJOR: u64 = 1;
 
 /// One cited work another forest may cite (§14): the frozen id naming its node page
@@ -633,29 +633,49 @@ pub struct ForestCite {
     pub html: String,
 }
 
-/// The importable index of a forest (§13, §14): the macro table, the label table,
-/// and the cited works. The labels reuse `site.json`'s own.
+/// One outgoing cross-forest edge (§16): a `\ref`/`\cite`/`\transclude` this forest
+/// makes into another. `to_url` names the target forest (the join key) and `to_id`
+/// its node; `from_id`/`from_title` are this forest's node that made the edge, so a
+/// reverse backlink can link back. The aggregator inverts these.
+#[derive(Serialize, serde::Deserialize, Clone, Debug)]
+pub struct ForestEdge {
+    pub kind: String,
+    pub to_url: String,
+    pub to_id: String,
+    pub from_id: String,
+    pub from_title: String,
+}
+
+/// The importable index of a forest (§13, §14, §16): the macro table, the label
+/// table, the cited works, this forest's own deployed url, and its outgoing
+/// cross-forest edges. The labels reuse `site.json`'s own.
 #[derive(Serialize)]
 struct ExportsJson<'a> {
     schema: &'static str,
+    url: &'a str,
     macros: &'a BTreeMap<String, String>,
     labels: &'a BTreeMap<String, Label>,
     citations: &'a BTreeMap<String, ForestCite>,
+    edges: &'a [ForestEdge],
 }
 
-/// Pretty, deterministic JSON for `cob-exports.json` (§13, §14): schema, the macro
-/// table, the label index (`site.json`'s own), and the cited works a consumer may
-/// `\cite{key@alias}`.
+/// Pretty, deterministic JSON for `cob-exports.json` (§13, §14, §16): schema, this
+/// forest's url, the macro table, the label index (`site.json`'s own), the cited
+/// works, and the outgoing cross-forest edges the backlink aggregator inverts.
 pub fn to_exports_json(
+    url: &str,
     macros: &BTreeMap<String, String>,
     labels: &BTreeMap<String, Label>,
     citations: &BTreeMap<String, ForestCite>,
+    edges: &[ForestEdge],
 ) -> String {
     let fj = ExportsJson {
         schema: EXPORTS_SCHEMA,
+        url,
         macros,
         labels,
         citations,
+        edges,
     };
     let mut s = serde_json::to_string_pretty(&fj).expect("ExportsJson serializes");
     s.push('\n');
@@ -691,6 +711,14 @@ pub struct ForestIndex {
     /// The cited works, read by cross-document `\cite{key@alias}` (§14).
     #[serde(default)]
     pub citations: BTreeMap<String, ForestCite>,
+    /// This forest's own deployed url (§16): the join key the backlink aggregator
+    /// matches an incoming edge's `to_url` against.
+    #[serde(default)]
+    pub url: String,
+    /// This forest's outgoing cross-forest edges (§16), inverted into reverse
+    /// backlinks by the aggregator.
+    #[serde(default)]
+    pub edges: Vec<ForestEdge>,
 }
 
 /// An imported forest the consumer resolves against (§13): the `url` its pages
@@ -761,11 +789,11 @@ fn forest_index_carries_the_macros() {
             id: Some("k3f9".to_string()),
         },
     );
-    let json = to_exports_json(&macros, &labels, &BTreeMap::new());
-    assert!(json.contains("\"schema\": \"1.1.0\""));
+    let json = to_exports_json("", &macros, &labels, &BTreeMap::new(), &[]);
+    assert!(json.contains("\"schema\": \"1.2.0\""));
     // A consumer accepts the same major and rejects a newer one.
     assert!(read_exports(&json).unwrap().is_some());
-    let newer = json.replace("1.1.0", "2.0.0");
+    let newer = json.replace("1.2.0", "2.0.0");
     assert!(read_exports(&newer).unwrap_err().starts_with("error[E038]"));
     assert!(json.contains("\"\\\\RR\": \"\\\\mathbb{R}\""));
     assert!(json.contains("\"\\\\abs\": \"\\\\lvert #1 \\\\rvert\""));

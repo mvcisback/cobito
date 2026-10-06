@@ -235,6 +235,24 @@
         "kind": "section"
       }
     },
+    "src/backlinks.rs.cob": {
+      "sec:bl-impl": {
+        "id": "WIlL",
+        "kind": "section"
+      },
+      "sec:bl-io": {
+        "id": "belZ",
+        "kind": "section"
+      },
+      "sec:bl-join": {
+        "id": "gPmG",
+        "kind": "section"
+      },
+      "sec:bl-why": {
+        "id": "gg2q",
+        "kind": "section"
+      }
+    },
     "src/cite.rs.cob": {
       "sec:cite-format": {
         "id": "4p8f",

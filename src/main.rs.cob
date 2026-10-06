@@ -31,6 +31,8 @@ it does not.
 
 <<the fetch command>>
 
+<<the backlinks command>>
+
 <<build the document once>>
 
 <<the lock command>>
@@ -54,6 +56,7 @@ it does not.
 Every module in the crate is declared here, in one alphabetical block, because
 this is the crate root. Adding a module means adding one line.
 <<the module tree>>=
+mod backlinks;
 mod cite;
 mod config;
 mod diag;
@@ -79,7 +82,7 @@ The binary needs only two names from the standard library: a path type for the
 files it reads and writes, and the process exit code it returns.
 <<imports>>=
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 @
 The usage banner is the help text. It prints when the command line makes no sense.
@@ -93,6 +96,7 @@ USAGE:
     cob weave <file.cob>...        weave to _site/ (single page; M2 adds splitting)
     cob fetch                     pin new/changed git imports, cache their index (§13)
     cob update [alias]            re-resolve git imports to the newest matching release (§13)
+    cob backlinks <site-dir>...   write reverse-backlink fragments across built forests (§16)
     cob lock <file.cob>...         mint frozen ids for every label into cob.lock (§7.1)
     cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     cob labels <file.cob>          list the file's label → id map from cob.lock
@@ -135,6 +139,7 @@ fn main() -> ExitCode {
         Some(("weave", args)) if !args.is_empty() => weave_cmd(args),
         Some(("fetch", rest)) if rest.is_empty() => fetch_cmd(),
         Some(("update", rest)) if rest.len() <= 1 => update_cmd(rest.first().map(String::as_str)),
+        Some(("backlinks", dirs)) if !dirs.is_empty() => backlinks_cmd(dirs),
         Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
         Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
@@ -325,6 +330,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         &lang_cfg,
         &loaded,
         &bib,
+        cfg.forest.url.as_deref().unwrap_or_default(),
         archive,
         mode,
     ) {
@@ -398,6 +404,25 @@ fn run_fetch(mode: fetch::Mode) -> ExitCode {
                 let short: String = f.sha.chars().take(12).collect();
                 println!("pinned {} @ {short}", f.alias);
             }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The backlinks command runs the forest-wide inversion (§16). It takes the built site
+directories, writes a reverse-backlink fragment per targeted node, and reports how
+many it wrote. It never weaves; it only reads each site's \code{cob-exports.json} and
+writes fragments beside its node pages.
+<<the backlinks command>>=
+fn backlinks_cmd(dirs: &[String]) -> ExitCode {
+    let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+    match backlinks::run(&paths) {
+        Ok(n) => {
+            println!("cob backlinks: wrote {n} fragment(s)");
             ExitCode::SUCCESS
         }
         Err(e) => {

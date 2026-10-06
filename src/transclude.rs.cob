@@ -184,7 +184,7 @@ use crate::model::Lint;
 use crate::prose;
 use crate::resolve::Resolution;
 use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
-use crate::site::ForestRef;
+use crate::site::{ForestEdge, ForestRef};
 @
 A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
 carries the address. The expander scans for this exact opening and tail, so its own
@@ -849,6 +849,82 @@ fn collect_sites(
                 .push(h);
         }
         i = vstart + q;
+    }
+}
+
+/// Every outgoing cross-forest edge in the bodies (§16): a `\ref`/`\cite`/
+/// `\transclude` into an imported forest, as a `ForestEdge` the backlink aggregator
+/// inverts. The marker survives in the section bodies (the cite/ref rewrites touch
+/// the wrapped copies, not these), so the same scan that finds local backlinks
+/// finds foreign uses; the target id comes from the import's exported index, and the
+/// source is the heading node the use sits in.
+pub fn outgoing_edges(
+    scan: &Scan,
+    res: &Resolution,
+    bodies: &[String],
+    imports: &BTreeMap<String, ForestRef>,
+) -> Vec<ForestEdge> {
+    let heads = &scan.headings;
+    let pos: Vec<(usize, usize)> = heads
+        .iter()
+        .enumerate()
+        .map(|(i, h)| (h.section, element_offset(&bodies[h.section], &res.heading_anchors[i])))
+        .collect();
+    let mut edges = Vec::new();
+    for (s, body) in bodies.iter().enumerate() {
+        collect_edges(body, s, " data-ref=\"", "ref", &pos, heads, res, imports, &mut edges);
+        collect_edges(body, s, " data-cite=\"", "cite", &pos, heads, res, imports, &mut edges);
+        collect_edges(body, s, OPEN, "transclude", &pos, heads, res, imports, &mut edges);
+    }
+    edges
+}
+
+/// Record each cross-forest `pat"label@alias"` site as a `ForestEdge`. The id is
+/// resolved against the import's index (a cite key for a cite, a label otherwise);
+/// the source is the heading node the use sits in. A local use (no `@`), an unknown
+/// alias or target, or a use above every heading is skipped.
+#[allow(clippy::too_many_arguments)]
+fn collect_edges(
+    body: &str,
+    section: usize,
+    pat: &str,
+    kind: &str,
+    pos: &[(usize, usize)],
+    heads: &[Heading],
+    res: &Resolution,
+    imports: &BTreeMap<String, ForestRef>,
+    out: &mut Vec<ForestEdge>,
+) {
+    let mut i = 0;
+    while let Some(rel) = body[i..].find(pat) {
+        let p = i + rel;
+        let vstart = p + pat.len();
+        let Some(q) = body[vstart..].find('"') else { break };
+        let value = &body[vstart..vstart + q];
+        i = vstart + q;
+        let Some((label, alias)) = value.split_once('@') else {
+            continue;
+        };
+        let Some(fr) = imports.get(alias) else { continue };
+        let to_id = if kind == "cite" {
+            fr.index.citations.get(label).map(|c| c.id.clone())
+        } else {
+            fr.index.labels.get(label).and_then(|l| l.id.clone())
+        };
+        let Some(to_id) = to_id else { continue };
+        let Some(h) = containing_head(pos, (section, p)) else {
+            continue;
+        };
+        let Some(from_id) = res.heading_uids[h].clone() else {
+            continue;
+        };
+        out.push(ForestEdge {
+            kind: kind.to_string(),
+            to_url: fr.url.clone(),
+            to_id,
+            from_id,
+            from_title: heads[h].text.clone(),
+        });
     }
 }
 

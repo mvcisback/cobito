@@ -30,7 +30,8 @@
 {% endif %}{% if cited_by %}<h2>Cited by</h2>
 <ul>{% for b in cited_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>
 {% endif %}</section>
-{% endif %}</main>
+{% endif %}<cob-backlinks src="{{ id }}.backlinks.html"></cob-backlinks>
+</main>
 <footer class="pagination">
 <span></span>
 <a class="sitemap-link" href="../sitemap.html">Sitemap</a>

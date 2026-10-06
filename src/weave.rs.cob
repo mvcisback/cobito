@@ -390,6 +390,9 @@ pub struct Site {
     /// This document's cited works (key → {id, html}). Written to
     /// `cob-exports.json` so another forest can `\cite{key@alias}` them (§14).
     pub citations: BTreeMap<String, site::ForestCite>,
+    /// This document's outgoing cross-forest edges (§16). Written to
+    /// `cob-exports.json` for the backlink aggregator to invert.
+    pub edges: Vec<site::ForestEdge>,
 }
 
 impl Site {
@@ -874,6 +877,9 @@ pub fn render(
     // it carries a directive, and the archival JSON (built above from
     // pre-expansion bodies) is untouched. The scope counter is document-wide, so
     // every copy's scoped ids are unique and the output stays deterministic (§8).
+    // §16 the outgoing cross-forest edges, collected from the bodies before `res`
+    // is partially consumed below; the backlink aggregator inverts them.
+    let edges = transclude::outgoing_edges(&scan, &res, &bodies, &by_alias);
     let mut tx = transclude::Context::build(&scan, &res, &bodies, &by_alias, &ref_nodes);
     // §10 a `def:` (macros) node is homeless: the table has just captured it, so
     // drop the canonical island from the reading flow and the archival JSON before
@@ -985,6 +991,7 @@ pub fn render(
     for np in tx.node_pages() {
         let html = node_tmpl
             .render(minijinja::context! {
+                id => np.id,
                 title => np.title,
                 body => np.body,
                 context => np.context,
@@ -1015,6 +1022,7 @@ pub fn render(
         json,
         macros: defs,
         citations: exported_citations,
+        edges,
     })
 }
 @
@@ -1215,6 +1223,7 @@ pub fn write_site(
     lang_cfg: &LangConfig,
     loaded: &BTreeMap<String, site::ForestRef>,
     bib: &Bib,
+    forest_url: &str,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
@@ -1260,7 +1269,13 @@ pub fn write_site(
         // re-rendering it.
         std::fs::write(
             out.join("cob-exports.json"),
-            site::to_exports_json(&site.macros, &site.json.labels, &site.citations),
+            site::to_exports_json(
+                forest_url,
+                &site.macros,
+                &site.json.labels,
+                &site.citations,
+                &site.edges,
+            ),
         )
         .map_err(WeaveError::Io)?;
     }
@@ -1530,17 +1545,18 @@ fn math_is_rendered_not_left_as_placeholder() {
     assert!(!html.contains("<span>a < b</span>"));
 }
 @
-A page carries only the two progressive-enhancement aids — the \code{nav-spy} and
-\code{cob-transclude} scripts — and no other script. This is the §6.3 modularity guard:
-math renders at weave time and transclusion is a lazy element, so nothing the
-content depends on is ever a script, and none leaks in.
+A page carries only the progressive-enhancement aids — the \code{nav-spy},
+\code{cob-transclude}, and \code{cob-backlinks} scripts — and no other script. This is the
+§6.3 modularity guard: math renders at weave time and transclusion and backlinks are
+lazy elements, so nothing the content depends on is ever a script, and none leaks in.
 <<a page carries only the enhancement scripts>>=
 #[test]
 fn a_page_carries_only_the_enhancement_scripts() {
     let html = &dev_render(&fixture(), "").pages[0].html;
     let total = html.matches("<script").count();
     let named = html.matches("<script id=\"nav-spy\">").count()
-        + html.matches("<script id=\"cob-transclude\">").count();
+        + html.matches("<script id=\"cob-transclude\">").count()
+        + html.matches("<script id=\"cob-backlinks\">").count();
     assert_eq!(total, named, "a page carried a script that is not an enhancement aid");
     assert!(html.contains("<script id=\"nav-spy\">"));
     assert!(html.contains("<script id=\"cob-transclude\">"));
@@ -1960,12 +1976,15 @@ fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
     assert_eq!(site.node_pages.len(), 2);
     for (path, html) in &site.node_pages {
         assert!(path.starts_with("n/") && path.ends_with(".html"));
-        // A node page is archival too: only the nav-spy and cob-transclude aids, so
-        // a transclusion inside a node page lazy-loads and nothing else runs.
+        // A node page is archival too: only the nav-spy, cob-transclude, and
+        // cob-backlinks aids, so a transclusion or backlinks list lazy-loads and
+        // nothing else runs.
         for tag in html.match_indices("<script id=") {
             let id = &html[tag.0 + 11..];
             assert!(
-                id.starts_with("\"nav-spy\"") || id.starts_with("\"cob-transclude\""),
+                id.starts_with("\"nav-spy\"")
+                    || id.starts_with("\"cob-transclude\"")
+                    || id.starts_with("\"cob-backlinks\""),
                 "node page has an unexpected script"
             );
         }

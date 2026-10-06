@@ -77,6 +77,8 @@ then the tests.
 
 <<the cite table>>
 
+<<the forest table>>
+
 <<the tangle table>>
 
 <<a tangle root>>
@@ -156,6 +158,23 @@ pub struct Config {
     pub imports: BTreeMap<String, Import>,
     #[serde(default)]
     pub cite: Cite,
+    #[serde(default)]
+    pub forest: Forest,
+}
+@
+The \code{[forest]} table declares this forest's own identity (§16). \code{url} is where its
+pages are deployed; it is the join key for reverse backlinks — a consumer's
+outgoing edge names the target forest by the same url, so the aggregator matches an
+edge to the forest it points at. A forest with no \code{url} does not take part in
+cross-forest backlinks.
+<<the forest table>>=
+/// The `[forest]` table (§16): this forest's own identity. `url` is its deployed
+/// base — the join key that lets the backlink aggregator match a consumer's
+/// outgoing edge to the forest it targets.
+#[derive(Deserialize, Default)]
+pub struct Forest {
+    #[serde(default)]
+    pub url: Option<String>,
 }
 @
 The \code{[cite]} table points at the bibliography (§14). \code{bib} is the path to a BibTeX
