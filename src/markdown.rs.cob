@@ -28,8 +28,11 @@ Marks are commands, not punctuation, so there is no flanking rule to get wrong:
 - \code{\transclude{sec:name}} makes the transclusion island the weaver expands (§10).
   A paragraph that is only a \code{\transclude} makes the bare island, not a \code{<p>}.
 
-A \code{\ref}, \code{\cite}, \code{\transclude}, or \code{$…$} inside a \code{\code{}} is literal text, because
-the code body is captured whole before any command is read.
+Inline code is \code{\code{…}} or a backtick span (\code{`…`}); both are the same
+\code{<code>} and both are literal — a \code{\ref}, \code{\cite}, \code{\transclude}, or \code{$…$} inside
+either is text, never a command, because the grammar captures the span's body
+whole and never reads it. An unmatched backtick is a literal backtick. (Use
+\code{\code{}} when the body itself holds a backtick.)
 
 ## The block grammar {#sec:k8T0}
 
@@ -826,7 +829,7 @@ peg::parser! {
         pub rule nodes() -> Vec<Inline> = node()*
 
         rule node() -> Inline
-            = strong() / emph() / code() / refc() / citec() / transclude() / dmath() / imath() / text()
+            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / dmath() / imath() / text() / lonetick()
 
         rule strong() -> Inline = "\\strong{" ns:nodes() "}" { Inline::Strong(ns) }
         rule emph() -> Inline = "\\emph{" ns:nodes() "}" { Inline::Emph(ns) }
@@ -834,6 +837,13 @@ peg::parser! {
         rule code() -> Inline = "\\code{" v:$(cb_atom()*) "}" { Inline::Code(unescape_braces(v)) }
         rule cb_atom() = "\\{" {} / "\\}" {} / braces() / (!['{' | '}'] [_] {})
         rule braces() = "{" cb_atom()* "}"
+
+        // A backtick code span is literal, like `\code{}`: its body is captured whole
+        // and never read for commands, so `` `\cite{x}` `` is text, not a citation.
+        // An unmatched backtick is a literal character (`lonetick`), so a stray
+        // backtick never fails the parse.
+        rule codespan() -> Inline = "`" v:$((!"`" [_])*) "`" { Inline::Code(v.to_string()) }
+        rule lonetick() -> Inline = "`" { Inline::Text("`".to_string()) }
 
         rule refc() -> Inline = "\\ref{" s:$((!"}" [_])*) "}" { Inline::Ref(s.to_string()) }
         rule citec() -> Inline = "\\cite{" s:$((!"}" [_])*) "}" { Inline::Cite(s.to_string()) }
@@ -848,7 +858,7 @@ peg::parser! {
 
         rule text() -> Inline = s:$(t_atom()+) { Inline::Text(unescape_text(s)) }
         rule t_atom() = "\\$" {} / "\\{" {} / "\\}" {} / "\\\\" {} / (!marker() [_] {})
-        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "$" / "{" / "}"
+        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "$" / "{" / "}" / "`"
 
         rule ws() = [' ' | '\t' | '\n' | '\r']*
         pub rule modifiers() -> Vec<Modifier> = ws() m:(x:modifier() ws() { x })* { m }
@@ -1033,6 +1043,8 @@ mod tests {
     <<a ref lowers to a data-ref>>
 
     <<a cite lowers to data-cite markers>>
+
+    <<a backtick span is literal inline code>>
 
     <<a transclude lowers to a placeholder>>
 
@@ -1240,6 +1252,27 @@ fn ref_lowers_to_a_data_ref() {
     let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
     assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
     assert!(html.contains("<a data-ref=\"eq:wrap\"></a>"));
+}
+@
+A backtick span is literal inline code — commands inside it never lower — and an
+unmatched backtick is a literal character.
+<<a backtick span is literal inline code>>=
+#[test]
+fn a_backtick_span_is_literal_inline_code() {
+    // Commands inside a backtick span are text, like inside `\code{}`.
+    let (html, _) = run("use `\\cite{x}` and `\\ref{fig:p}` and `$x$` literally");
+    assert!(html.contains("<code>\\cite{x}</code>"));
+    assert!(html.contains("<code>\\ref{fig:p}</code>"));
+    assert!(html.contains("<code>$x$</code>"));
+    assert!(!html.contains("data-cite"));
+    assert!(!html.contains("data-ref"));
+    // A real command outside the span still lowers.
+    let (live, _) = run("code `\\ref{fig:p}` but real \\ref{fig:q}");
+    assert!(live.contains("<code>\\ref{fig:p}</code>"));
+    assert!(live.contains("<a data-ref=\"fig:q\"></a>"));
+    // An unmatched backtick is a literal backtick, not a parse error.
+    let (lone, _) = run("a lone ` backtick");
+    assert!(lone.contains("lone ` backtick") || lone.contains("lone `"));
 }
 @
 A cite command lowers to one \code{data-cite} marker per key.
