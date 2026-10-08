@@ -66,11 +66,12 @@
         # Stage 1 tangles every .cob with cob (natively, no noweb), so the shipped
         # binary compiles from a tree cob itself made (§13). templates/cob.css is
         # include_str!'d into the weaver, so it and its palette are tangled here too.
+        # build.rs is the grammar build script (§5.5); it tangles to the repo root.
         cobSource = pkgs.runCommand "cob-src" { } ''
           cp -r ${self} $out
           chmod -R +w $out
           cd $out
-          for nw in src/*.rs.cob templates/cob.css.cob; do
+          for nw in src/*.rs.cob templates/cob.css.cob build.rs.cob; do
             ${cobBootstrap}/bin/cob tangle "$nw" --out .
           done
         '';

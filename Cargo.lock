@@ -110,6 +110,7 @@ name = "cob"
 version = "0.1.0"
 dependencies = [
  "biblatex",
+ "cc",
  "gix",
  "katex",
  "lol_html",
@@ -123,6 +124,7 @@ dependencies = [
  "tree-sitter-bash",
  "tree-sitter-css",
  "tree-sitter-highlight",
+ "tree-sitter-language",
  "tree-sitter-nix",
  "tree-sitter-rust",
 ]

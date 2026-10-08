@@ -9,6 +9,7 @@
 # fresh checkout; then `cob tangle` refreshes them. flake.nix is the one
 # committed generated file — Nix must read it — and the dogfood check guards it.
 /src/*.rs
+/build.rs
 /templates/cob.css
 /templates/cob-syntax.css
 # The dist flake is tangled only into the `tangled` snapshot at release, never
