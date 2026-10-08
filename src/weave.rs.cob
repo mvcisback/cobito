@@ -139,6 +139,7 @@ use crate::prose::{self, Math};
 use crate::resolve::{self, LabelIds, NavNode, PageMeta, ResolveError};
 use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
+use crate::tangle;
 use crate::transclude;
 @
 The error type collects a failure from every stage the weaver drives. The markdown
@@ -228,6 +229,7 @@ fn render_code(
     first_line: u32,
     doc: &DocModel,
     lang: Option<Lang>,
+    tangle_runs: Option<&[(usize, usize, usize)]>,
 ) -> String {
     let marker = if continues { "+=" } else { "=" };
 
@@ -250,13 +252,17 @@ fn render_code(
     }
 
     let hole_refs: Vec<(usize, &str)> = holes.iter().map(|(o, s)| (*o, s.as_str())).collect();
-    let lines = match lang {
-        // Highlighting is best-effort: a grammar error falls back to the same
-        // escaped plain text the no-language path emits (§5.5 — plain text is
-        // the floor, never an error).
-        Some(l) => highlight::highlight(&source, &hole_refs, l)
-            .unwrap_or_else(|_| plain_lines(&source, &holes)),
-        None => plain_lines(&source, &holes),
+    let lines = match tangle_runs {
+        // Proper highlighting (§5.5, #1): the tokens were computed on the whole
+        // tangled file, in context, then mapped back onto this chunk's bytes.
+        Some(runs) => highlight::render_runs(&source, &hole_refs, runs),
+        // Fallback for a chunk no root tangles (an illustrative snippet): tokenize
+        // the fragment alone, best-effort, else the plain-text floor (§5.5).
+        None => match lang {
+            Some(l) => highlight::highlight(&source, &hole_refs, l)
+                .unwrap_or_else(|_| plain_lines(&source, &holes)),
+            None => plain_lines(&source, &holes),
+        },
     };
 
     let mut out = format!(
@@ -431,15 +437,82 @@ way.
 /// Markdown dialect (which also extracts math), and render each code body straight.
 /// Shared by `render` and the mint-only `cob lock` path so both see labels the same
 /// way.
+/// Precompute each code section's highlight runs from the tangled files (§5.5, #1).
+/// Tangle every root with provenance, tree-sitter each root's text in its resolved
+/// language, and map the token runs back onto each section's source bytes — the
+/// first root that reaches a section owns its highlighting. A section no root
+/// reaches, or whose own language differs from the root it lands in, is absent, so
+/// the weave falls back to per-chunk tokenizing. A tangle cycle yields an empty map.
+fn tangle_section_runs(
+    doc: &DocModel,
+    lang_cfg: &LangConfig,
+) -> BTreeMap<usize, Vec<(usize, usize, usize)>> {
+    let mut map: BTreeMap<usize, Vec<(usize, usize, usize)>> = BTreeMap::new();
+    let roots = match tangle::highlight_prov(doc) {
+        Ok(r) => r,
+        Err(_) => return map,
+    };
+    let mut first_root: BTreeMap<usize, usize> = BTreeMap::new();
+    for (ri, r) in roots.iter().enumerate() {
+        for seg in &r.segs {
+            first_root.entry(seg.section).or_insert(ri);
+        }
+    }
+    for (ri, r) in roots.iter().enumerate() {
+        let Some(root_lang) = highlight::resolve(doc, &r.root, lang_cfg) else {
+            continue;
+        };
+        let Ok(runs) = highlight::runs(&r.text, root_lang) else {
+            continue;
+        };
+        for seg in &r.segs {
+            if first_root.get(&seg.section) != Some(&ri) {
+                continue;
+            }
+            // A section whose own language differs from this root's grammar must
+            // not borrow its tokens — fall back instead.
+            if section_lang(doc, seg.section, lang_cfg) != Some(root_lang) {
+                continue;
+            }
+            let seg_end = seg.tangled_off + seg.len;
+            for &(s, e, name) in &runs {
+                if e <= seg.tangled_off || s >= seg_end {
+                    continue;
+                }
+                let cs = s.max(seg.tangled_off);
+                let ce = e.min(seg_end);
+                map.entry(seg.section).or_default().push((
+                    seg.src_off + (cs - seg.tangled_off),
+                    seg.src_off + (ce - seg.tangled_off),
+                    name,
+                ));
+            }
+        }
+    }
+    for v in map.values_mut() {
+        v.sort_by_key(|r| r.0);
+    }
+    map
+}
+
+/// The resolved highlight language of a code section, or `None` for a docs section.
+fn section_lang(doc: &DocModel, section: usize, lang_cfg: &LangConfig) -> Option<Lang> {
+    match &doc.sections[section].kind {
+        SectionKind::Code { name, .. } => highlight::resolve(doc, name, lang_cfg),
+        _ => None,
+    }
+}
+
 fn render_frags(
     doc: &DocModel,
     lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
     lints: &mut Vec<Lint>,
+    section_runs: Option<&BTreeMap<usize, Vec<(usize, usize, usize)>>>,
 ) -> Result<Vec<Frag>, WeaveError> {
     let mut frags: Vec<Frag> = Vec::with_capacity(doc.sections.len());
-    for section in &doc.sections {
+    for (i, section) in doc.sections.iter().enumerate() {
         match &section.kind {
             SectionKind::Docs { spans } => {
                 let reassembled = prose::reassemble(spans);
@@ -476,7 +549,8 @@ fn render_frags(
                     });
                 }
                 // The `@<<name@>>=` line is `section.line`; the body opens after it.
-                let body = render_code(name, *continues, spans, section.line + 1, doc, lang);
+                let runs = section_runs.and_then(|m| m.get(&i)).map(Vec::as_slice);
+                let body = render_code(name, *continues, spans, section.line + 1, doc, lang, runs);
                 frags.push(Frag::Code(body));
             }
         }
@@ -610,7 +684,7 @@ pub fn mint_lock(
     let mut lints: Vec<Lint> = Vec::new();
     // Minting only needs labels/floats, not colors, so the language config is empty.
     let lang_cfg = LangConfig::default();
-    let frags = render_frags(doc, &lang_cfg, &mut math, &mut defs, &mut lints)?;
+    let frags = render_frags(doc, &lang_cfg, &mut math, &mut defs, &mut lints, None)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
@@ -675,7 +749,10 @@ pub fn render(
     let mut math: Vec<Math> = Vec::new();
     let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut defs, &mut hl_lints)?;
+    // §5.5 #1: tokens come from the whole tangled file, mapped back onto each chunk.
+    let section_runs = tangle_section_runs(doc, lang_cfg);
+    let mut frags =
+        render_frags(doc, lang_cfg, &mut math, &mut defs, &mut hl_lints, Some(&section_runs))?;
 
     // §13 imports: resolve each `\import … as …` against the loaded forest tables
     // (main reads the files), then merge the content-id macros into the table. A

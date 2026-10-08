@@ -78,6 +78,8 @@ against it without writing), and the disk helpers those drivers share.
 
 <<tangle one root>>
 
+<<provenance for highlighting>>
+
 <<the write outcome>>
 
 <<tangle every root to a directory>>
@@ -234,6 +236,116 @@ pub fn tangle_root(doc: &DocModel, root: &str) -> Result<String, TangleError> {
     let defs = group_defs(doc);
     let mut chain = Vec::new();
     expand(&defs, root, &mut chain)
+}
+@
+Highlighting a chunk in isolation is wrong — a chunk is a fragment, so a brace,
+string, or comment that crosses a chunk boundary mis-tokenizes (§5.5, #1). The fix
+is to tokenize the whole tangled file and map its tokens back onto each chunk. This
+provenance tangle supports that: it concatenates every root's chunks — with **no**
+inserted indentation and **no** trailing-newline drop, because both are whitespace
+and whitespace never changes a token class for cob's grammars — and records, for
+each literal run, which section's source bytes it is and where they landed. The
+mapping is then one-to-one, so the weave can read each chunk's tokens straight out
+of the tangled file's token stream.
+<<provenance for highlighting>>=
+/// One provenance segment (§5.5, #1): `len` bytes of section `section`'s source
+/// (its holes-removed text, `\n` per newline), starting at `src_off`, appear at
+/// `tangled_off` in the root's tangled text.
+pub struct Seg {
+    pub section: usize,
+    pub src_off: usize,
+    pub tangled_off: usize,
+    pub len: usize,
+}
+
+/// One tangled root for highlighting (§5.5, #1): its name, its tangled text, and the
+/// provenance segments mapping each section's source bytes into that text.
+pub struct Root {
+    pub root: String,
+    pub text: String,
+    pub segs: Vec<Seg>,
+}
+
+/// Tangle every root for the highlighter (§5.5, #1): a plain concatenation (no
+/// inserted indentation, no trailing-newline drop — both are whitespace, which does
+/// not change a token class), with a provenance map from each section's source bytes
+/// into the tangled text. Roots come from `doc.chunks` in sorted order, so the
+/// result is deterministic.
+pub fn highlight_prov(doc: &DocModel) -> Result<Vec<Root>, TangleError> {
+    let defs = group_defs_indexed(doc);
+    let mut roots = Vec::new();
+    for (name, info) in &doc.chunks {
+        if !info.root {
+            continue;
+        }
+        let mut out = String::new();
+        let mut segs = Vec::new();
+        let mut chain = Vec::new();
+        expand_prov(&defs, name.as_str(), &mut chain, &mut out, &mut segs)?;
+        roots.push(Root {
+            root: name.clone(),
+            text: out,
+            segs,
+        });
+    }
+    Ok(roots)
+}
+
+/// Like `group_defs`, but each definition keeps its section index, so a provenance
+/// segment can name the section the weave renders.
+fn group_defs_indexed(doc: &DocModel) -> BTreeMap<&str, Vec<(usize, &[CodeSpan])>> {
+    let mut defs: BTreeMap<&str, Vec<(usize, &[CodeSpan])>> = BTreeMap::new();
+    for (i, sec) in doc.sections.iter().enumerate() {
+        if let SectionKind::Code { name, spans, .. } = &sec.kind {
+            defs.entry(name.as_str()).or_default().push((i, spans));
+        }
+    }
+    defs
+}
+
+/// Expand one chunk into `out`, recording a `Seg` per literal run. A plain
+/// concatenation: a `@<<use@>>` recurses with no indentation or newline drop. A
+/// cycle is E035 (`model::build` caught any undefined use already).
+fn expand_prov<'a>(
+    defs: &BTreeMap<&'a str, Vec<(usize, &'a [CodeSpan])>>,
+    name: &'a str,
+    chain: &mut Vec<&'a str>,
+    out: &mut String,
+    segs: &mut Vec<Seg>,
+) -> Result<(), TangleError> {
+    if chain.contains(&name) {
+        chain.push(name);
+        return Err(TangleError::Cycle {
+            chain: chain.iter().map(|s| s.to_string()).collect(),
+        });
+    }
+    chain.push(name);
+    for (section, spans) in defs.get(name).into_iter().flatten() {
+        let mut src_off = 0usize;
+        for span in *spans {
+            match span {
+                CodeSpan::Text(t) => {
+                    segs.push(Seg {
+                        section: *section,
+                        src_off,
+                        tangled_off: out.len(),
+                        len: t.len(),
+                    });
+                    out.push_str(t);
+                    src_off += t.len();
+                }
+                CodeSpan::Nl => {
+                    out.push('\n');
+                    src_off += 1;
+                }
+                CodeSpan::Use { name: used } => {
+                    expand_prov(defs, used.as_str(), chain, out, segs)?;
+                }
+            }
+        }
+    }
+    chain.pop();
+    Ok(())
 }
 @
 The outcome of writing one root: created, updated, or left untouched because the

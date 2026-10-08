@@ -491,10 +491,12 @@ span, and that the page carries no script but the nav-spy aid.
 $cob weave --locked fixtures/hl.cob --out $TMPDIR/hl-a
 $cob weave --locked fixtures/hl.cob --out $TMPDIR/hl-b
 diff -r $TMPDIR/hl-a $TMPDIR/hl-b
-# Both grammars ran: `fn`/`let` are Rust keywords; a Nix attribute path
-# is a property. A string token proves literals color in either.
+# Both grammars ran, on the whole tangled file in context (§5.5, #1): `fn`/`let`
+# are Rust keywords, and the Nix flake's own string colors on the Nix side. The
+# tokens are the *valid-source* classification — e.g. a Nix attrpath is a variable,
+# where per-chunk highlighting of the hole-punched fragment used to mis-recover it.
 grep -q 'class="tok-keyword">' $TMPDIR/hl-a/index.html
-grep -q 'class="tok-property">' $TMPDIR/hl-a/index.html
+grep -q 'class="tok-string">&quot;a tiny flake&quot;' $TMPDIR/hl-a/index.html
 grep -q 'class="tok-string">' $TMPDIR/hl-a/index.html
 # The chunk-use hole is spliced back verbatim, still inside its `.line`,
 # and is *never* wrapped in a color span (§5.4/§5.5).
@@ -508,6 +510,22 @@ if grep '<script' $TMPDIR/hl-a/index.html | grep -qvE 'script id="(nav-spy|cob-t
   echo "highlighted weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
   exit 1
 fi
+
+# §5.5 #1 the proof that highlighting uses the tangled file, not the fragment: a
+# Rust string opens in one chunk and its contents are a *used* chunk. Only
+# whole-file tokenization knows that content is inside the literal; a per-chunk
+# tokenizer reads it as bare identifiers. The doc is generated here rather than
+# kept as a fixture because a chunk marker in this script would be read as a chunk
+# of flake.nix.cob itself — so the angle-bracket pairs are built from octal escapes
+# (\074 is a less-than, \076 a greater-than), which also dodge Nix string escaping.
+span=$TMPDIR/span
+mkdir -p $span
+op=$(printf '\074\074')
+cl=$(printf '\076\076')
+printf '@ # span\n\n%sout.rs%s=\nlet s = "%sinner%s";\n@\n\n%sinner%s=\ninside the string\n@\n' \
+  "$op" "$cl" "$op" "$cl" "$op" "$cl" > $span/t.cob
+( cd $span && $cob lock t.cob >/dev/null && $cob weave --locked t.cob --out _site )
+grep -q 'class="tok-string">inside the string' $span/_site/index.html
 @
 This group checks transclusion and the node model (§10). The \code{tx.cob} fixture puts
 a title, an intro, and the source heading in one \code{@} chunk, then transcludes the

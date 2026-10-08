@@ -14,8 +14,27 @@ before, the line numbers stay out of that copy, and the page needs no script.
 
 A code chunk is not a valid program. It is target-language text with chunk uses
 spliced in. A chunk use is cob's own syntax, not the target's. A plain tokenizer
-reads the two brackets of a chunk use as a shift operator and chokes. Three
-moves make highlighting safe.
+reads the two brackets of a chunk use as a shift operator and chokes. Worse, a
+chunk is a fragment: a brace, a string, or a comment can open in one chunk and
+close in another, so tokenizing a chunk alone colors it wrong. Three moves make
+highlighting safe, and one more makes it correct.
+
+## Move 0 — tokenize the tangled file, map the tokens back {#sec:tangle-hl}
+
+The correct color for a chunk's bytes is the color they have in the finished
+program, not in the fragment. So cob tokenizes the whole **tangled** file — which
+is valid and has every chunk in context — and maps each token back onto the chunk
+that wrote those bytes. The tangler records the provenance (\code{tangle.rs}: which
+section's source bytes landed where), the engine returns the flat token runs over
+the tangled text (\code{runs}), and the weaver reads each chunk's runs straight out of
+that stream (\code{render_runs}). The provenance tangle drops the inserted indentation
+and the trailing-newline splice, because whitespace never changes a token class for
+cob's grammars — so the mapping is one-to-one.
+
+A chunk used in more than one place has one context per use; cob takes the first
+expansion (the common case is one use, and the weave shows the chunk once). A chunk
+no root reaches has no context, so cob falls back to tokenizing the fragment alone
+(Moves 1–3) — best-effort, never wrong enough to fail.
 
 ## Move 1 — a chunk use is an opaque hole {#sec:vXmF}
 
@@ -136,6 +155,10 @@ survives tangle as literal text and never expands.
 <<build or fetch a grammar config>>
 
 <<highlight one chunk>>
+
+<<highlight runs from a source>>
+
+<<render per-line html from runs>>
 
 <<the tests>>
 @
@@ -521,6 +544,124 @@ pub fn highlight(source: &str, holes: &[(usize, &str)], lang: Lang) -> Result<Ve
     // Holes pinned to the very end of the buffer.
     flush_holes(source.len(), &mut hole, &open, &mut lines);
     Ok(lines)
+}
+@
+Highlighting per chunk is improper: a chunk is a fragment, not a valid program, so a
+brace, string, or comment that opens in one chunk and closes in another tokenizes
+wrong (§5.5, #1). The fix is to tokenize the whole *tangled* file, which is valid,
+and map its tokens back onto each chunk. \code{runs} is the token source for that: it
+tokenizes any source and returns the flat, innermost highlight run per byte — \code{(start,
+end, name index)}, ascending and coalesced — without splicing or splitting. Nesting
+collapses to the innermost run, which is the visible color. The weave runs this once per
+tangled root and maps the runs back to each chunk (\code{weave.rs}).
+<<highlight runs from a source>>=
+/// The flat, innermost highlight runs over `source` (§5.5): `(start, end, name
+/// index)`, ascending and coalesced, no splice or split. The token source for the
+/// tangle-based path — run once per tangled root, then mapped back onto each chunk.
+pub fn runs(source: &str, lang: Lang) -> Result<Vec<(usize, usize, usize)>, HlError> {
+    let cfg = config(lang)?;
+    let mut hl = Highlighter::new();
+    let events = hl
+        .highlight(&cfg, source.as_bytes(), None, |_| None)
+        .map_err(|e| HlError(e.to_string()))?;
+    let mut stack: Vec<usize> = Vec::new();
+    let mut out: Vec<(usize, usize, usize)> = Vec::new();
+    for event in events {
+        match event.map_err(|e| HlError(e.to_string()))? {
+            HighlightEvent::HighlightStart(h) => stack.push(h.0),
+            HighlightEvent::HighlightEnd => {
+                stack.pop();
+            }
+            HighlightEvent::Source { start, end } => {
+                if let Some(&name) = stack.last() {
+                    if let Some(last) = out.last_mut() {
+                        if last.1 == start && last.2 == name {
+                            last.1 = end;
+                            continue;
+                        }
+                    }
+                    out.push((start, end, name));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+@
+\code{render_runs} is the other half: it renders one chunk's per-line inner HTML from the
+chunk's clean \code{source}, its \code{holes}, and the flat \code{runs} mapped onto that source. It
+is the same splice shape as \code{highlight} — a hole is emitted outside any color span, a
+line is left self-contained — but the color comes from the given runs (the tangle),
+not from tokenizing the fragment. With empty runs it emits exactly the plain-text
+payload, so an un-highlighted span is byte-identical to the no-language path.
+<<render per-line html from runs>>=
+/// Render one chunk's per-line inner HTML from its clean `source`, its `holes`
+/// (`(offset, anchor HTML)`, ascending), and the flat highlight `runs` mapped onto
+/// `source` (§5.5, #1). Same splice as `highlight`; the color is the runs'.
+pub fn render_runs(source: &str, holes: &[(usize, &str)], runs: &[(usize, usize, usize)]) -> Vec<String> {
+    let bytes = source.as_bytes();
+    // The `tok-*` class of each byte, from the runs (non-overlapping, ascending).
+    let mut cls: Vec<Option<&'static str>> = vec![None; bytes.len()];
+    for &(s, e, name) in runs {
+        let c = TOK_CLASSES.get(name).copied().unwrap_or("tok-variable");
+        for slot in cls.iter_mut().take(e.min(bytes.len())).skip(s.min(bytes.len())) {
+            *slot = Some(c);
+        }
+    }
+    let mut lines = vec![String::new()];
+    let mut open: Option<&'static str> = None;
+    let mut hole = 0usize;
+    let mut pos = 0usize;
+    while pos < bytes.len() {
+        // A hole sits outside every color span.
+        while hole < holes.len() && holes[hole].0 == pos {
+            if open.take().is_some() {
+                lines.last_mut().unwrap().push_str("</span>");
+            }
+            lines.last_mut().unwrap().push_str(holes[hole].1);
+            hole += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+        if bytes[pos] == b'\n' {
+            if open.take().is_some() {
+                lines.last_mut().unwrap().push_str("</span>");
+            }
+            lines.push(String::new());
+            pos += 1;
+            continue;
+        }
+        if cls[pos] != open {
+            if open.take().is_some() {
+                lines.last_mut().unwrap().push_str("</span>");
+            }
+            if let Some(c) = cls[pos] {
+                lines.last_mut().unwrap().push_str(&format!("<span class=\"{c}\">"));
+                open = Some(c);
+            }
+        }
+        // Extend to the next class change, newline, or hole.
+        let next_hole = holes
+            .get(hole)
+            .map(|h| h.0)
+            .filter(|&o| o > pos)
+            .unwrap_or(bytes.len());
+        let mut stop = pos + 1;
+        while stop < bytes.len() && stop < next_hole && bytes[stop] != b'\n' && cls[stop] == open {
+            stop += 1;
+        }
+        lines.last_mut().unwrap().push_str(&prose::escape(&source[pos..stop]));
+        pos = stop;
+    }
+    if open.is_some() {
+        lines.last_mut().unwrap().push_str("</span>");
+    }
+    while hole < holes.len() && holes[hole].0 == bytes.len() {
+        lines.last_mut().unwrap().push_str(holes[hole].1);
+        hole += 1;
+    }
+    lines
 }
 @
 The tests cover both halves: real grammars produce token classes with a byte-
