@@ -180,18 +180,20 @@ use crate::model::{CodeSpan, DocModel, SectionKind};
 use crate::prose;
 @
 cob is language-agnostic except for highlighting (CLAUDE goal #2), so the grammars
-live in one **registry**, not a closed enum. A grammar is its id, the file
-extensions that imply it, a function to the tree-sitter language, and its highlights
-query. Adding a grammar is one entry here plus its crate — nothing else in cob
-changes. The registry is also the seam a future build-selected or dynamically-loaded
-grammar fills (§5.5, the meta-language direction). cob ships Rust, Nix, Bash, and CSS
-because it needs them to weave itself; a grammar whose query uses the standard
+live in one **registry**, not a closed enum — and the registry is a **build input**,
+not a dependency list (§5.5, the meta-language direction). A grammar is its id, the
+file extensions that imply it, a function to the tree-sitter language, and its
+highlights query. No grammar is a Cargo dependency: the build script (`build.rs`)
+compiles each grammar named in the `COB_GRAMMARS` manifest and makes the registry
+entries, so a user adds a grammar by naming its pinned repo to the build — nothing
+in cob changes. The Nix build pins Rust, Nix, Bash, and CSS as the default grammars
+because cob needs them to weave itself; a grammar whose query uses the standard
 tree-sitter capture names maps straight onto cob's `tok-*` classes.
 <<the language enum>>=
 /// One highlightable grammar (§5.5): its id, the extensions that imply it, the
-/// tree-sitter language, and its highlights query. The registry is the only place
-/// that knows a concrete language; entries come from the builtins below and from
-/// the build-time manifest (`build.rs`, the meta-language path).
+/// tree-sitter language, and its highlights query. Every entry comes from the
+/// build-time manifest (`build.rs`, the meta-language path) — no grammar is a
+/// Cargo dependency.
 #[derive(Clone, Copy)]
 pub struct Grammar {
     pub id: &'static str,
@@ -200,44 +202,17 @@ pub struct Grammar {
     pub highlights: &'static str,
 }
 
-// Grammars the build compiled in from its manifest (`build.rs`, §5.5) — the
-// `generated()` function. Empty when no `COB_GRAMMARS` manifest was given.
+// The grammars the build compiled in from its `COB_GRAMMARS` manifest — the
+// `generated()` function (`build.rs`, §5.5). Empty when no manifest was given.
 include!(concat!(env!("OUT_DIR"), "/grammars_generated.rs"));
 
-/// The full grammar registry: the builtins followed by the manifest-supplied ones,
-/// assembled once. `Lang` is an index into this.
+/// The grammar registry, assembled once from the build manifest. `Lang` is an
+/// index into this. With no manifest the registry is empty and every `from_id`
+/// / `from_ext` misses — a build with no grammars highlights nothing.
 fn registry() -> &'static [Grammar] {
     static REG: OnceLock<Vec<Grammar>> = OnceLock::new();
-    REG.get_or_init(|| BUILTIN.iter().copied().chain(generated()).collect())
+    REG.get_or_init(generated)
 }
-
-/// The compiled-in grammar set. cob needs these four to weave itself.
-static BUILTIN: &[Grammar] = &[
-    Grammar {
-        id: "rust",
-        exts: &["rs"],
-        language: || tree_sitter_rust::LANGUAGE.into(),
-        highlights: tree_sitter_rust::HIGHLIGHTS_QUERY,
-    },
-    Grammar {
-        id: "nix",
-        exts: &["nix"],
-        language: || tree_sitter_nix::LANGUAGE.into(),
-        highlights: tree_sitter_nix::HIGHLIGHTS_QUERY,
-    },
-    Grammar {
-        id: "bash",
-        exts: &["sh", "bash"],
-        language: || tree_sitter_bash::LANGUAGE.into(),
-        highlights: tree_sitter_bash::HIGHLIGHT_QUERY,
-    },
-    Grammar {
-        id: "css",
-        exts: &["css"],
-        language: || tree_sitter_css::LANGUAGE.into(),
-        highlights: tree_sitter_css::HIGHLIGHTS_QUERY,
-    },
-];
 
 /// A resolved language: an index into the grammar registry. `Copy`, so it threads
 /// through the weaver as before, and keys the per-language config cache.

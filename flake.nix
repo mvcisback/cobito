@@ -10,7 +10,15 @@
     flake = false;
   };
 
-  outputs = { self, nixpkgs, seed }:
+  # Highlighting grammars are a build input, not a Cargo dependency (§5.5): each
+  # is a pinned tree-sitter repo the build compiles in. These four are the
+  # default set — cob needs them to weave itself.
+  inputs.tree-sitter-rust = { url = "github:tree-sitter/tree-sitter-rust"; flake = false; };
+  inputs.tree-sitter-nix = { url = "github:nix-community/tree-sitter-nix"; flake = false; };
+  inputs.tree-sitter-bash = { url = "github:tree-sitter/tree-sitter-bash"; flake = false; };
+  inputs.tree-sitter-css = { url = "github:tree-sitter/tree-sitter-css"; flake = false; };
+
+  outputs = { self, nixpkgs, seed, tree-sitter-rust, tree-sitter-nix, tree-sitter-bash, tree-sitter-css }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       eachSystem = f: nixpkgs.lib.genAttrs systems (system:
@@ -26,17 +34,42 @@
         sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
       };
 
+      # The default grammars (§5.5): cob needs these four to weave itself. A grammar
+      # is `{ id; exts; src; symbol? }` — `src` is a pinned tree-sitter repo input,
+      # `exts` the file extensions that imply it, and `symbol` the tree_sitter_<name>
+      # C entry point, which defaults from `id` and is given only when irregular.
+      defaultGrammars = [
+        { id = "rust"; exts = [ "rs" ];        src = tree-sitter-rust; }
+        { id = "nix";  exts = [ "nix" ];       src = tree-sitter-nix; }
+        { id = "bash"; exts = [ "sh" "bash" ]; src = tree-sitter-bash; }
+        { id = "css";  exts = [ "css" ];       src = tree-sitter-css; }
+      ];
+      # The COB_GRAMMARS file build.rs reads: one grammar per line, tab-separated —
+      # id, comma-joined extensions, source tree, C symbol. The grammar store paths
+      # appear in the content, so setting COB_GRAMMARS to it pulls the sources into
+      # the build closure. `symbol` defaults to tree_sitter_<id> (with `-` → `_`).
+      grammarManifest = pkgs: grammars:
+        let line = g:
+              let symbol = g.symbol or
+                    ("tree_sitter_" + builtins.replaceStrings [ "-" ] [ "_" ] g.id);
+              in "${g.id}\t${nixpkgs.lib.concatStringsSep "," g.exts}\t${g.src}\t${symbol}\n";
+        in pkgs.writeText "cob-grammars" (nixpkgs.lib.concatMapStrings line grammars);
+
       # One buildRustPackage, applied to two source trees (the committed seed and
       # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
       # needs no noweb — only the KaTeX assets for weave, read from the store at run
       # time via the wrapper.
-      mkCob = pkgs: src: lock: pkgs.rustPlatform.buildRustPackage {
+      mkCob = pkgs: src: lock: grammars: pkgs.rustPlatform.buildRustPackage {
         pname = "cob";
         version = "0.1.0";
         inherit src;
         # Each source tree carries its own lock, so a dependency change on `main` does
         # not force a seed refresh — stage 0 builds the seed with the seed's lock.
         cargoLock.lockFile = lock;
+        # build.rs compiles each grammar named here into the registry (§5.5). The seed
+        # (stage 0) predates build.rs and ignores it; stage 1 and the static build need
+        # it. The stdenv C compiler builds the grammar C.
+        COB_GRAMMARS = grammarManifest pkgs grammars;
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postFixup = ''
           wrapProgram $out/bin/cob \
@@ -46,7 +79,7 @@
       # The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
       # dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
       # time). No wrapper, no store paths — one file that runs anywhere.
-      mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+      mkCobStatic = pkgs: src: lock: grammars: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
         pname = "cob";
         version = "0.1.0";
         inherit src;
@@ -54,6 +87,9 @@
         buildFeatures = [ "embed-assets" ];
         # include_bytes! reads this at build time; the pin lives in the flake (§6.3).
         COB_KATEX_ASSETS = katexAssets pkgs;
+        # The grammars compile into the static binary too (§5.5), with the musl C
+        # compiler from pkgsStatic's stdenv.
+        COB_GRAMMARS = grammarManifest pkgs grammars;
         # Tests are covered by the Nix `build` check; keep the static build lean.
         doCheck = false;
       };
@@ -61,8 +97,9 @@
     {
       packages = eachSystem (system: pkgs: rec {
         # Stage 0: build cob from the seed — the committed .rs of the pinned tangled
-        # snapshot. This is why `main` needs no tangler of its own to start.
-        cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock");
+        # snapshot. The seed predates build.rs (it still has the grammar crates), so the
+        # grammar manifest is inert here; it matters from stage 1 on.
+        cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock") defaultGrammars;
         # Stage 1 tangles every .cob with cob (natively, no noweb), so the shipped
         # binary compiles from a tree cob itself made (§13). templates/cob.css is
         # include_str!'d into the weaver, so it and its palette are tangled here too.
@@ -75,10 +112,17 @@
             ${cobBootstrap}/bin/cob tangle "$nw" --out .
           done
         '';
-        # Stage 1: the default package, compiled from the cob-tangled .cob sources.
-        cob = mkCob pkgs cobSource ./Cargo.lock;
+        # Stage 1: the default package, compiled from the cob-tangled .cob sources, with
+        # the default grammars compiled in. `cob.withGrammars [ … ]` builds the same cob
+        # with extra grammars — the meta-language extension point (§5.5), no source edit.
+        cob = mkCob pkgs cobSource ./Cargo.lock defaultGrammars // {
+          withGrammars = extra: mkCob pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+        };
         # The standalone single static binary (embedded KaTeX), from the same tree.
-        static = mkCobStatic pkgs cobSource ./Cargo.lock;
+        # It carries the same `withGrammars` so a static build can add grammars too.
+        static = mkCobStatic pkgs cobSource ./Cargo.lock defaultGrammars // {
+          withGrammars = extra: mkCobStatic pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+        };
         # `nix build .#flake` re-tangles flake.nix.cob and emits the flake.nix this
         # very output was built from — the dogfood loop as a buildable artifact
         # (§13). checks.dogfood diffs the committed file against this.
@@ -95,6 +139,9 @@
           packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
           shellHook = ''
             export COB_KATEX_ASSETS="${katexAssets pkgs}"
+            # build.rs reads this to compile the grammars into cob (§5.5); without it a
+            # cargo build highlights nothing.
+            export COB_GRAMMARS="${grammarManifest pkgs defaultGrammars}"
             # On `main` the .rs/.css are generated and gitignored (§13). Seed them from
             # the pinned tangled snapshot so cargo has something to build; then
             # `cob tangle` refreshes from the current .cob.

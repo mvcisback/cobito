@@ -46,11 +46,21 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
     flake = false;
   };
 
-  outputs = { self, nixpkgs, seed }:
+  # Highlighting grammars are a build input, not a Cargo dependency (§5.5): each
+  # is a pinned tree-sitter repo the build compiles in. These four are the
+  # default set — cob needs them to weave itself.
+  inputs.tree-sitter-rust = { url = "github:tree-sitter/tree-sitter-rust"; flake = false; };
+  inputs.tree-sitter-nix = { url = "github:nix-community/tree-sitter-nix"; flake = false; };
+  inputs.tree-sitter-bash = { url = "github:tree-sitter/tree-sitter-bash"; flake = false; };
+  inputs.tree-sitter-css = { url = "github:tree-sitter/tree-sitter-css"; flake = false; };
+
+  outputs = { self, nixpkgs, seed, tree-sitter-rust, tree-sitter-nix, tree-sitter-bash, tree-sitter-css }:
     let
       <<system iteration>>
 
       <<pinned katex assets>>
+
+      <<grammar inputs and manifest>>
 
       <<the cob builder>>
     in
@@ -86,18 +96,28 @@ the whole point of a release snapshot: proof that these committed bytes build.
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs }:
+  # Grammars are a build input, not a Cargo dep (§5.5); the snapshot pins the
+  # same default set as `main` so the committed tree builds on its own.
+  inputs.tree-sitter-rust = { url = "github:tree-sitter/tree-sitter-rust"; flake = false; };
+  inputs.tree-sitter-nix = { url = "github:nix-community/tree-sitter-nix"; flake = false; };
+  inputs.tree-sitter-bash = { url = "github:tree-sitter/tree-sitter-bash"; flake = false; };
+  inputs.tree-sitter-css = { url = "github:tree-sitter/tree-sitter-css"; flake = false; };
+
+  outputs = { self, nixpkgs, tree-sitter-rust, tree-sitter-nix, tree-sitter-bash, tree-sitter-css }:
     let
       <<system iteration>>
 
       <<pinned katex assets>>
 
+      <<grammar inputs and manifest>>
+
       <<the cob builder>>
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        # The tree is already tangled: compile the committed .rs directly.
-        cob = mkCob pkgs self ./Cargo.lock;
+        # The tree is already tangled: compile the committed .rs directly, with
+        # the default grammars compiled in (§5.5).
+        cob = mkCob pkgs self ./Cargo.lock defaultGrammars;
         default = cob;
       });
 
@@ -141,6 +161,51 @@ katexAssets = pkgs: pkgs.fetchzip {
   sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
 };
 @
+## The grammar manifest {#sec:grammars}
+
+Highlighting is the one language-bound part of cob (§5.5). cob keeps it a **build
+input**, not a Cargo dependency: each grammar is a pinned tree-sitter repo (a flake
+input above), and the build script (`build.rs`) compiles each one named in the
+`COB_GRAMMARS` manifest into the registry. So a user adds a grammar by naming its
+repo to the build (`cob.withGrammars`), with no edit to cob's source — cob is a
+meta-language for highlighting.
+
+\code{defaultGrammars} is the set cob ships: Rust, Nix, Bash, and CSS, the four it
+needs to weave itself (the crate, the flake, shell scripts in the flake, and the
+stylesheet). A grammar is \code{\{ id; exts; src; symbol? \}}: \code{src} is a pinned
+tree-sitter repo, \code{exts} the file extensions that imply it, and \code{symbol} the
+\code{tree_sitter_<name>} C entry point — which defaults from \code{id}, so a regular
+grammar needs only three fields. \code{grammarManifest} writes the file \code{build.rs}
+reads: one grammar per line, tab-separated. The builder sets \code{COB_GRAMMARS} to
+this file, so the grammar sources enter the build closure through it.
+
+A user extends the set with no edit to cob: both \code{cob} and \code{static} carry a
+\code{withGrammars} function, so \code{cob.withGrammars [ \{ id = "sql"; exts = [ "sql" ];
+src = tree-sitter-sql; \} ]} is the same cob with one more grammar compiled in. This
+is the meta-language point of §5.5 — cob is language-agnostic, and a grammar is a
+build input, not a fork.
+<<grammar inputs and manifest>>=
+# The default grammars (§5.5): cob needs these four to weave itself. A grammar
+# is `{ id; exts; src; symbol? }` — `src` is a pinned tree-sitter repo input,
+# `exts` the file extensions that imply it, and `symbol` the tree_sitter_<name>
+# C entry point, which defaults from `id` and is given only when irregular.
+defaultGrammars = [
+  { id = "rust"; exts = [ "rs" ];        src = tree-sitter-rust; }
+  { id = "nix";  exts = [ "nix" ];       src = tree-sitter-nix; }
+  { id = "bash"; exts = [ "sh" "bash" ]; src = tree-sitter-bash; }
+  { id = "css";  exts = [ "css" ];       src = tree-sitter-css; }
+];
+# The COB_GRAMMARS file build.rs reads: one grammar per line, tab-separated —
+# id, comma-joined extensions, source tree, C symbol. The grammar store paths
+# appear in the content, so setting COB_GRAMMARS to it pulls the sources into
+# the build closure. `symbol` defaults to tree_sitter_<id> (with `-` → `_`).
+grammarManifest = pkgs: grammars:
+  let line = g:
+        let symbol = g.symbol or
+              ("tree_sitter_" + builtins.replaceStrings [ "-" ] [ "_" ] g.id);
+        in "${g.id}\t${nixpkgs.lib.concatStringsSep "," g.exts}\t${g.src}\t${symbol}\n";
+  in pkgs.writeText "cob-grammars" (nixpkgs.lib.concatMapStrings line grammars);
+@
 ## The builder {#sec:Mh65}
 
 Two builders, for the two deployment shapes (§6.3). \code{mkCob} is the Nix build:
@@ -155,13 +220,17 @@ builds the same crate from the committed seed and from the tangled \code{.cob}.
 # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
 # needs no noweb — only the KaTeX assets for weave, read from the store at run
 # time via the wrapper.
-mkCob = pkgs: src: lock: pkgs.rustPlatform.buildRustPackage {
+mkCob = pkgs: src: lock: grammars: pkgs.rustPlatform.buildRustPackage {
   pname = "cob";
   version = "0.1.0";
   inherit src;
   # Each source tree carries its own lock, so a dependency change on `main` does
   # not force a seed refresh — stage 0 builds the seed with the seed's lock.
   cargoLock.lockFile = lock;
+  # build.rs compiles each grammar named here into the registry (§5.5). The seed
+  # (stage 0) predates build.rs and ignores it; stage 1 and the static build need
+  # it. The stdenv C compiler builds the grammar C.
+  COB_GRAMMARS = grammarManifest pkgs grammars;
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/cob \
@@ -178,7 +247,7 @@ non-Nix users. It skips the cargo tests; the Nix \code{build} check already runs
 # The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
 # dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
 # time). No wrapper, no store paths — one file that runs anywhere.
-mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
+mkCobStatic = pkgs: src: lock: grammars: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
   pname = "cob";
   version = "0.1.0";
   inherit src;
@@ -186,6 +255,9 @@ mkCobStatic = pkgs: src: lock: pkgs.pkgsStatic.rustPlatform.buildRustPackage {
   buildFeatures = [ "embed-assets" ];
   # include_bytes! reads this at build time; the pin lives in the flake (§6.3).
   COB_KATEX_ASSETS = katexAssets pkgs;
+  # The grammars compile into the static binary too (§5.5), with the musl C
+  # compiler from pkgsStatic's stdenv.
+  COB_GRAMMARS = grammarManifest pkgs grammars;
   # Tests are covered by the Nix `build` check; keep the static build lean.
   doCheck = false;
 };
@@ -205,13 +277,21 @@ builds from that. The \code{selfhost} check proves \code{cob tangle} reproduces 
 byte for byte, so cob is a fixed point of its own tangler and the loop is sound.
 <<the cob package>>=
 # Stage 0: build cob from the seed — the committed .rs of the pinned tangled
-# snapshot. This is why `main` needs no tangler of its own to start.
-cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock");
+# snapshot. The seed predates build.rs (it still has the grammar crates), so the
+# grammar manifest is inert here; it matters from stage 1 on.
+cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock") defaultGrammars;
 <<the tangled source tree>>
-# Stage 1: the default package, compiled from the cob-tangled .cob sources.
-cob = mkCob pkgs cobSource ./Cargo.lock;
+# Stage 1: the default package, compiled from the cob-tangled .cob sources, with
+# the default grammars compiled in. `cob.withGrammars [ … ]` builds the same cob
+# with extra grammars — the meta-language extension point (§5.5), no source edit.
+cob = mkCob pkgs cobSource ./Cargo.lock defaultGrammars // {
+  withGrammars = extra: mkCob pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+};
 # The standalone single static binary (embedded KaTeX), from the same tree.
-static = mkCobStatic pkgs cobSource ./Cargo.lock;
+# It carries the same `withGrammars` so a static build can add grammars too.
+static = mkCobStatic pkgs cobSource ./Cargo.lock defaultGrammars // {
+  withGrammars = extra: mkCobStatic pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+};
 @
 Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
 names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
@@ -266,6 +346,9 @@ default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
     export COB_KATEX_ASSETS="${katexAssets pkgs}"
+    # build.rs reads this to compile the grammars into cob (§5.5); without it a
+    # cargo build highlights nothing.
+    export COB_GRAMMARS="${grammarManifest pkgs defaultGrammars}"
     # On `main` the .rs/.css are generated and gitignored (§13). Seed them from
     # the pinned tangled snapshot so cargo has something to build; then
     # `cob tangle` refreshes from the current .cob.
@@ -285,6 +368,7 @@ default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
     export COB_KATEX_ASSETS="${katexAssets pkgs}"
+    export COB_GRAMMARS="${grammarManifest pkgs defaultGrammars}"
   '';
 };
 @
@@ -1048,7 +1132,7 @@ if grep '<script' a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|c
 fi
 touch $out
 @
-### imports
+### imports {#sec:voGO}
 
 One forest imports another's macros and references its nodes (§13). This check
 weaves a producer forest that exports a \code{cob-exports.json}, then a consumer that
@@ -1135,7 +1219,7 @@ if grep -qE 'application/x-tex">[^<]*\\\\def' $work/topo/_site/index.html; then
 fi
 touch $out
 @
-### fetch
+### fetch {#sec:f8hV}
 
 A remote import is pinned and cached by \code{cob fetch} (§13). This check proves the
 whole path with no network: it makes a local git repo that publishes a
@@ -1238,7 +1322,7 @@ fi
 grep -q 'E037' $work/err
 touch $out
 @
-### cite
+### cite {#sec:FnBe}
 
 Citations (§14). This check weaves a document that cites a BibTeX bibliography. It
 proves the inline marker is a CSS-drawn `[id]` (no citation text in a node), the
@@ -1368,7 +1452,7 @@ fi
 grep -q 'E040' $work/e
 touch $out
 @
-### backlinks
+### backlinks {#sec:CDt4}
 
 Reverse backlinks (§16). A producer forest cites a work (so the work has a node
 page); a consumer forest cites that same work cross-forest. Both weave with a
