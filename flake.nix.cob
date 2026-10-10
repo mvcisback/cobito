@@ -115,9 +115,15 @@ the whole point of a release snapshot: proof that these committed bytes build.
     in
     {
       packages = eachSystem (system: pkgs: rec {
-        # The tree is already tangled: compile the committed .rs directly, with
-        # the default grammars compiled in (§5.5).
-        cob = mkCob pkgs self ./Cargo.lock defaultGrammars;
+        # The tree is already tangled: compile the committed .rs directly. The
+        # shipped cob ships with no grammars (§5.5), the same as `main`; a user
+        # opts in with `cob.withGrammars`.
+        cob = mkCob pkgs self ./Cargo.lock [ ] false // {
+          withGrammars = extra: mkCob pkgs self ./Cargo.lock extra false;
+        };
+        # The grammar-ful development build, which also runs the cargo tests —
+        # the release snapshot's proof that these committed bytes build and pass.
+        cobDoc = mkCob pkgs self ./Cargo.lock cobGrammars true;
         default = cob;
       });
 
@@ -126,8 +132,10 @@ the whole point of a release snapshot: proof that these committed bytes build.
       });
 
       checks = eachSystem (system: pkgs: {
-        # Building the package also runs the hermetic cargo tests.
+        # The shipped cob builds with an empty grammar registry (§5.5) …
         build = self.packages.${system}.cob;
+        # … and the grammar-ful build runs the hermetic cargo tests.
+        tests = self.packages.${system}.cobDoc;
       });
     };
 }
@@ -170,26 +178,32 @@ input above), and the build script (`build.rs`) compiles each one named in the
 repo to the build (`cob.withGrammars`), with no edit to cob's source — cob is a
 meta-language for highlighting.
 
-\code{defaultGrammars} is the set cob ships: Rust, Nix, Bash, and CSS, the four it
-needs to weave itself (the crate, the flake, shell scripts in the flake, and the
-stylesheet). A grammar is \code{\{ id; exts; src; symbol? \}}: \code{src} is a pinned
-tree-sitter repo, \code{exts} the file extensions that imply it, and \code{symbol} the
-\code{tree_sitter_<name>} C entry point — which defaults from \code{id}, so a regular
-grammar needs only three fields. \code{grammarManifest} writes the file \code{build.rs}
-reads: one grammar per line, tab-separated. The builder sets \code{COB_GRAMMARS} to
-this file, so the grammar sources enter the build closure through it.
+The shipped \code{cob} ships with **no grammars** — cob is language-agnostic, and a
+grammar is a build input a user opts into (the README shows how). \code{cobGrammars}
+is a different thing: the set cobito needs to weave **its own** documents — Rust,
+Nix, Bash, and CSS (the crate, the flake, shell scripts in the flake, and the
+stylesheet). The \code{cobDoc} output and the flake's checks use it; the shipped \code{cob}
+and \code{static} do not.
 
-A user extends the set with no edit to cob: both \code{cob} and \code{static} carry a
+A grammar is \code{\{ id; exts; src; symbol? \}}: \code{src} is a pinned tree-sitter repo,
+\code{exts} the file extensions that imply it, and \code{symbol} the \code{tree_sitter_<name>}
+C entry point — which defaults from \code{id}, so a regular grammar needs only three
+fields. \code{grammarManifest} writes the file \code{build.rs} reads: one grammar per line,
+tab-separated. The builder sets \code{COB_GRAMMARS} to this file, so the grammar sources
+enter the build closure through it.
+
+A user adds a grammar with no edit to cob: both \code{cob} and \code{static} carry a
 \code{withGrammars} function, so \code{cob.withGrammars [ \{ id = "sql"; exts = [ "sql" ];
-src = tree-sitter-sql; \} ]} is the same cob with one more grammar compiled in. This
-is the meta-language point of §5.5 — cob is language-agnostic, and a grammar is a
-build input, not a fork.
+src = tree-sitter-sql; \} ]} is cob with that one grammar compiled in. This is the
+meta-language point of §5.5 — cob is language-agnostic, and a grammar is a build
+input, not a fork.
 <<grammar inputs and manifest>>=
-# The default grammars (§5.5): cob needs these four to weave itself. A grammar
-# is `{ id; exts; src; symbol? }` — `src` is a pinned tree-sitter repo input,
-# `exts` the file extensions that imply it, and `symbol` the tree_sitter_<name>
-# C entry point, which defaults from `id` and is given only when irregular.
-defaultGrammars = [
+# The grammars cobito needs to weave its OWN documents (§5.5): the crate, the
+# flake, shell scripts, the stylesheet. The shipped cob ships none of these — a
+# user opts in with `cob.withGrammars`. A grammar is `{ id; exts; src; symbol? }`:
+# `src` a pinned tree-sitter repo input, `exts` the file extensions that imply it,
+# `symbol` the tree_sitter_<name> C entry point (defaults from `id`).
+cobGrammars = [
   { id = "rust"; exts = [ "rs" ];        src = tree-sitter-rust; }
   { id = "nix";  exts = [ "nix" ];       src = tree-sitter-nix; }
   { id = "bash"; exts = [ "sh" "bash" ]; src = tree-sitter-bash; }
@@ -212,25 +226,30 @@ Two builders, for the two deployment shapes (§6.3). \code{mkCob} is the Nix bui
 a \code{buildRustPackage} whose \code{postFixup} wraps the binary to set
 \code{COB_KATEX_ASSETS} at the pinned store path, so the small binary reads the dist
 from the store at run time. The \code{cob} binary reads and tangles \code{.cob} files
-natively (§4.1, §11), so it needs no noweb — only the KaTeX assets for weave. The
-build also runs the hermetic cargo tests. It takes the source tree, so the flake
-builds the same crate from the committed seed and from the tangled \code{.cob}.
+natively (§4.1, §11), so it needs no noweb — only the KaTeX assets for weave. It
+takes the source tree, so the flake builds the same crate from the committed seed
+and from the tangled \code{.cob}. The last argument, \code{runTests}, says whether to run
+the hermetic cargo tests. cob ships with an **empty** grammar registry (§5.5), and
+the highlighting unit tests need a grammar, so only the grammar-ful \code{cobDoc} output
+runs the tests; the shipped empty \code{cob} only has to compile.
 <<the cob builder>>=
 # One buildRustPackage, applied to two source trees (the committed seed and
 # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
 # needs no noweb — only the KaTeX assets for weave, read from the store at run
 # time via the wrapper.
-mkCob = pkgs: src: lock: grammars: pkgs.rustPlatform.buildRustPackage {
+mkCob = pkgs: src: lock: grammars: runTests: pkgs.rustPlatform.buildRustPackage {
   pname = "cob";
   version = "0.1.0";
   inherit src;
   # Each source tree carries its own lock, so a dependency change on `main` does
   # not force a seed refresh — stage 0 builds the seed with the seed's lock.
   cargoLock.lockFile = lock;
-  # build.rs compiles each grammar named here into the registry (§5.5). The seed
-  # (stage 0) predates build.rs and ignores it; stage 1 and the static build need
-  # it. The stdenv C compiler builds the grammar C.
+  # build.rs compiles each grammar named here into the registry (§5.5). The
+  # shipped cob ships none; the grammar-ful cobDoc output carries the four cob
+  # needs for its own documents. The stdenv C compiler builds the grammar C.
   COB_GRAMMARS = grammarManifest pkgs grammars;
+  # The highlighting tests need a grammar, so only a grammar-ful build runs them.
+  doCheck = runTests;
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/cob \
@@ -277,21 +296,28 @@ builds from that. The \code{selfhost} check proves \code{cob tangle} reproduces 
 byte for byte, so cob is a fixed point of its own tangler and the loop is sound.
 <<the cob package>>=
 # Stage 0: build cob from the seed — the committed .rs of the pinned tangled
-# snapshot. The seed predates build.rs (it still has the grammar crates), so the
-# grammar manifest is inert here; it matters from stage 1 on.
-cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock") defaultGrammars;
+# snapshot. The bootstrap only tangles cobSource, which needs no grammars, so it
+# builds with an empty set and skips the tests.
+cobBootstrap = mkCob pkgs seed (seed + "/Cargo.lock") [ ] false;
 <<the tangled source tree>>
-# Stage 1: the default package, compiled from the cob-tangled .cob sources, with
-# the default grammars compiled in. `cob.withGrammars [ … ]` builds the same cob
-# with extra grammars — the meta-language extension point (§5.5), no source edit.
-cob = mkCob pkgs cobSource ./Cargo.lock defaultGrammars // {
-  withGrammars = extra: mkCob pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+# Stage 1, the shipped packages. cob ships with NO grammars (§5.5): it is
+# language-agnostic, and a grammar is a build input a user opts into with
+# `cob.withGrammars [ … ]`. The empty build only has to compile, so it skips the
+# tests (the highlighting tests need a grammar — cobDoc runs them).
+cob = mkCob pkgs cobSource ./Cargo.lock [ ] false // {
+  withGrammars = extra: mkCob pkgs cobSource ./Cargo.lock extra false;
 };
-# The standalone single static binary (embedded KaTeX), from the same tree.
-# It carries the same `withGrammars` so a static build can add grammars too.
-static = mkCobStatic pkgs cobSource ./Cargo.lock defaultGrammars // {
-  withGrammars = extra: mkCobStatic pkgs cobSource ./Cargo.lock (defaultGrammars ++ extra);
+# The standalone single static binary (embedded KaTeX), also shipped empty; it
+# carries the same `withGrammars` so a static build can add grammars too.
+static = mkCobStatic pkgs cobSource ./Cargo.lock [ ] // {
+  withGrammars = extra: mkCobStatic pkgs cobSource ./Cargo.lock extra;
 };
+# The development output: cob with the grammars cobito needs to weave its own
+# documents — Rust, Nix, Bash, CSS (§5.5). The flake's checks weave and highlight
+# cob's own sources, so they use this build; it also runs the hermetic cargo
+# tests, which need a grammar present. `nix build .#cobDoc` rebuilds cobito's
+# own site with highlighting.
+cobDoc = mkCob pkgs cobSource ./Cargo.lock cobGrammars true;
 @
 Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
 names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
@@ -348,7 +374,7 @@ default = pkgs.mkShell {
     export COB_KATEX_ASSETS="${katexAssets pkgs}"
     # build.rs reads this to compile the grammars into cob (§5.5); without it a
     # cargo build highlights nothing.
-    export COB_GRAMMARS="${grammarManifest pkgs defaultGrammars}"
+    export COB_GRAMMARS="${grammarManifest pkgs cobGrammars}"
     # On `main` the .rs/.css are generated and gitignored (§13). Seed them from
     # the pinned tangled snapshot so cargo has something to build; then
     # `cob tangle` refreshes from the current .cob.
@@ -368,7 +394,7 @@ default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
     export COB_KATEX_ASSETS="${katexAssets pkgs}"
-    export COB_GRAMMARS="${grammarManifest pkgs defaultGrammars}"
+    export COB_GRAMMARS="${grammarManifest pkgs cobGrammars}"
   '';
 };
 @
@@ -409,12 +435,17 @@ label lock, the tangle goldens, and the native reader against its frozen
 @
 ### build {#sec:9hJs}
 
-This is the cheapest check. It builds the package. \code{buildRustPackage} also runs
-the cargo tests. A green build shows that the unit tests passed. This check is
-one Nix expression, not a shell script, so it stays Nix.
+These are the cheapest checks, each one Nix expression, not a shell script.
+\code{build} compiles the **shipped** cob, which has an empty grammar registry (§5.5) —
+so it proves the language-agnostic binary builds with no grammar at all. \code{tests}
+compiles \code{cobDoc}, the grammar-ful development build, which runs the hermetic cargo
+tests; the highlighting tests need a grammar, so they run here, not on the empty
+build.
 <<the build check>>=
-# Building the package also runs the (hermetic) cargo tests.
+# The shipped cob builds with an empty grammar registry (§5.5).
 build = self.packages.${system}.cob;
+# The grammar-ful development build runs the hermetic cargo tests.
+tests = self.packages.${system}.cobDoc;
 @
 ### determinism {#sec:dNbo}
 
@@ -438,7 +469,7 @@ The script sets the \code{cob} path once and then runs each assertion group in o
 A \code{touch} of the output at the end tells Nix that the check passed.
 <<determinism script>>=
 cd ${self}
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 <<weave the book fixture, twice>>
 <<assert the opaque-id scheme>>
 <<assert the archival contract>>
@@ -733,7 +764,7 @@ lock = pkgs.runCommand "cob-lock" { } ''
 The script sets the \code{cob} path and runs the two groups.
 <<lock check script>>=
 cd ${self}
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert the frozen label lock>>
 <<assert the language resolver>>
 touch $out
@@ -789,7 +820,7 @@ section-anchors = pkgs.runCommand "cob-section-anchors" { } ''
 The script works on a writable copy of \code{sections.cob}, a Markdown-dialect fixture
 with three unlabelled headings (two \code{h2}, one \code{h3}).
 <<section-anchor check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 # `cob lock` edits the source in place, so work on a writable copy; the
 # store path is read-only.
 work=$TMPDIR/sec
@@ -854,7 +885,7 @@ The script tangles every fixture that has goldens, diffs the output tree against
 the committed goldens, and then edits an output to confirm that \code{--check}
 reports the drift.
 <<tangle check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 cd ${self}
 # `cob tangle --out DIR` writes each root under DIR; fixtures/tangled/<stem>
 # holds the frozen notangle output for the same roots. Diff the trees.
@@ -895,7 +926,7 @@ reader = pkgs.runCommand "cob-reader" { } ''
 The script walks every fixture and diffs the native reader against the frozen
 \code{markup} golden.
 <<reader script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 cd ${self}
 for nw in fixtures/*.cob; do
   $cob dump-ir "$nw" > "$TMPDIR/reader"
@@ -923,7 +954,7 @@ dogfood = pkgs.runCommand "cob-dogfood" { } ''
 The script sets the \code{cob} path and runs the two groups.
 <<dogfood script>>=
 cd ${self}
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert the flake round-trips>>
 <<assert cob highlights its own nix>>
 touch $out
@@ -984,7 +1015,7 @@ module for the crate, and the stylesheet itself, which exercises the CSS grammar
 (the fourth grammar, and the reason it exists).
 <<selfhost script>>=
 cd ${self}
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 src=${self.packages.${system}.cobSource}
 # cob must reproduce cobSource — the tree it was compiled from. Each src/*.rs.cob
 # has one root named for its target; templates/cob.css.cob has two.
@@ -1026,7 +1057,7 @@ no-script rule (§6.3) holds for every module page too.
 # against prose that the dialect rejects (bad fence, bare brace, unlocked label).
 modules = pkgs.runCommand "cob-modules" { } ''
   cd ${self}
-  cob=${self.packages.${system}.cob}/bin/cob
+  cob=${self.packages.${system}.cobDoc}/bin/cob
   for m in src/*.rs.cob; do
     if ! $cob weave --locked "$m" --out $TMPDIR/m 2>$TMPDIR/err; then
       echo "module does not weave: $m" >&2; cat $TMPDIR/err >&2; exit 1
@@ -1051,7 +1082,7 @@ macros = pkgs.runCommand "cob-macros" { } ''
 '';
 @
 <<macros check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/mac
 mkdir -p $work
 cd $work
@@ -1148,7 +1179,7 @@ imports = pkgs.runCommand "cob-imports" { } ''
 '';
 @
 <<imports check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/imp
 mkdir -p $work/alg $work/topo
 
@@ -1235,7 +1266,7 @@ fetch = pkgs.runCommand "cob-fetch" { nativeBuildInputs = [ pkgs.git ]; } ''
 '';
 @
 <<fetch check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 export HOME=$TMPDIR
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t
@@ -1338,7 +1369,7 @@ cite = pkgs.runCommand "cob-cite" { } ''
 '';
 @
 <<cite check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/cite
 mkdir -p $work
 
@@ -1467,7 +1498,7 @@ backlinks = pkgs.runCommand "cob-backlinks" { } ''
 '';
 @
 <<backlinks check script>>=
-cob=${self.packages.${system}.cob}/bin/cob
+cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/bl
 prod=$work/prod
 cons=$work/cons

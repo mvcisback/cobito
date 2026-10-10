@@ -136,6 +136,34 @@ Each module carries the specification for its own job. This is the reading order
 | The build, told as a literate program | \code{flake.nix.cob} |
 ```
 
+## Grammars {#sec:adding-grammars}
+
+cob is language-agnostic. Only syntax highlighting is language-bound (§5.5). So a
+grammar is a **build input**, not a built-in. The shipped \code{cob} binary has an
+empty grammar set, and it highlights nothing until you add a grammar. This keeps
+cob small. It also lets you highlight any language that has a tree-sitter grammar,
+with no change to cob.
+
+You add a grammar in your own flake. You pin the grammar's tree-sitter repo as an
+input, then pass it to \code{withGrammars} on the \code{cob} or \code{static} package:
+
+```verbatim \lang{nix}
+cobito.packages.${system}.cob.withGrammars [
+  { id = "sql"; exts = [ "sql" ]; src = tree-sitter-sql; }
+]
+```
+
+Each grammar is a record. \code{id} is the language name, \code{exts} are the file
+extensions that select it, and \code{src} is the repo. The \code{symbol} field (the
+\code{tree_sitter_<name>} C entry point) defaults from \code{id}, so a normal grammar needs
+three fields. \code{build.rs} compiles each grammar in the set and makes its registry
+entry (§5.5). The \code{README} gives the full steps.
+
+cobito needs four grammars to weave its own documents: Rust, Nix, Bash, and CSS.
+The flake keeps them in \code{cobGrammars} and builds the \code{cobDoc} output with them.
+The checks use \code{cobDoc}, so they prove cob colors its own source. The shipped
+\code{cob} does not carry these four. They are cobito's need, not a default for you.
+
 ## The review loop {#sec:av7Q}
 
 \code{cob review} closes the loop from a reader's margin comment back to the source. It
