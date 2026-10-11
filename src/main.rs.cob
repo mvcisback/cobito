@@ -47,6 +47,8 @@ it does not.
 
 <<the language command>>
 
+<<the where command>>
+
 <<the tangle command>>
 
 <<dump the model>>
@@ -102,6 +104,7 @@ USAGE:
     cob labels <file.cob>          list the file's label → id map from cob.lock
     cob id <file.cob> <label>      print the frozen id for one label
     cob language <file.cob> <chunk> print the highlighting language for a chunk (§5.5)
+    cob where <file.cob> <root> <line> map a tangled-file line back to its .cob source (§11)
     cob dump-ir <file.cob>...       print the parsed IR events (--from-markup <f>: parse a .markup)
     cob dump-model <file.cob>...   fold the IR into the document model, print it
     cob tangle <file.cob>...       tangle every root chunk
@@ -145,6 +148,7 @@ fn main() -> ExitCode {
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
+        Some(("where", rest)) if rest.len() == 3 => where_cmd(&rest[0], &rest[1], &rest[2]),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
         Some(("--version" | "-V", _)) => {
             println!("cob {}", env!("CARGO_PKG_VERSION"));
@@ -696,6 +700,50 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
         }
         None => {
             eprintln!("cob: chunk `{chunk}` resolves to no known language");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The where command maps a line in a tangled file back to its `.cob` source (§11,
+#3). A compiler or test names a line in `src/main.rs`, which cob tangled; `cob
+where src/main.rs.cob src/main.rs 42` prints the `.cob` file, line, and chunk that
+wrote it. It tangles the root with a line map (`tangle::tangle_root_located`) and
+reads the one entry. A line past the end, or a root with no definition, is an
+error, so a build script can rely on the exit code.
+<<the where command>>=
+/// `cob where <file.cob> <root> <line>`: map a 1-based line of the tangled `root`
+/// back to the `.cob` source line that wrote it.
+fn where_cmd(file: &str, root: &str, line: &str) -> ExitCode {
+    let line: usize = match line.parse() {
+        Ok(n) if n >= 1 => n,
+        _ => {
+            eprintln!("cob: <line> must be a positive integer, got `{line}`");
+            return ExitCode::from(2);
+        }
+    };
+    let doc = match build_doc(&[file.to_string()]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    if !doc.chunks.contains_key(root) {
+        eprintln!("cob: `{root}` is not a chunk in {file}");
+        return ExitCode::FAILURE;
+    }
+    let (_, map) = match tangle::tangle_root_located(&doc, root) {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match map.get(line - 1) {
+        Some(loc) => {
+            println!("{}:{} (chunk {})", loc.file, loc.line, loc.chunk);
+            ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!("cob: {root} tangles to {} line(s); {line} is past the end", map.len());
             ExitCode::FAILURE
         }
     }

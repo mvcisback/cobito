@@ -512,6 +512,16 @@
             echo "--check passed despite an edited root" >&2
             exit 1
           fi
+          # `cob where` maps a tangled line back to the .cob line that wrote it (#3). The
+          # root's own first body line, then lines from an expanded chunk map to that chunk.
+          test "$($cob where fixtures/hello.cob src/main.rs 1)" = 'fixtures/hello.cob:29 (chunk src/main.rs)'
+          test "$($cob where fixtures/hello.cob src/main.rs 4)" = 'fixtures/hello.cob:7 (chunk lex a token)'
+          test "$($cob where fixtures/hello.cob src/main.rs 5)" = 'fixtures/hello.cob:8 (chunk lex a token)'
+          # A line past the end of the tangled file is a nonzero exit.
+          if $cob where fixtures/hello.cob src/main.rs 999; then
+            echo "cob where accepted a line past the end" >&2
+            exit 1
+          fi
           touch $out
         '';
 
