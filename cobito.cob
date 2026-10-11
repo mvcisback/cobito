@@ -134,6 +134,7 @@ Each module carries the specification for its own job. This is the reading order
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
 | The build, told as a literate program | \code{flake.nix.cob} |
+| The editor grammar for \code{.cob} files | \code{tree-sitter-cob/tree-sitter-cob.cob} |
 ```
 
 ## Grammars {#sec:adding-grammars}

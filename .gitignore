@@ -12,6 +12,9 @@
 /build.rs
 /templates/cob.css
 /templates/cob-syntax.css
+# tree-sitter-cob: everything is tangled from / generated out of the one .cob.
+/tree-sitter-cob/*
+!/tree-sitter-cob/tree-sitter-cob.cob
 # The dist flake is tangled only into the `tangled` snapshot at release, never
 # committed on `main` (flake.nix is the committed one Nix reads here).
 /flake.dist.nix

@@ -121,9 +121,19 @@ the whole point of a release snapshot: proof that these committed bytes build.
         cob = mkCob pkgs self ./Cargo.lock [ ] false // {
           withGrammars = extra: mkCob pkgs self ./Cargo.lock extra false;
         };
+        # tree-sitter-cob, tangled then `tree-sitter generate`d (§5.5).
+        treeSitterCob = pkgs.runCommand "tree-sitter-cob"
+          { nativeBuildInputs = [ pkgs.tree-sitter pkgs.nodejs ]; } ''
+          cp -r ${self}/tree-sitter-cob $out
+          chmod -R +w $out
+          export HOME=$TMPDIR
+          cd $out && tree-sitter generate
+        '';
         # The grammar-ful development build, which also runs the cargo tests —
         # the release snapshot's proof that these committed bytes build and pass.
-        cobDoc = mkCob pkgs self ./Cargo.lock cobGrammars true;
+        cobDoc = mkCob pkgs self ./Cargo.lock
+          (cobGrammars ++ [{ id = "cob"; exts = [ "cob" ]; src = treeSitterCob; symbol = "tree_sitter_cob"; }])
+          true;
         default = cob;
       });
 
@@ -312,12 +322,24 @@ cob = mkCob pkgs cobSource ./Cargo.lock [ ] false // {
 static = mkCobStatic pkgs cobSource ./Cargo.lock [ ] // {
   withGrammars = extra: mkCobStatic pkgs cobSource ./Cargo.lock extra;
 };
+# tree-sitter-cob, tangled then run through `tree-sitter generate` so it has its
+# src/parser.c. It is a cob grammar like any other, so cob can color a .cob shown
+# as code (§5.5), and the treesitter check parses the whole corpus with it.
+treeSitterCob = pkgs.runCommand "tree-sitter-cob"
+  { nativeBuildInputs = [ pkgs.tree-sitter pkgs.nodejs ]; } ''
+  cp -r ${cobSource}/tree-sitter-cob $out
+  chmod -R +w $out
+          export HOME=$TMPDIR
+  cd $out && tree-sitter generate
+'';
 # The development output: cob with the grammars cobito needs to weave its own
-# documents — Rust, Nix, Bash, CSS (§5.5). The flake's checks weave and highlight
-# cob's own sources, so they use this build; it also runs the hermetic cargo
-# tests, which need a grammar present. `nix build .#cobDoc` rebuilds cobito's
-# own site with highlighting.
-cobDoc = mkCob pkgs cobSource ./Cargo.lock cobGrammars true;
+# documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks
+# weave and highlight cob's own sources, so they use this build; it also runs the
+# hermetic cargo tests, which need a grammar present. `nix build .#cobDoc`
+# rebuilds cobito's own site with highlighting.
+cobDoc = mkCob pkgs cobSource ./Cargo.lock
+  (cobGrammars ++ [{ id = "cob"; exts = [ "cob" ]; src = treeSitterCob; symbol = "tree_sitter_cob"; }])
+  true;
 @
 Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
 names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
@@ -333,7 +355,7 @@ cobSource = pkgs.runCommand "cob-src" { } ''
   cp -r ${self} $out
   chmod -R +w $out
   cd $out
-  for nw in src/*.rs.cob templates/cob.css.cob build.rs.cob; do
+  for nw in src/*.rs.cob templates/cob.css.cob build.rs.cob tree-sitter-cob/tree-sitter-cob.cob; do
     ${cobBootstrap}/bin/cob tangle "$nw" --out .
   done
 '';
@@ -432,6 +454,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the cite check>>
 
 <<the backlinks check>>
+
+<<the treesitter check>>
 @
 ### build {#sec:9hJs}
 
@@ -1559,4 +1583,58 @@ grep -q '<h2>Cited by</h2>' $prod/_site/n/$id.backlinks.html
 grep -q 'href="https://cons.example/n/' $prod/_site/n/$id.backlinks.html
 grep -q "<cob-backlinks src=\"$id.backlinks.html\">" $prod/_site/n/$id.html
 touch $out
+@
+### treesitter {#sec:treesitter}
+
+This check guards the editor grammar (§5.5, Tier 1). `tree-sitter-cob` is the
+grammar for `.cob` files. The check builds it and parses every `.cob` in the
+repository, so a grammar change or a new source construct that the grammar cannot
+read fails here. It also proves the web dogfood: cob carries `tree-sitter-cob` as a
+grammar (the `cobDoc` build), so cob colors a `.cob` shown as code.
+<<the treesitter check>>=
+treesitter = pkgs.runCommand "cob-treesitter"
+  { nativeBuildInputs = [ pkgs.tree-sitter pkgs.gcc ]; } ''
+  <<treesitter check script>>
+'';
+@
+The script builds the parser library where the tree-sitter CLI looks for it, then
+parses every `.cob` from a copy of the grammar directory (so the CLI resolves the
+`cob` grammar from the working directory, the same as a local run).
+<<treesitter check script>>=
+export HOME=$TMPDIR
+ts=$HOME/tree-sitter-cob
+cp -r ${self.packages.${system}.treeSitterCob} $ts
+chmod -R +w $ts
+# Build the parser lib where the CLI loads it from.
+mkdir -p $HOME/.cache/tree-sitter/lib
+cc -O2 -fPIC -std=c11 -I $ts/src -shared $ts/src/parser.c $ts/src/scanner.c \
+  -o $HOME/.cache/tree-sitter/lib/cob.so
+cd $ts
+# Every .cob in the repo must parse with no ERROR or MISSING node.
+for f in ${self}/fixtures/*.cob ${self}/*.cob ${self}/src/*.rs.cob ${self}/tree-sitter-cob/*.cob; do
+  if tree-sitter parse -q "$f" 2>&1 | grep -qE 'ERROR|MISSING'; then
+    echo "tree-sitter-cob could not parse $f cleanly:" >&2
+    tree-sitter parse "$f" 2>&1 | grep -E 'ERROR|MISSING' | head -3 >&2
+    exit 1
+  fi
+done
+<<assert cob colors a .cob as code>>
+touch $out
+@
+The web dogfood: cob carries `tree-sitter-cob` as one of its grammars (§5.5), so a
+code chunk whose file is a `.cob` is colored by it. The chunk below shows a chunk
+definition, which the grammar colors as a name — a `tok-function` in the weave.
+<<assert cob colors a .cob as code>>=
+cob=${self.packages.${system}.cobDoc}/bin/cob
+# cobDoc knows the cob grammar: a .cob-rooted chunk resolves to "cob".
+test "$($cob language ${self}/fixtures/hello.cob src/main.rs)" = rust
+work=$TMPDIR/cob-as-code
+mkdir -p $work
+cd $work
+# Show a .cob as code: the body is an escaped chunk-def line, so the cob grammar
+# colors it (the chunk name becomes a tok-function in the weave).
+printf '@ # cob as code\n\n@<<demo.cob@>>=\n@@<<greeting@@>>=\nhello\n@\n' > d.cob
+$cob weave d.cob --out _site
+# tree-sitter-cob coloured the chunk name inside the .cob code chunk.
+grep -q 'class="tok-function">' _site/index.html
 @
