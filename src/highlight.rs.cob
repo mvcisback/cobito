@@ -591,6 +591,13 @@ pub fn runs(source: &str, lang: Lang) -> Result<Vec<(usize, usize, usize)>, HlEr
     }
     Ok(out)
 }
+
+/// The `tok-*` class for a run's token index (the third field of a `runs` tuple),
+/// so another module can map it to its own scheme (the LSP token legend, §14).
+/// An index past the table is `tok-variable`, the same floor the weave uses.
+pub fn tok_class(index: usize) -> &'static str {
+    TOK_CLASSES.get(index).copied().unwrap_or("tok-variable")
+}
 @
 \code{render_runs} is the other half: it renders one chunk's per-line inner HTML from the
 chunk's clean \code{source}, its \code{holes}, and the flat \code{runs} mapped onto that source. It

@@ -49,6 +49,10 @@ it does not.
 
 <<the where command>>
 
+<<the tokens command>>
+
+<<the lsp command>>
+
 <<the tangle command>>
 
 <<dump the model>>
@@ -66,6 +70,7 @@ mod fetch;
 mod highlight;
 mod import;
 mod lock;
+mod lsp;
 mod markdown;
 mod markup;
 mod math;
@@ -105,6 +110,8 @@ USAGE:
     cob id <file.cob> <label>      print the frozen id for one label
     cob language <file.cob> <chunk> print the highlighting language for a chunk (§5.5)
     cob where <file.cob> <root> <line> map a tangled-file line back to its .cob source (§11)
+    cob tokens <file.cob>          print whole-file semantic tokens, one per line (§5.5, #2)
+    cob lsp                       run the editor language server over stdio (§5.5, #2)
     cob dump-ir <file.cob>...       print the parsed IR events (--from-markup <f>: parse a .markup)
     cob dump-model <file.cob>...   fold the IR into the document model, print it
     cob tangle <file.cob>...       tangle every root chunk
@@ -149,6 +156,8 @@ fn main() -> ExitCode {
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
         Some(("where", rest)) if rest.len() == 3 => where_cmd(&rest[0], &rest[1], &rest[2]),
+        Some(("tokens", files)) if files.len() == 1 => tokens_cmd(&files[0]),
+        Some(("lsp", rest)) if rest.is_empty() => lsp_cmd(),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
         Some(("--version" | "-V", _)) => {
             println!("cob {}", env!("CARGO_PKG_VERSION"));
@@ -747,6 +756,62 @@ fn where_cmd(file: &str, root: &str, line: &str) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+@
+The tokens command prints the whole-file semantic tokens (§5.5, #2), one per line
+as `<line>:<col> <len> <kind>`, with a zero-based column and a 1-based line. It is
+the testable core of the editor's semantic highlighting; `cob lsp` serves the same
+tokens over the Language Server Protocol. It loads config the same as `language`,
+because the token colors use the resolved grammar for each chunk.
+<<the tokens command>>=
+/// `cob tokens <file.cob>`: print every semantic token of the document.
+fn tokens_cmd(file: &str) -> ExitCode {
+    let doc = match build_doc(&[file.to_string()]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+    };
+    for t in lsp::tokens(&doc, &lang_cfg) {
+        println!("{}:{} {} {}", t.line, t.col, t.len, t.kind);
+    }
+    ExitCode::SUCCESS
+}
+@
+The lsp command runs the editor language server (§5.5, #2). It loads the config the
+same as `tokens` — the token colors need the resolved grammar — then hands the
+language config to the server, which reads and writes LSP messages over stdio until
+the editor disconnects.
+<<the lsp command>>=
+/// `cob lsp`: run the semantic-tokens language server over stdin and stdout.
+fn lsp_cmd() -> ExitCode {
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+    };
+    lsp::serve(lang_cfg)
 }
 @
 The tangle command extracts root chunks. It parses \code{--out}, \code{-R}, and \code{--check}.

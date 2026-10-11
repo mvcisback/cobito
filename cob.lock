@@ -439,6 +439,32 @@
         "kind": "section"
       }
     },
+    "src/lsp.rs.cob": {
+      "sec:AXnG": {
+        "id": "AXnG",
+        "kind": "section"
+      },
+      "sec:AmEH": {
+        "id": "AmEH",
+        "kind": "section"
+      },
+      "sec:Ex5F": {
+        "id": "Ex5F",
+        "kind": "section"
+      },
+      "sec:euE9": {
+        "id": "euE9",
+        "kind": "section"
+      },
+      "sec:hfBF": {
+        "id": "hfBF",
+        "kind": "section"
+      },
+      "sec:tkaN": {
+        "id": "tkaN",
+        "kind": "section"
+      }
+    },
     "src/markdown.rs.cob": {
       "sec:JT0X": {
         "id": "JT0X",

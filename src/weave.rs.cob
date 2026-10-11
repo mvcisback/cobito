@@ -443,7 +443,7 @@ way.
 /// first root that reaches a section owns its highlighting. A section no root
 /// reaches, or whose own language differs from the root it lands in, is absent, so
 /// the weave falls back to per-chunk tokenizing. A tangle cycle yields an empty map.
-fn tangle_section_runs(
+pub(crate) fn tangle_section_runs(
     doc: &DocModel,
     lang_cfg: &LangConfig,
 ) -> BTreeMap<usize, Vec<(usize, usize, usize)>> {

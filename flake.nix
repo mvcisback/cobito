@@ -441,6 +441,12 @@
             echo "cob language returned success for a chunk with no known language" >&2
             exit 1
           fi
+          # `cob tokens` prints whole-file semantic tokens in .cob buffer coordinates (#2).
+          # `let` opens line 7 as a keyword at column 0.
+          $cob tokens fixtures/hello.cob | grep -qx '7:0 3 keyword'
+          # The `;` after the chunk-use hole on line 7 is at buffer column 21 — holes
+          # removed it is at 8, so this proves the hole width is mapped back.
+          $cob tokens fixtures/hello.cob | grep -qx '7:21 1 operator'
           touch $out
         '';
 

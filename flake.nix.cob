@@ -791,7 +791,21 @@ cd ${self}
 cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert the frozen label lock>>
 <<assert the language resolver>>
+<<assert semantic tokens>>
 touch $out
+@
+The semantic-token mapping (§5.5, #2) tokenizes the whole tangled file and maps the
+tokens back onto the `.cob` buffer, through holes. On `hello.cob`, `let` on line 7
+is a keyword at column 0, and the `;` after a chunk-use hole lands at the buffer
+column past the hole, not the holes-removed column — the proof the reconstruction
+accounts for the hole width.
+<<assert semantic tokens>>=
+# `cob tokens` prints whole-file semantic tokens in .cob buffer coordinates (#2).
+# `let` opens line 7 as a keyword at column 0.
+$cob tokens fixtures/hello.cob | grep -qx '7:0 3 keyword'
+# The `;` after the chunk-use hole on line 7 is at buffer column 21 — holes
+# removed it is at 8, so this proves the hole width is mapped back.
+$cob tokens fixtures/hello.cob | grep -qx '7:21 1 operator'
 @
 This group tests the label side of the lock. \code{cob id} returns a four-character
 id. \code{cob labels} lists each label with its kind. A \code{sec:}-labelled heading is a

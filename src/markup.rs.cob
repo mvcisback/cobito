@@ -283,6 +283,15 @@ pub fn read<S: AsRef<Path>>(files: &[S]) -> Result<Vec<Event>, ReadError> {
     }
     Ok(reader.out)
 }
+
+/// Read one in-memory buffer into events, naming it `name` so `@file` events match
+/// (§5.5, #2): the path an editor would save to. The LSP path — it has the unsaved
+/// buffer text, so it never touches disk — where `read` reads files.
+pub fn read_str(name: &str, text: &str) -> Vec<Event> {
+    let mut reader = Reader::default();
+    reader.file(name, text);
+    reader.out
+}
 @
 The reader holds the growing event stream, the chunk counter, and the open chunk.
 \code{open} is \code{Some(true)} for code, \code{Some(false)} for documentation, and \code{None}
