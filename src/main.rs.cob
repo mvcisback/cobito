@@ -55,6 +55,8 @@ it does not.
 
 <<the tangle command>>
 
+<<the untangle command>>
+
 <<dump the model>>
 
 <<dump the ir>>
@@ -83,6 +85,7 @@ mod section;
 mod site;
 mod tangle;
 mod transclude;
+mod untangle;
 mod weave;
 @
 The binary needs only two names from the standard library: a path type for the
@@ -115,6 +118,7 @@ USAGE:
     cob dump-ir <file.cob>...       print the parsed IR events (--from-markup <f>: parse a .markup)
     cob dump-model <file.cob>...   fold the IR into the document model, print it
     cob tangle <file.cob>...       tangle every root chunk
+    cob untangle <file.cob>        patch the .cob from edits made to its tangled files (§11)
 
     cob --explain <CODE>         print the long form of a diagnostic (e.g. E014)
 
@@ -159,6 +163,7 @@ fn main() -> ExitCode {
         Some(("tokens", files)) if files.len() == 1 => tokens_cmd(&files[0]),
         Some(("lsp", rest)) if rest.is_empty() => lsp_cmd(),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
+        Some(("untangle", args)) if !args.is_empty() => untangle_cmd(args),
         Some(("--version" | "-V", _)) => {
             println!("cob {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -955,6 +960,60 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
                 };
                 println!("{verb} {root}");
             }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The untangle command is the reverse of tangle (§11, #2): it reads the edits made to
+the tangled files under \code{--out} (default the current directory) and prints a
+unified diff on the `.cob` source that reproduces them, so a quick fix to
+`src/main.rs` becomes a patch on `src/main.rs.cob`. An edit it cannot map back —
+an added or removed line, a line holding an expanded chunk-use, or a changed
+indentation — is reported on stderr and left out of the patch, never guessed. The
+patch goes to stdout, so a caller pipes it to `git apply`.
+<<the untangle command>>=
+/// `cob untangle <file.cob> [--out dir]`: print a patch on the `.cob` source from
+/// edits made to its tangled files.
+fn untangle_cmd(args: &[String]) -> ExitCode {
+    let mut file = None;
+    let mut outdir = PathBuf::from(".");
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--out" => match it.next() {
+                Some(dir) => outdir = PathBuf::from(dir),
+                None => {
+                    eprintln!("cob: --out needs a directory");
+                    return ExitCode::from(2);
+                }
+            },
+            _ if file.is_none() => file = Some(a.clone()),
+            _ => {}
+        }
+    }
+    let Some(file) = file else {
+        eprint!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let doc = match build_doc(&[file]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    match untangle::patch(&doc, &outdir) {
+        Ok((patch, conflicts)) => {
+            for c in &conflicts {
+                if c.line == 0 {
+                    eprintln!("cob: {}: {}", c.root, c.reason);
+                } else {
+                    eprintln!("cob: {} tangled line {}: {}", c.root, c.line, c.reason);
+                }
+            }
+            print!("{patch}");
             ExitCode::SUCCESS
         }
         Err(e) => {

@@ -437,6 +437,8 @@ label lock, the tangle goldens, and the native reader against its frozen
 
 <<the tangle check>>
 
+<<the untangle check>>
+
 <<the reader check>>
 
 <<the dogfood check>>
@@ -957,6 +959,44 @@ if $cob where fixtures/hello.cob src/main.rs 999; then
   echo "cob where accepted a line past the end" >&2
   exit 1
 fi
+@
+### untangle {#sec:untangle}
+
+The untangle check (§11, #2/D) proves the round trip: an edit to a tangled file
+becomes a `.cob` patch that, applied, re-tangles to the same edit. It also proves a
+structural edit (a new line) is a reported conflict, not a silent, wrong patch. It
+needs `git` to apply the patch.
+<<the untangle check>>=
+untangle = pkgs.runCommand "cob-untangle" { nativeBuildInputs = [ pkgs.git ]; } ''
+  <<untangle check script>>
+'';
+@
+The script works on a writable copy: tangle `hello.cob`, edit one non-hole line of
+the tangled output, untangle to a patch, apply it, and re-tangle to confirm the
+edit round-trips. Then it appends a line and checks that untangle reports the
+structural change instead of patching it.
+<<untangle check script>>=
+cob=${self.packages.${system}.cobDoc}/bin/cob
+work=$TMPDIR/ut
+mkdir -p $work
+cp ${self}/fixtures/hello.cob $work/hello.cob
+cd $work
+$cob tangle hello.cob --out .
+# An in-place edit to a non-hole line maps back to a .cob patch.
+sed -i 's|    tokens.push(c);|    tokens.push(c); // edited|' src/main.rs
+$cob untangle hello.cob > patch.diff
+grep -q '^+tokens.push(c); // edited' patch.diff
+# The patch applies, and a re-tangle reproduces the edit — the round trip.
+git apply patch.diff
+grep -q '^tokens.push(c); // edited' hello.cob
+$cob tangle hello.cob --out out
+grep -q '    tokens.push(c); // edited' out/src/main.rs
+# A structural edit (an added line) is a reported conflict, not a silent patch.
+printf '// added\n' >> out/src/main.rs
+$cob untangle hello.cob --out out 2> conflicts.txt > structural.diff
+grep -q 'lines added or removed' conflicts.txt
+test ! -s structural.diff
+touch $out
 @
 ### reader {#sec:c8DE}
 

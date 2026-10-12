@@ -531,6 +531,30 @@
           touch $out
         '';
 
+        untangle = pkgs.runCommand "cob-untangle" { nativeBuildInputs = [ pkgs.git ]; } ''
+          cob=${self.packages.${system}.cobDoc}/bin/cob
+          work=$TMPDIR/ut
+          mkdir -p $work
+          cp ${self}/fixtures/hello.cob $work/hello.cob
+          cd $work
+          $cob tangle hello.cob --out .
+          # An in-place edit to a non-hole line maps back to a .cob patch.
+          sed -i 's|    tokens.push(c);|    tokens.push(c); // edited|' src/main.rs
+          $cob untangle hello.cob > patch.diff
+          grep -q '^+tokens.push(c); // edited' patch.diff
+          # The patch applies, and a re-tangle reproduces the edit — the round trip.
+          git apply patch.diff
+          grep -q '^tokens.push(c); // edited' hello.cob
+          $cob tangle hello.cob --out out
+          grep -q '    tokens.push(c); // edited' out/src/main.rs
+          # A structural edit (an added line) is a reported conflict, not a silent patch.
+          printf '// added\n' >> out/src/main.rs
+          $cob untangle hello.cob --out out 2> conflicts.txt > structural.diff
+          grep -q 'lines added or removed' conflicts.txt
+          test ! -s structural.diff
+          touch $out
+        '';
+
         # Reader differential (§4.1): the native reader (`cob dump-ir`) must make
         # the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
         # over the committed .markup). Hermetic — no live noweb.
