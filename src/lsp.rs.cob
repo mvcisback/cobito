@@ -65,15 +65,16 @@ crosses a line. The result is sorted, the order the encoding needs.
 /// Every semantic token for the document, in `.cob` buffer coordinates, sorted by
 /// line then column (§5.5, #2). Whole-file context comes from the weave's tangle
 /// runs; this maps them back onto each section's buffer bytes.
-pub fn tokens(doc: &DocModel, lang_cfg: &LangConfig) -> Vec<Token> {
+pub fn tokens(doc: &DocModel, lang_cfg: &LangConfig, source: &str) -> Vec<Token> {
     let section_runs = weave::tangle_section_runs(doc, lang_cfg);
+    let source_lines: Vec<&str> = source.split('\n').collect();
     let mut out = Vec::new();
     for (sec_idx, runs) in &section_runs {
         let sec = &doc.sections[*sec_idx];
         let SectionKind::Code { spans, .. } = &sec.kind else {
             continue;
         };
-        let (hr, pos) = reconstruct(spans, sec.line + 1);
+        let (hr, pos) = reconstruct(spans, sec.line + 1, &source_lines);
         for &(s, e, tok) in runs {
             let kind = lsp_kind(highlight::tok_class(tok));
             emit(&hr, &pos, s.min(hr.len()), e.min(hr.len()), kind, &mut out);
@@ -111,15 +112,18 @@ the tokenizer saw. The editor buffer has more: each chunk-use hole is the litera
 widening it at each hole and each `<<`. It returns the holes-removed text and, for
 each byte offset, the buffer line and column.
 
-This is exact for ordinary code. It is off by a column only where a `<<` is a bare
-operator or heredoc (not an escape) or where a rare `@>>` appears, because the
-model does not keep which `<<` was escaped. Exact mapping there needs source byte
-spans in the reader, a later change.
+To make the column exact — not off by one on a bare `<<` operator or heredoc —
+`reconstruct` consults the raw buffer line. The only buffer bytes the tokenizer
+never saw are a chunk-use hole (`<<name>>`, a known width) and the `@` of an
+escape (`@<<` / `@>>`), which the raw line shows directly. Every other byte is one
+to one, so the map is exact.
 <<reconstruct buffer positions>>=
-/// For a code section's spans, rebuild its holes-removed source and a map from each
-/// byte offset to the buffer `(line, column)`, both zero-based-column and 1-based
-/// line starting at `first_line` (the chunk's first body line).
-fn reconstruct(spans: &[CodeSpan], first_line: u32) -> (String, Vec<(u32, u32)>) {
+/// For a code section's spans and the buffer's `source_lines`, rebuild the
+/// holes-removed source and a map from each byte offset to the buffer
+/// `(line, column)` — 1-based line from `first_line`, zero-based column. The raw
+/// line resolves the one ambiguity the model drops: whether a `<<` is an escape
+/// (`@<<`, one byte wider) or a bare operator.
+fn reconstruct(spans: &[CodeSpan], first_line: u32, source_lines: &[&str]) -> (String, Vec<(u32, u32)>) {
     let mut hr = String::new();
     let mut holes: Vec<(usize, u32)> = Vec::new();
     for span in spans {
@@ -127,23 +131,29 @@ fn reconstruct(spans: &[CodeSpan], first_line: u32) -> (String, Vec<(u32, u32)>)
             CodeSpan::Nl => hr.push('\n'),
             CodeSpan::Text(t) => hr.push_str(t),
             // In the buffer a use is the bracketed name, so its width is name + 4.
-            CodeSpan::Use { name } => holes.push((hr.len(), name.chars().count() as u32 + 4)),
+            CodeSpan::Use { name } => holes.push((hr.len(), name.len() as u32 + 4)),
         }
     }
     let bytes = hr.as_bytes();
     let mut pos = vec![(first_line, 0u32); bytes.len() + 1];
     let mut line = first_line;
     let mut col = 0u32;
+    let raw = |n: u32| source_lines.get(n as usize - 1).copied().unwrap_or("").as_bytes();
+    let mut raw_line = raw(line);
     let mut hi = 0;
     let mut i = 0;
     while i <= bytes.len() {
-        // A hole here is literal buffer text the tokenizer never saw.
+        // A hole here is literal buffer text (a bracketed use) the tokenizer missed.
         while hi < holes.len() && holes[hi].0 == i {
             col += holes[hi].1;
             hi += 1;
         }
-        // A literal double-open was written with the escape, one byte wider here.
-        if bytes.get(i) == Some(&b'<') && bytes.get(i + 1) == Some(&b'<') {
+        // An escaped double-open or double-close has a leading `@` in the buffer
+        // (no hr byte); the raw line shows it.
+        let two = bytes.get(i).zip(bytes.get(i + 1));
+        if matches!(two, Some((b'<', b'<')) | Some((b'>', b'>')))
+            && raw_line.get(col as usize) == Some(&b'@')
+        {
             col += 1;
         }
         pos[i] = (line, col);
@@ -153,6 +163,7 @@ fn reconstruct(spans: &[CodeSpan], first_line: u32) -> (String, Vec<(u32, u32)>)
         if bytes[i] == b'\n' {
             line += 1;
             col = 0;
+            raw_line = raw(line);
         } else {
             col += 1;
         }
@@ -281,7 +292,7 @@ impl Server {
         let Ok(doc) = model::build(&events) else {
             return Vec::new();
         };
-        encode(&tokens(&doc, &self.lang_cfg))
+        encode(&tokens(&doc, &self.lang_cfg, text))
     }
 }
 
@@ -367,13 +378,28 @@ mod tests {
             Text(";".into()),
             Nl,
         ];
-        let (hr, pos) = reconstruct(&spans, 6);
+        // The raw buffer: the chunk body sits on line 6 (index 5). (@<< / @>>
+        // tangle to the real brackets so this line is not read as a chunk use.)
+        let src = ["", "", "", "", "", "let c = @<<next char@>>;"];
+        let (hr, pos) = reconstruct(&spans, 6, &src);
         assert_eq!(hr, "let c = ;\n");
         // `let` starts at column 0 of line 6.
         assert_eq!(pos[0], (6, 0));
         // The `;` is holes-removed offset 8, but the buffer put it after the
         // 13-byte use text, so column 8 + 13 = 21.
         assert_eq!(pos[8], (6, 21));
+    }
+
+    #[test]
+    fn reconstruct_does_not_shift_a_bare_double_open() {
+        use CodeSpan::*;
+        // A shift operator, not an escape: the raw line has no leading `@`, so the
+        // column must not drift. `b` is offset 5 and buffer column 5, not 6.
+        let spans = vec![Text("a << b".into()), Nl];
+        let src = ["a << b"];
+        let (hr, pos) = reconstruct(&spans, 1, &src);
+        assert_eq!(hr, "a << b\n");
+        assert_eq!(pos[5], (1, 5));
     }
 
     #[test]

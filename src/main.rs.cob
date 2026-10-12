@@ -784,7 +784,8 @@ fn tokens_cmd(file: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    for t in lsp::tokens(&doc, &lang_cfg) {
+    let source = std::fs::read_to_string(file).unwrap_or_default();
+    for t in lsp::tokens(&doc, &lang_cfg, &source) {
         println!("{}:{} {} {}", t.line, t.col, t.len, t.kind);
     }
     ExitCode::SUCCESS
