@@ -279,6 +279,17 @@
           diff -r $TMPDIR/mdfx-a $TMPDIR/mdfx-b
           grep -qE '<figure id="fig-diagram" data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
           grep -qE '<figcaption data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
+          # §10 taxa: a `\taxon{name}` directive stamps the next heading with data-taxon, the
+          # API the stylesheet and other tools read. The directive emits no text of its own.
+          tx=$TMPDIR/taxon
+          mkdir -p $tx
+          printf '# T\n\n\\taxon{theorem}\n## Pumping Lemma\n\nEvery regular language has one.\n' > $tx/t.cob
+          ( cd $tx && $cob lock t.cob >/dev/null && $cob weave --locked t.cob --out _site )
+          grep -qE '<h2 id="sec-[0-9A-Za-z]{4}" data-taxon="theorem">' $tx/_site/index.html
+          if grep -q 'taxon{' $tx/_site/index.html; then
+            echo "the \\taxon directive leaked into the output as text" >&2
+            exit 1
+          fi
           # §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
           # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
           # and confirm the coloring is deterministic and structurally sound.

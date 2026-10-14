@@ -254,13 +254,34 @@ fn render_ctx(
     macros: bool,
 ) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
+    // A `\taxon{name}` directive applies to the heading that immediately follows it.
+    let mut pending_taxon: Option<String> = None;
     for block in split_blocks(input, macros) {
         let html = match block {
-            RawBlock::Fence { info, body } => render_fence(&info, &body, math, defs)?,
-            RawBlock::Heading { level, text } => render_heading(level, &text, math)?,
-            RawBlock::List { ordered, items } => render_list(ordered, &items, math)?,
-            RawBlock::Paragraph(text) => render_paragraph(&text, math)?,
-            RawBlock::MacroDef(src) => render_macro_def(&src, defs)?,
+            // Hold the taxon for the next heading; a non-heading block drops it.
+            RawBlock::Taxon(name) => {
+                pending_taxon = Some(name);
+                continue;
+            }
+            RawBlock::Heading { level, text } => {
+                render_heading(level, &text, math, pending_taxon.take().as_deref())?
+            }
+            RawBlock::Fence { info, body } => {
+                pending_taxon = None;
+                render_fence(&info, &body, math, defs)?
+            }
+            RawBlock::List { ordered, items } => {
+                pending_taxon = None;
+                render_list(ordered, &items, math)?
+            }
+            RawBlock::Paragraph(text) => {
+                pending_taxon = None;
+                render_paragraph(&text, math)?
+            }
+            RawBlock::MacroDef(src) => {
+                pending_taxon = None;
+                render_macro_def(&src, defs)?
+            }
         };
         if !html.is_empty() {
             out.push(html);
@@ -279,6 +300,9 @@ enum RawBlock {
     Paragraph(String),
     /// A `\def`/`\let` line inside a `macros` fence body (§6.4).
     MacroDef(String),
+    /// A `\taxon{name}` directive on its own line: the taxon of the next heading's
+    /// node (§10).
+    Taxon(String),
 }
 @
 The line loop. A blank line is a separator. A fence runs to its closing fence,
@@ -321,6 +345,11 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
             i = if j < lines.len() { j + 1 } else { j };
             continue;
         }
+        if let Some(name) = taxon_line(lines[i]) {
+            blocks.push(RawBlock::Taxon(name));
+            i += 1;
+            continue;
+        }
         if let Some((level, text)) = heading_line(lines[i]) {
             blocks.push(RawBlock::Heading { level, text });
             i += 1;
@@ -352,6 +381,7 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
             if l.trim().is_empty()
                 || fence_open(l).is_some()
                 || heading_line(l).is_some()
+                || taxon_line(l).is_some()
                 || list_item(l).is_some()
                 || (macros && is_macro_def_line(l))
             {
@@ -413,6 +443,16 @@ fn heading_line(line: &str) -> Option<(usize, String)> {
         None
     }
 }
+
+/// A line that is exactly `\taxon{name}` → the taxon name. The name holds no
+/// braces, so a `\taxon` with a malformed body falls through to prose.
+fn taxon_line(line: &str) -> Option<String> {
+    let inner = line.trim().strip_prefix("\\taxon{")?.strip_suffix('}')?;
+    if inner.is_empty() || inner.contains(['{', '}']) {
+        return None;
+    }
+    Some(inner.trim().to_string())
+}
 @
 A list item is a bullet (\code{- }) or an ordered marker (\code{1. }). \code{list_item} is either;
 the split loop uses \code{ordered_item}/\code{bullet_item} to keep one list one kind.
@@ -441,13 +481,19 @@ fn render_heading(
     level: usize,
     text: &str,
     math: &mut Vec<Math>,
+    taxon: Option<&str>,
 ) -> Result<String, MarkdownError> {
     let (inline_src, id) = split_heading_attr(text.trim());
     let inner = render_inline(inline_src.trim(), math)?;
-    let attr = match id {
+    let mut attr = match id {
         Some(id) => format!(" id=\"{}\"", prose::escape(id)),
         None => String::new(),
     };
+    // The taxon rides on the heading as `data-taxon`, the API the stylesheet and
+    // other tools read (§10). `rewrite::apply` keeps it when it stamps the id.
+    if let Some(name) = taxon {
+        attr.push_str(&format!(" data-taxon=\"{}\"", prose::escape(name)));
+    }
     Ok(format!("<h{level}{attr}>{inner}</h{level}>"))
 }
 
@@ -829,7 +875,7 @@ peg::parser! {
         pub rule nodes() -> Vec<Inline> = node()*
 
         rule node() -> Inline
-            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / dmath() / imath() / text() / lonetick()
+            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / taxonc() / dmath() / imath() / text() / lonetick()
 
         rule strong() -> Inline = "\\strong{" ns:nodes() "}" { Inline::Strong(ns) }
         rule emph() -> Inline = "\\emph{" ns:nodes() "}" { Inline::Emph(ns) }
@@ -849,6 +895,10 @@ peg::parser! {
         rule citec() -> Inline = "\\cite{" s:$((!"}" [_])*) "}" { Inline::Cite(s.to_string()) }
         rule transclude() -> Inline
             = "\\transclude{" s:$((!"}" [_])*) "}" { Inline::Transclude(s.to_string()) }
+        // A `\taxon{name}` declares the taxon (type) of the node it precedes (§10).
+        // It is a block directive, caught in `split_blocks`; inline it is inert, so a
+        // stray one never renders as text and never fails the parse.
+        rule taxonc() -> Inline = "\\taxon{" s:$((!"}" [_])*) "}" { Inline::Taxon(s.to_string()) }
 
         rule dmath() -> Inline
             = "$$" s:$((!"$$" [_])*) "$$" { Inline::Math { src: s.to_string(), display: true } }
@@ -858,7 +908,7 @@ peg::parser! {
 
         rule text() -> Inline = s:$(t_atom()+) { Inline::Text(unescape_text(s)) }
         rule t_atom() = "\\$" {} / "\\{" {} / "\\}" {} / "\\\\" {} / (!marker() [_] {})
-        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "$" / "{" / "}" / "`"
+        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "\\taxon{" / "$" / "{" / "}" / "`"
 
         rule ws() = [' ' | '\t' | '\n' | '\r']*
         pub rule modifiers() -> Vec<Modifier> = ws() m:(x:modifier() ws() { x })* { m }
@@ -894,6 +944,9 @@ enum Inline {
     Ref(String),
     Cite(String),
     Transclude(String),
+    /// A `\taxon{name}` directive. It is block-level (handled in `split_blocks`);
+    /// inline it is inert, lowering to nothing.
+    Taxon(String),
 }
 
 /// A parsed `\def`/`\let` line from a `macros` body (§6.4). `name` and `target`
@@ -952,6 +1005,9 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
                 "<div class=\"transclusion\" data-transclude=\"{}\"></div>",
                 prose::escape(id.trim())
             )),
+            // A taxon is block-level (split_blocks attaches it to the next heading);
+            // an inline one is a no-op.
+            Inline::Taxon(_) => {}
             Inline::Math { src, display } => {
                 let idx = math.len();
                 math.push(Math {
@@ -1098,6 +1154,21 @@ fn macros_fence_registers_and_shows_source() {
     let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut BTreeMap::new())
         .unwrap_err();
     assert!(matches!(err, MarkdownError::Fence { .. }));
+}
+
+#[test]
+fn taxon_rides_on_the_next_heading() {
+    let mut math = Vec::new();
+    let mut defs = BTreeMap::new();
+    // `\taxon{name}` stamps the next heading with `data-taxon` and emits nothing of
+    // its own.
+    let html = render("\\taxon{theorem}\n## Pumping Lemma\n", &mut math, &mut defs).unwrap();
+    assert!(html.contains("<h2 data-taxon=\"theorem\">"));
+    assert!(!html.contains("\\taxon"));
+    // It applies only to the heading immediately after it: an intervening paragraph
+    // drops the pending taxon.
+    let later = render("\\taxon{lemma}\n\nnot a heading\n\n## Later\n", &mut math, &mut defs).unwrap();
+    assert!(!later.contains("data-taxon"));
 }
 @
 Outside a \code{macros} fence a \code{\def}/\code{\let} line is ordinary prose, so it adds

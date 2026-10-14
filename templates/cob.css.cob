@@ -263,6 +263,16 @@ id sits in the right margin of its centred block.
     font-weight: bold;
   }
 
+  /* A taxon (§10) labels a typed node — Theorem, Definition, Example. The label is
+     generated from the data-taxon attribute, so no taxon text enters a selection or
+     the annotation layer; a document may override a given taxon by name. */
+  main :is(h1, h2, h3, h4, h5, h6)[data-taxon]::before {
+    content: attr(data-taxon) ". ";
+    text-transform: capitalize;
+    font-weight: bold;
+    color: var(--ref);
+  }
+
   /* A wide display equation scrolls sideways rather than widening the page.
      KaTeX's own stylesheet does not guard this, and it matters most on a phone. */
   .katex-display {
