@@ -282,6 +282,10 @@ fn render_ctx(
                 pending_taxon = None;
                 render_macro_def(&src, defs)?
             }
+            RawBlock::Quote(raw) => {
+                pending_taxon = None;
+                render_quote(&raw, math, defs, macros)?
+            }
         };
         if !html.is_empty() {
             out.push(html);
@@ -303,6 +307,8 @@ enum RawBlock {
     /// A `\taxon{name}` directive on its own line: the taxon of the next heading's
     /// node (§10).
     Taxon(String),
+    /// A run of `>`-prefixed lines: a blockquote. The raw lines keep their markers.
+    Quote(String),
 }
 @
 The line loop. A blank line is a separator. A fence runs to its closing fence,
@@ -355,6 +361,18 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
             i += 1;
             continue;
         }
+        if lines[i].starts_with('>') {
+            let mut quote = String::new();
+            while i < lines.len() && lines[i].starts_with('>') {
+                if !quote.is_empty() {
+                    quote.push('\n');
+                }
+                quote.push_str(lines[i]);
+                i += 1;
+            }
+            blocks.push(RawBlock::Quote(quote));
+            continue;
+        }
         if list_item(lines[i]).is_some() {
             let ordered = ordered_item(lines[i]).is_some();
             let mut items = Vec::new();
@@ -382,6 +400,7 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
                 || fence_open(l).is_some()
                 || heading_line(l).is_some()
                 || taxon_line(l).is_some()
+                || l.starts_with('>')
                 || list_item(l).is_some()
                 || (macros && is_macro_def_line(l))
             {
@@ -477,6 +496,25 @@ fn list_item(line: &str) -> Option<String> {
 A heading renders its text as one inline run, with the optional id split off the
 tail. The id is source-anchored (§7.1), so \code{cob lock} writes \code{{#sec:<id>}} here.
 <<render a heading>>=
+/// A blockquote renders its `>`-stripped body through the same block renderer, so
+/// a quote holds paragraphs, emphasis, and an attribution line (§6.4).
+fn render_quote(
+    raw: &str,
+    math: &mut Vec<Math>,
+    defs: &mut BTreeMap<String, String>,
+    macros: bool,
+) -> Result<String, MarkdownError> {
+    let inner: Vec<String> = raw
+        .lines()
+        .map(|l| {
+            let l = l.strip_prefix('>').unwrap_or(l);
+            l.strip_prefix(' ').unwrap_or(l).to_string()
+        })
+        .collect();
+    let body = render_ctx(&inner.join("\n"), math, defs, macros)?;
+    Ok(format!("<blockquote>{body}</blockquote>"))
+}
+
 fn render_heading(
     level: usize,
     text: &str,
@@ -875,7 +913,7 @@ peg::parser! {
         pub rule nodes() -> Vec<Inline> = node()*
 
         rule node() -> Inline
-            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / taxonc() / dmath() / imath() / text() / lonetick()
+            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / taxonc() / sidenote() / dmath() / imath() / text() / lonetick()
 
         rule strong() -> Inline = "\\strong{" ns:nodes() "}" { Inline::Strong(ns) }
         rule emph() -> Inline = "\\emph{" ns:nodes() "}" { Inline::Emph(ns) }
@@ -899,6 +937,10 @@ peg::parser! {
         // It is a block directive, caught in `split_blocks`; inline it is inert, so a
         // stray one never renders as text and never fails the parse.
         rule taxonc() -> Inline = "\\taxon{" s:$((!"}" [_])*) "}" { Inline::Taxon(s.to_string()) }
+        // `\sidenote{…}` is an inline taxon (§10): the body is a typed node floated to
+        // the margin by CSS. The body recurses the grammar, so a sidenote can hold
+        // emphasis, a citation, or math.
+        rule sidenote() -> Inline = "\\sidenote{" ns:nodes() "}" { Inline::Sidenote(ns) }
 
         rule dmath() -> Inline
             = "$$" s:$((!"$$" [_])*) "$$" { Inline::Math { src: s.to_string(), display: true } }
@@ -908,7 +950,7 @@ peg::parser! {
 
         rule text() -> Inline = s:$(t_atom()+) { Inline::Text(unescape_text(s)) }
         rule t_atom() = "\\$" {} / "\\{" {} / "\\}" {} / "\\\\" {} / (!marker() [_] {})
-        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "\\taxon{" / "$" / "{" / "}" / "`"
+        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "\\taxon{" / "\\sidenote{" / "$" / "{" / "}" / "`"
 
         rule ws() = [' ' | '\t' | '\n' | '\r']*
         pub rule modifiers() -> Vec<Modifier> = ws() m:(x:modifier() ws() { x })* { m }
@@ -947,6 +989,8 @@ enum Inline {
     /// A `\taxon{name}` directive. It is block-level (handled in `split_blocks`);
     /// inline it is inert, lowering to nothing.
     Taxon(String),
+    /// A `\sidenote{…}` inline taxon: a typed node floated to the margin by CSS.
+    Sidenote(Vec<Inline>),
 }
 
 /// A parsed `\def`/`\let` line from a `macros` body (§6.4). `name` and `target`
@@ -1008,6 +1052,13 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
             // A taxon is block-level (split_blocks attaches it to the next heading);
             // an inline one is a no-op.
             Inline::Taxon(_) => {}
+            Inline::Sidenote(ns) => {
+                // A typed margin node: the `.sidenote` class carries the float CSS,
+                // and data-taxon is the taxon API (§10). No html-escape.
+                out.push_str("<aside class=\"sidenote\" data-taxon=\"sidenote\">");
+                lower(ns, math, out);
+                out.push_str("</aside>");
+            }
             Inline::Math { src, display } => {
                 let idx = math.len();
                 math.push(Math {
@@ -1169,6 +1220,21 @@ fn taxon_rides_on_the_next_heading() {
     // drops the pending taxon.
     let later = render("\\taxon{lemma}\n\nnot a heading\n\n## Later\n", &mut math, &mut defs).unwrap();
     assert!(!later.contains("data-taxon"));
+}
+
+#[test]
+fn sidenote_and_blockquote_render() {
+    let mut math = Vec::new();
+    let mut defs = BTreeMap::new();
+    // An inline sidenote is a typed margin aside; its body recurses the grammar.
+    let note = render("A claim.\\sidenote{see \\emph{later}}\n", &mut math, &mut defs).unwrap();
+    assert!(note.contains("<aside class=\"sidenote\" data-taxon=\"sidenote\">"));
+    assert!(note.contains("<em>later</em>"));
+    // A run of `>` lines is a blockquote, body rendered through the block renderer.
+    let quote = render("> a quote\n>\n> — someone\n", &mut math, &mut defs).unwrap();
+    assert!(quote.starts_with("<blockquote>"));
+    assert!(quote.contains("a quote"));
+    assert!(quote.contains("someone"));
 }
 @
 Outside a \code{macros} fence a \code{\def}/\code{\let} line is ordinary prose, so it adds

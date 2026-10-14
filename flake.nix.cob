@@ -625,11 +625,19 @@ grep -qE '<figcaption data-id="[0-9A-Za-z]{4}">' $TMPDIR/mdfx-a/index.html
 # API the stylesheet and other tools read. The directive emits no text of its own.
 tx=$TMPDIR/taxon
 mkdir -p $tx
-printf '# T\n\n\\taxon{theorem}\n## Pumping Lemma\n\nEvery regular language has one.\n' > $tx/t.cob
+printf '# T\n\n> a quote\n\n\\taxon{theorem}\n## Pumping Lemma\n\nA fact.\\sidenote{a margin note}\n' > $tx/t.cob
 ( cd $tx && $cob lock t.cob >/dev/null && $cob weave --locked t.cob --out _site )
 grep -qE '<h2 id="sec-[0-9A-Za-z]{4}" data-taxon="theorem">' $tx/_site/index.html
 if grep -q 'taxon{' $tx/_site/index.html; then
   echo "the \\taxon directive leaked into the output as text" >&2
+  exit 1
+fi
+# §6.4 a `>` line is a blockquote; a `\sidenote{…}` is an inline sidenote taxon,
+# a typed margin aside (the html-escape <aside> is no longer needed).
+grep -q '<blockquote>' $tx/_site/index.html
+grep -qE '<aside[^>]*class="sidenote" data-taxon="sidenote">' $tx/_site/index.html
+if grep -q 'sidenote{' $tx/_site/index.html; then
+  echo "the \\sidenote directive leaked into the output as text" >&2
   exit 1
 fi
 # §6.4 assets: a figure's referenced local image is copied into the site so the
