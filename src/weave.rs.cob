@@ -103,6 +103,8 @@ copy, and the top-level \code{write_site} that ties them to disk.
 
 <<copy the katex assets>>
 
+<<copy referenced assets>>
+
 <<write the site to disk>>
 
 <<the tests>>
@@ -1283,10 +1285,78 @@ mod embedded_katex {
     ];
 }
 @
+A woven page may reference a local asset — a figure's `<img src="imgs/fig.svg">`
+(§6.4). For the site to be self-contained, cob copies each referenced local asset
+into the output at the same relative path, so the archive carries exactly the
+assets it uses and no more. A reference to an absolute path, a URL, a `data:` URI,
+or a `#` fragment is left alone; one that escapes the project with `..` is skipped;
+a missing file is a W107 warning, never a hard error, so a typo does not fail a
+build. Paths resolve against the working directory, the same as `cob.toml` and the
+bibliography.
+<<copy referenced assets>>=
+/// Every `src="…"` in the HTML that names a local, in-project relative file.
+fn referenced_assets(html: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(rel) = html[i..].find("src=\"") {
+        let s = i + rel + 5;
+        let Some(q) = html[s..].find('"') else { break };
+        let v = &html[s..s + q];
+        let external = v.is_empty()
+            || v.starts_with("http://")
+            || v.starts_with("https://")
+            || v.starts_with("//")
+            || v.starts_with('/')
+            || v.starts_with('#')
+            || v.starts_with("data:")
+            || v.starts_with("mailto:");
+        if !external {
+            out.push(v.to_string());
+        }
+        i = s + q + 1;
+    }
+    out
+}
+
+/// Copy every referenced local asset into `out` at its relative path. Returns a
+/// W107 lint per asset that could not be read, so the weave reports a broken link
+/// without failing.
+fn copy_assets(out: &Path, site: &Site) -> Vec<Lint> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut lints = Vec::new();
+    let page_html = site.pages.iter().map(|p| p.html.as_str());
+    let node_html = site.node_pages.iter().map(|(_, h)| h.as_str());
+    for html in page_html.chain(node_html) {
+        for rel in referenced_assets(html) {
+            if !seen.insert(rel.clone()) {
+                continue;
+            }
+            // Never copy from outside the project.
+            if Path::new(&rel).is_absolute() || rel.split('/').any(|c| c == "..") {
+                continue;
+            }
+            let dst = out.join(&rel);
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::copy(&rel, &dst).is_err() {
+                lints.push(Lint {
+                    code: "W107",
+                    message: format!("referenced asset `{rel}` was not found; its link will be broken"),
+                    file: rel.clone(),
+                    line: 0,
+                });
+            }
+        }
+    }
+    lints
+}
+@
 The top-level entry loads the lock, renders the whole document, then writes it to
 disk. A dev-time weave writes any newly minted ids back so they freeze; the locked
 mode never mints, so it never touches the committed lock. It writes every page, the
-sitemap page, the stylesheet, and the KaTeX assets. The archival JSON is opt-in: plain weave stays an
+sitemap page, the stylesheet, the KaTeX assets, and the local assets each page
+references. The archival JSON is opt-in: plain weave stays an
 HTML-only artifact, and the archive flag adds the whole-document JSON plus one
 per-page file beside its HTML for the annotation layer.
 <<write the site to disk>>=
@@ -1332,6 +1402,10 @@ pub fn write_site(
     std::fs::write(out.join("cob-syntax.css"), include_str!("../templates/cob-syntax.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
+    // Copy every local asset a page references (a figure image, §6.4), so the
+    // site is self-contained; a missing one is a W107 lint, not a failure.
+    let asset_lints = copy_assets(out, &site);
+    site.lints.extend(asset_lints);
     // The archival JSON (§8) is opt-in: plain `weave` stays an HTML-only
     // artifact. Per-page files sit beside their HTML for the annotation layer.
     if archive {
@@ -1369,6 +1443,17 @@ a fixed-seed minter so float ids are deterministic within a run.
 mod tests {
     use super::*;
     use crate::lock::ID_LEN;
+
+    #[test]
+    fn referenced_assets_are_local_relative_only() {
+        let html = concat!(
+            "<img src=\"imgs/f.svg\">",
+            "<img src=\"https://x/y.png\">",
+            "<img src=\"/abs.png\">",
+            "<img src=\"data:,z\">",
+        );
+        assert_eq!(referenced_assets(html), vec!["imgs/f.svg".to_string()]);
+    }
 
     <<test scaffolding>>
 

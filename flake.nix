@@ -290,6 +290,18 @@
             echo "the \\taxon directive leaked into the output as text" >&2
             exit 1
           fi
+          # §6.4 assets: a figure's referenced local image is copied into the site so the
+          # archive is self-contained; a weave copies only the assets it references.
+          as=$TMPDIR/assets
+          mkdir -p $as/pics
+          printf '<svg xmlns="http://www.w3.org/2000/svg"></svg>' > $as/pics/d.svg
+          printf '# A\n\n```figure\n\\caption{A picture.}\n<img src="pics/d.svg">\n```\n' > $as/a.cob
+          ( cd $as && $cob lock a.cob >/dev/null && $cob weave --locked a.cob --out _site )
+          test -f $as/_site/pics/d.svg
+          # An unreferenced sibling is not copied — only what a page uses.
+          printf '<svg xmlns="http://www.w3.org/2000/svg"></svg>' > $as/pics/unused.svg
+          ( cd $as && $cob weave --locked a.cob --out _site2 )
+          test ! -e $as/_site2/pics/unused.svg
           # §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
           # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
           # and confirm the coloring is deterministic and structurally sound.

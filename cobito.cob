@@ -391,6 +391,7 @@ introduces a code, it claims the next free number in this registry.
 | W104 | code chunk resolved to no known language | \code{weave.rs} |
 | W105 | transclusion cycle | \code{transclude.rs} |
 | W106 | transclusion of an unknown target | \code{transclude.rs} |
+| W107 | a referenced local asset was not found | \code{weave.rs} |
 ```
 
 ## Conventions {#sec:zBDS}
