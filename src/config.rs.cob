@@ -42,11 +42,13 @@ and it is why the default is off.
 ## One prose dialect {#sec:ZZAp}
 
 A docs chunk is authored in one dialect (§6.4): the command Markdown. Paragraphs,
-emphasis, lists, links, and headings become HTML; a \code{\code{…}}/\code{\emph{…}}/\code{\strong{…}}
-command marks an inline span; and a fenced block is a grammar-owned kind — \code{math},
-\code{figure}, \code{table}, \code{verbatim}, or \code{html-escape}. The escape hatch is per fence, not
-per document: an \code{html-escape} fence is the one door for raw HTML — a sidenote aside,
-for example, is an \code{html-escape} fence. So the manifest needs no dialect key.
+lists, links, headings, and blockquotes become HTML. Inline formatting is explicit
+commands, never CommonMark \code{*}-style flanking: \code{\emph{…}} makes \code{<em>},
+\code{\strong{…}} makes \code{<strong>}, \code{\code{…}} an inline code span, and \code{\sidenote{…}}
+a margin note (§10). A fenced block is a grammar-owned kind — \code{math}, \code{figure},
+\code{table}, \code{verbatim}, or \code{html-escape}. The escape hatch is per fence, not per
+document: an \code{html-escape} fence is the one door for raw HTML. So the manifest needs
+no dialect key.
 
 The dialect is a post-\code{markup} transform (§6.2) on the already-reassembled prose.
 Everything downstream — the numbering, the refs, the math render, the sidenote hoist,
