@@ -79,6 +79,7 @@ mod math;
 mod model;
 mod noweb;
 mod prose;
+mod pseudocode;
 mod resolve;
 mod rewrite;
 mod section;

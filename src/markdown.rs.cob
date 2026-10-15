@@ -56,6 +56,9 @@ The kind word picks the block. The set is closed:
   image or an SVG), and makes a \code{<figure>} with an optional \code{<figcaption>}.
 - \code{table} takes an optional \code{\caption{…}}, then a pipe table, and makes a
   \code{<table>} with a \code{<caption>}.
+- \code{algorithm} takes an optional \code{\caption{…}}, then a pseudocode body in the
+  \code{algorithmic} grammar, and makes a numbered \code{<figure class="algorithm">}
+  float (§6.5). It needs an \code{alg:} label to be referenceable.
 - \code{html-escape} is the one door for raw HTML. Its body passes through verbatim. It
   subsumes the old \code{html} dialect and every raw-HTML island (a sidenote aside is
   now an \code{html-escape} fence).
@@ -73,7 +76,8 @@ a typo is an error, not a wrong render.
 The info line is a kind, then modifiers, each a command. The grammar parses them,
 so a malformed modifier is an error, not a silent drop. \code{\label{ns:name}} names a
 float: its namespace must match the kind (\code{eq:} for \code{math}, \code{fig:} for \code{figure},
-\code{tbl:} for \code{table}), and a mismatch is E030. \code{\lang{name}} is for \code{verbatim} only.
+\code{tbl:} for \code{table}, \code{alg:} for \code{algorithm}), and a mismatch is E030. \code{\lang{name}}
+is for \code{verbatim} only.
 A \code{\caption{…}} leads the body of a \code{figure} or a \code{table}. A float with no \code{\label}
 gets no id and is not referenceable (§7.1).
 
@@ -154,6 +158,8 @@ renderers, the inline grammar and its lowering, the fence helpers, and the tests
 <<render a figure fence>>
 
 <<render a table fence>>
+
+<<render an algorithm fence>>
 
 <<peel a caption>>
 
@@ -595,6 +601,7 @@ fn render_fence(
         Fence::Math(label) => Ok(render_math(label.as_deref(), body, math)),
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
         Fence::Table(label) => render_table(label.as_deref(), body, math),
+        Fence::Algorithm(label) => render_algorithm(label.as_deref(), body, math),
         Fence::HtmlEscape => Ok(body.to_string()),
         Fence::Verbatim(lang) => {
             let class = match lang {
@@ -773,6 +780,30 @@ fn split_row(line: &str) -> Vec<String> {
         .collect()
 }
 @
+An algorithm fence takes an optional leading caption, then a pseudocode body in
+the `algorithmic` grammar (§6.5). It makes a `<figure class="algorithm">` — a
+distinct float kind the scanner numbers "Algorithm N" and the ref machinery
+resolves — with the listing from the `pseudocode` module. The caption renders
+first so the inline math closure can then borrow the math buffer for the body.
+<<render an algorithm fence>>=
+fn render_algorithm(
+    label: Option<&str>,
+    body: &str,
+    math: &mut Vec<Math>,
+) -> Result<String, MarkdownError> {
+    let (caption, rest) = take_caption(body)?;
+    let cap_html = match caption {
+        Some(c) => format!("\n<figcaption>{}</figcaption>", render_inline(&c, math)?),
+        None => String::new(),
+    };
+    let mut inline = |s: &str| render_inline(s, math).map_err(|e| e.to_string());
+    let listing = crate::pseudocode::render(rest.trim(), &mut inline).map_err(fence_err)?;
+    Ok(format!(
+        "<figure class=\"algorithm\"{}>{cap_html}\n{listing}\n</figure>",
+        id_attr(label)
+    ))
+}
+@
 A leading \code{\caption{…}} (brace-balanced, possibly multi-line) is peeled off a fence
 body by the grammar, which returns its raw source and the byte offset where the rest
 of the body starts. The remainder goes to the float renderer.
@@ -792,6 +823,10 @@ enum Fence {
     Math(Option<String>),
     Figure(Option<String>),
     Table(Option<String>),
+    /// An `alg:`-labelled pseudocode listing (§6.5), a float like a figure. The
+    /// body is `algorithmic` control words, rendered to static HTML by the
+    /// `pseudocode` module with inline math through the usual path.
+    Algorithm(Option<String>),
     HtmlEscape,
     Verbatim(Option<String>),
     /// A `def:`-labelled exposition of macros (§6.4). Its body is normal prose
@@ -814,7 +849,7 @@ The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
 <<parse the fence info>>=
-const KINDS: &str = "math, figure, table, macros, imports, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, algorithm, macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -829,6 +864,7 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
         "math" => Ok(Fence::Math(label_of(&mods, kind, "eq:")?)),
         "figure" => Ok(Fence::Figure(label_of(&mods, kind, "fig:")?)),
         "table" => Ok(Fence::Table(label_of(&mods, kind, "tbl:")?)),
+        "algorithm" => Ok(Fence::Algorithm(label_of(&mods, kind, "alg:")?)),
         "macros" => match label_of(&mods, kind, "def:")? {
             Some(l) => Ok(Fence::Macros(l)),
             None => Err(fence_err("a `macros` fence needs a `\\label{def:…}`")),

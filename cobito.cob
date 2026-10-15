@@ -117,6 +117,7 @@ Each module carries the specification for its own job. This is the reading order
 | The project manifest, the prose dialect, config keys | \code{src/config.rs.cob} |
 | The prose pipeline: reassembly, math substitution, ordering | \code{src/prose.rs.cob} |
 | The Markdown dialect and fenced-float directives | \code{src/markdown.rs.cob} |
+| The \code{algorithm} fence: a native pseudocode renderer | \code{src/pseudocode.rs.cob} |
 | Math rendering: KaTeX at weave time, the cache | \code{src/math.rs.cob} |
 | Labels, numbering, cross-references, the resolver | \code{src/resolve.rs.cob} |
 | Stable ids and the lock file | \code{src/lock.rs.cob} |

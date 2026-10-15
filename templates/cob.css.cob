@@ -285,6 +285,55 @@ id sits in the right margin of its centred block.
     font-weight: bold;
   }
 
+  /* An `algorithm` fence (§6.5) is a `<figure class="algorithm">` float. Its
+     caption reads "Algorithm N", overriding the plain figure prefix. The listing
+     is a nested ordered list; a line number is drawn by a CSS counter from the
+     list position, so no number enters a selection, and nesting shows a block. */
+  figure.algorithm {
+    margin: 1.5rem 0;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 0.4rem 0.9rem 0.7rem;
+    font-size: 0.9rem;
+  }
+  figure.algorithm > figcaption {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+  figure.algorithm > figcaption[data-id]::before {
+    content: "Algorithm " attr(data-id) ". ";
+    font-weight: bold;
+  }
+  .pseudocode,
+  .pseudocode ol {
+    list-style: none;
+    margin: 0;
+  }
+  .pseudocode {
+    counter-reset: pc;
+    padding-left: 0;
+    line-height: 1.7;
+  }
+  .pseudocode ol {
+    padding-left: 1.6rem;
+  }
+  .pseudocode li {
+    counter-increment: pc;
+  }
+  .pseudocode li::before {
+    content: counter(pc) ". ";
+    color: var(--rule);
+    font-variant-numeric: tabular-nums;
+  }
+  .pseudocode .kw {
+    font-weight: bold;
+  }
+  .pseudocode .comment {
+    color: var(--ref);
+    font-style: italic;
+  }
+
   /* A taxon (§10) labels a typed node — Theorem, Definition, Example. The label is
      generated from the data-taxon attribute, so no taxon text enters a selection or
      the annotation layer; a document may override a given taxon by name. */

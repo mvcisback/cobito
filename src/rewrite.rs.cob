@@ -167,6 +167,7 @@ pub enum Kind {
     Figure,
     Table,
     Equation,
+    Algorithm,
     Section,
     Chunk,
     Macro,
@@ -179,6 +180,7 @@ impl Kind {
             Kind::Figure => "Figure",
             Kind::Table => "Table",
             Kind::Equation => "Equation",
+            Kind::Algorithm => "Algorithm",
             Kind::Section => "Section",
             Kind::Chunk => "Chunk",
             Kind::Macro => "Notation",
@@ -192,6 +194,7 @@ impl Kind {
             Kind::Figure => "figure",
             Kind::Table => "table",
             Kind::Equation => "equation",
+            Kind::Algorithm => "algorithm",
             Kind::Section => "section",
             Kind::Chunk => "chunk",
             Kind::Macro => "macro",
@@ -205,6 +208,7 @@ impl Kind {
             "fig" => Some(Kind::Figure),
             "tbl" => Some(Kind::Table),
             "eq" => Some(Kind::Equation),
+            "alg" => Some(Kind::Algorithm),
             "sec" => Some(Kind::Section),
             "chunk" => Some(Kind::Chunk),
             "def" => Some(Kind::Macro),
@@ -222,7 +226,7 @@ impl Kind {
         id.contains(':')
             && !matches!(
                 Kind::from_label(id),
-                Some(Kind::Figure | Kind::Table | Kind::Equation | Kind::Chunk | Kind::Citation)
+                Some(Kind::Figure | Kind::Table | Kind::Equation | Kind::Algorithm | Kind::Chunk | Kind::Citation)
             )
     }
 }
@@ -417,7 +421,13 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                     let st = st.clone();
                     move |el| {
                         let kind = if el.tag_name() == "figure" {
-                            Kind::Figure
+                            // An `algorithm` fence is a `<figure class="algorithm">`
+                            // (§6.5), a distinct float kind from an ordinary figure.
+                            if el.get_attribute("class").as_deref() == Some("algorithm") {
+                                Kind::Algorithm
+                            } else {
+                                Kind::Figure
+                            }
                         } else {
                             Kind::Table
                         };
