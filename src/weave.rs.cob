@@ -974,12 +974,17 @@ pub fn render(
     // §14: lower each inert `data-cite` marker to its `[id]` citation link, now
     // that every cited key has an id. The link points at the References entry on
     // the same page; CSS draws the bracketed id, so no number enters a text node.
+    // A sidenote body is hoisted into `margins` (§8) before this pass, so lower
+    // its cites there too — a `\cite` inside a `\sidenote` resolves like any other.
     if !cite_ids.is_empty() {
         for w in wrapped.iter_mut() {
             *w = rewrite_cites(w, &cite_ids);
         }
         for raw in raws.iter_mut() {
             raw.html = rewrite_cites(&raw.html, &cite_ids);
+            for m in raw.margins.iter_mut() {
+                m.html = rewrite_cites(&m.html, &cite_ids);
+            }
         }
     }
     let mut tx_lints: Vec<Lint> = Vec::new();
