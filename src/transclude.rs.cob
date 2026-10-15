@@ -966,34 +966,62 @@ fn head_link(heads: &[Heading], res: &Resolution, j: usize) -> Link {
     Link { title, href }
 }
 
-/// Rebase every link in a node-page body for the `n/` directory. A node page
-/// lives one level down, so its links need fixing by kind:
+/// Rebase every link and asset in a node-page body for the `n/` directory. A
+/// node page lives one level down, so both its `href`s and its `src`s (an image
+/// in a figure node, say) need fixing. An `href`:
 /// - a fragment to an id the body defines stays bare (an in-node link);
 /// - a fragment to an id elsewhere becomes `../page.html#anchor`;
 /// - a sibling node-page link (`n/<id>.html`) loses its `n/` prefix;
 /// - any other document-relative link gets a `../` prefix.
-///
-/// An absolute link, a scheme, or an already-rebased link is left alone.
+/// A `src`: a relative asset path gets a `../` prefix, so `imgs/f.svg` becomes
+/// `../imgs/f.svg`; a sibling node-page `src` (a `<cob-transclude>`, a bare
+/// `<id>.html`) is already correct and stays. A scheme, an absolute, a `data:`
+/// URI, or an already-rebased value is left alone in both.
 fn qualify_hrefs(body: &str, link_pages: &BTreeMap<String, String>) -> String {
     let local = collect_ids(body);
-    let pat = "href=\"";
+    let hrefed = rebase_attr(body, "href=\"", |v| rebase_href(v, &local, link_pages));
+    rebase_attr(&hrefed, "src=\"", rebase_src)
+}
+
+/// Rewrite every `attr="…"` value in `body` through `f`. `attr` includes the
+/// `="` so a prefix like `data-src=` cannot match `src=`.
+fn rebase_attr(body: &str, attr: &str, f: impl Fn(&str) -> String) -> String {
     let mut out = String::new();
     let mut i = 0;
-    while let Some(rel) = body[i..].find(pat) {
+    while let Some(rel) = body[i..].find(attr) {
         let p = i + rel;
         out.push_str(&body[i..p]);
-        out.push_str(pat);
-        let vstart = p + pat.len();
+        out.push_str(attr);
+        let vstart = p + attr.len();
         let Some(q) = body[vstart..].find('"') else {
             out.push_str(&body[vstart..]);
             return out;
         };
-        let v = &body[vstart..vstart + q];
-        out.push_str(&rebase_href(v, &local, link_pages));
+        out.push_str(&f(&body[vstart..vstart + q]));
         i = vstart + q;
     }
     out.push_str(&body[i..]);
     out
+}
+
+/// One `src` value, rebased for the `n/` directory. A sibling node page (a
+/// `<cob-transclude>` `src`, a bare `<id>.html`) is already correct; an
+/// absolute, a scheme, or a `data:` URI is left alone; any other relative asset
+/// path gets a `../` prefix.
+fn rebase_src(v: &str) -> String {
+    if !v.contains('/') && v.ends_with(".html") {
+        return v.to_string();
+    }
+    let absolute = v.starts_with('/')
+        || v.starts_with("../")
+        || v.contains("://")
+        || v.starts_with("data:")
+        || v.starts_with("mailto:");
+    if absolute {
+        v.to_string()
+    } else {
+        format!("../{v}")
+    }
 }
 
 /// Every value of an ` id="…"` attribute in `html` — the ids local to this node
@@ -1026,6 +1054,7 @@ fn rebase_href(v: &str, local: &BTreeSet<String>, link_pages: &BTreeMap<String, 
         || v.starts_with("../")
         || v.starts_with('#')
         || v.contains("://")
+        || v.starts_with("data:")
         || v.starts_with("mailto:");
     if absolute {
         v.to_string()
@@ -1158,6 +1187,19 @@ fn node_page_links_rebase_for_the_n_directory() {
     assert_eq!(r("../katex/katex.min.css"), "../katex/katex.min.css");
     assert_eq!(r("https://example.org"), "https://example.org");
     assert_eq!(r("mailto:a@b.c"), "mailto:a@b.c");
+
+    // A figure node's image `src` climbs a directory; a `<cob-transclude>`
+    // sibling page stays; a data URI and an absolute are untouched.
+    assert_eq!(rebase_src("imgs/f.svg"), "../imgs/f.svg");
+    assert_eq!(rebase_src("5QKY.html"), "5QKY.html");
+    assert_eq!(rebase_src("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
+    assert_eq!(rebase_src("/abs/x.svg"), "/abs/x.svg");
+
+    // Whole-body: the img src is rebased while the cob-transclude src is not.
+    let body = "<img src=\"imgs/f.svg\"><cob-transclude src=\"5QKY.html\"></cob-transclude>";
+    let out = qualify_hrefs(body, &pages);
+    assert!(out.contains("<img src=\"../imgs/f.svg\">"));
+    assert!(out.contains("<cob-transclude src=\"5QKY.html\">"));
 }
 @
 \code{containing_head} finds the node a use sits in: the last heading at or before the
