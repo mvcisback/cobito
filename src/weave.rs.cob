@@ -709,16 +709,17 @@ section id and is skipped. Both the mint path and the render path walk this same
 iterator, so they agree on which labels exist.
 <<every mintable label>>=
 /// Every label that earns a frozen opaque id (§7.1), in document order: each
-/// labelled float, then each deeper heading the author pinned with a `sec:` id.
-/// An h1 is its own page and is addressed by the page id, so it needs no
-/// section id and is skipped. Yields `(label, kind, section)`.
+/// labelled float, then each deeper heading the author pinned with a node-
+/// namespace id — `sec:`, `def:`, `thm:`, and any other that is not a float,
+/// chunk, or citation (§10). An h1 is its own page and is addressed by the page
+/// id, so it needs no id and is skipped. Yields `(label, kind, section)`.
 fn mintable(scan: &Scan) -> impl Iterator<Item = (&str, Kind, usize)> {
     scan.labels
         .iter()
         .map(|l| (l.id.as_str(), l.kind, l.section))
         .chain(scan.headings.iter().filter_map(|h| {
             let given = h.given_id.as_deref()?;
-            (h.level != 1 && Kind::from_label(given) == Some(Kind::Section))
+            (h.level != 1 && Kind::label_is_heading_node(given))
                 .then_some((given, Kind::Section, h.section))
         }))
 }

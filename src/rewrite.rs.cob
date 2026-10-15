@@ -212,6 +212,19 @@ impl Kind {
             _ => None,
         }
     }
+
+    /// Is a heading with this id a referenceable node (§10)? Every namespaced
+    /// heading is — `sec:`, `def:`, `thm:`, `ex:`, `prob:`, and any other — so
+    /// a typed node is reachable by its own page and `\ref`. A float, chunk, or
+    /// citation namespace is not a heading, so it is excluded. The taxon, not the
+    /// namespace, names the kind (the `def:` prefix also tags a notation fence).
+    pub fn label_is_heading_node(id: &str) -> bool {
+        id.contains(':')
+            && !matches!(
+                Kind::from_label(id),
+                Some(Kind::Figure | Kind::Table | Kind::Equation | Kind::Chunk | Kind::Citation)
+            )
+    }
 }
 @
 A label's rendered anchor swaps the colon for a dash, because a colon is legal in
@@ -263,6 +276,9 @@ pub struct Heading {
     pub text: String,
     /// Author-supplied `id`, if any; otherwise assigned from the text later.
     pub given_id: Option<String>,
+    /// The `data-taxon` the heading carries (§10), if any. It names the typed
+    /// node — "definition", "theorem" — and so the word a `\ref` to it reads.
+    pub taxon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -304,20 +320,21 @@ struct ScanState {
     labels: Vec<LabelDef>,
     refs: Vec<RefSite>,
     uncaptioned: usize,
-    /// Heading being accumulated: (level, given id, text so far).
-    heading: Option<(u8, Option<String>, String)>,
+    /// Heading being accumulated: (level, given id, taxon, text so far).
+    heading: Option<(u8, Option<String>, Option<String>, String)>,
     /// Ref site being accumulated: (target, saw text).
     reference: Option<(String, bool)>,
 }
 
 impl ScanState {
     fn flush_heading(&mut self, section: usize) {
-        if let Some((level, given_id, text)) = self.heading.take() {
+        if let Some((level, given_id, taxon, text)) = self.heading.take() {
             self.headings.push(Heading {
                 section,
                 level,
                 text: text.trim().to_string(),
                 given_id,
+                taxon,
             });
         }
     }
@@ -378,7 +395,12 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         let mut st = st.borrow_mut();
                         st.flush_heading(section);
                         let level = el.tag_name().as_bytes()[1] - b'0';
-                        st.heading = Some((level, el.get_attribute("id"), String::new()));
+                        st.heading = Some((
+                            level,
+                            el.get_attribute("id"),
+                            el.get_attribute("data-taxon"),
+                            String::new(),
+                        ));
                         Ok(())
                     }
                 }),
@@ -386,7 +408,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                     let st = st.clone();
                     move |t| {
                         if let Some(h) = st.borrow_mut().heading.as_mut() {
-                            h.2.push_str(t.as_str());
+                            h.3.push_str(t.as_str());
                         }
                         Ok(())
                     }

@@ -30,8 +30,11 @@ link text if there is any. An href is relative: a same-page target is a bare
 becomes a dash in the emitted anchor, because a colon needs escaping in every CSS
 selector that touches it.
 
-- Namespaces are by prefix: \code{eq:}, \code{fig:}, \code{tbl:}, \code{sec:}, and \code{chunk:}. An id
-  with no known prefix is not a target.
+- Namespaces are by prefix: \code{eq:}, \code{fig:}, \code{tbl:} name floats; \code{chunk:} names
+  a chunk; \code{cite:} a citation. A heading takes any other namespace — \code{sec:},
+  \code{def:}, \code{thm:}, \code{ex:}, and so on — and becomes a referenceable node (§10);
+  its taxon names the word a \code{\ref} to it reads. A float-only ref id on a
+  heading is not a heading node.
 - The numbering scheme is \code{flat} or \code{by-page}; the default is \code{flat}, so a page
   boundary does not leak into a stable reference. M2 implements \code{flat}.
 - cob numbers an equation by default. A \code{data-nonumber} equation div opts out.
@@ -221,6 +224,19 @@ fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
         format!("{base}-{n}")
     }
 }
+
+/// The word a `\ref` to a heading node reads, from the node's taxon (§10):
+/// "definition" becomes "Definition". A heading with no taxon is a "Section".
+fn heading_ref_word(taxon: Option<&str>) -> String {
+    match taxon {
+        Some(t) if !t.is_empty() => {
+            let mut c = t.chars();
+            let first = c.next().unwrap().to_uppercase().collect::<String>();
+            first + c.as_str()
+        }
+        _ => Kind::Section.word().to_string(),
+    }
+}
 @
 \code{plan} runs in five phases. It first indexes the h1 text per section, then assigns
 each section to a page (Pass A), stamps heading anchors and builds the nav, fills
@@ -294,9 +310,9 @@ starts a new page whose slug is derived from its title and made unique.
     }
 @
 An h1 anchors to its page id; a deeper heading gets a page-unique slug unless the
-author pinned an id, which a \code{sec:} ref may target. A pinned section label is
-recorded for the label table, and its opaque id is carried out so \code{apply} can
-stamp the permalink prefix.
+author pinned an id. A pinned id in a node namespace (§10) makes the heading a
+referenceable node: it is recorded for the label table with its taxon, and its
+opaque id is carried out so \code{apply} can stamp the permalink and node link.
 <<stamp heading anchors and build the nav>>=
     // --- Heading anchors + nav --------------------------------------------
     // An h1 anchors to its page id; deeper headings get a page-unique slug,
@@ -309,8 +325,9 @@ stamp the permalink prefix.
     let mut heading_uids: Vec<Option<String>> = Vec::with_capacity(scan.headings.len());
     // (page, level, anchor, text) for nav construction.
     let mut nav_flat: Vec<(usize, u8, String, String)> = Vec::new();
-    // Section-namespace labels the author declared via a heading id.
-    let mut heading_labels: Vec<(String, usize, String, String)> = Vec::new();
+    // Labels the author declared via a heading id, any node namespace (§10):
+    // (id, page, anchor, fallback text, taxon). The taxon names the ref word.
+    let mut heading_labels: Vec<(String, usize, String, String, Option<String>)> = Vec::new();
 
     for h in &scan.headings {
         let page = section_page[h.section];
@@ -319,9 +336,9 @@ stamp the permalink prefix.
             pages[page].id.clone()
         } else if let Some(given) = &h.given_id {
             let a = anchor_of(given);
-            if Kind::from_label(given) == Some(Kind::Section) {
+            if Kind::label_is_heading_node(given) {
                 uid = label_ids.get(given).cloned();
-                heading_labels.push((given.clone(), page, a.clone(), h.text.clone()));
+                heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), h.taxon.clone()));
             }
             a
         } else {
@@ -370,14 +387,16 @@ code. A repeat id is E014.
             },
         )?;
     }
-    for (id, page, anchor, text) in heading_labels {
-        // §7.1: a `\ref{sec:…}` renders the kind-qualified opaque id ("Section
-        // k3f9"), not the heading text, which rots on rename. The heading text
-        // survives only as a fallback if the id was never minted (Mint always
-        // mints; `--locked` would already have failed on a missing label).
+    for (id, page, anchor, text, taxon) in heading_labels {
+        // §7.1: a `\ref{…}` to a heading renders the kind-qualified opaque id
+        // ("Definition k3f9"), not the heading text, which rots on rename. The
+        // kind word comes from the node's taxon (§10) — "Definition", "Theorem"
+        // — or is "Section" for a plain heading. The heading text survives only
+        // as a fallback if the id was never minted (Mint always mints; `--locked`
+        // would already have failed on a missing label).
         let opaque = label_ids.get(&id).cloned();
         let display = match &opaque {
-            Some(uid) => format!("{} {uid}", Kind::Section.word()),
+            Some(uid) => format!("{} {uid}", heading_ref_word(taxon.as_deref())),
             None => text,
         };
         insert(
@@ -594,6 +613,8 @@ mod tests {
 
     <<cross-page refs qualify, same-page refs are fragments>>
 
+    <<a taxon heading is a node and its ref is typed>>
+
     <<a cross-document ref targets the imported forest>>
 
     <<chunk refs target the defining section>>
@@ -668,11 +689,20 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
         sections,
         chunks,
     };
-    let label_ids: LabelIds = sc
+    let mut label_ids: LabelIds = sc
         .labels
         .iter()
         .map(|l| (l.id.clone(), fake_id(&l.id)))
         .collect();
+    // Mirror weave's `mintable`: a labelled heading in a node namespace also
+    // earns a frozen id, so a `\ref` to a definition or theorem resolves.
+    for h in &sc.headings {
+        if let Some(g) = &h.given_id {
+            if h.level != 1 && Kind::label_is_heading_node(g) {
+                label_ids.entry(g.clone()).or_insert_with(|| fake_id(g));
+            }
+        }
+    }
     let res = plan(&doc, &sc, &first_tags, &label_ids, &BTreeMap::new()).unwrap();
     (doc, res)
 }
@@ -723,6 +753,27 @@ fn nav_nests_h2_and_h3_under_h1() {
 @
 A ref to a target on another page is page-qualified; a ref to a target on the same
 page is a bare fragment. The link text is the kind-qualified opaque id.
+A heading with a non-float label in any namespace is a node (§10): it earns an
+opaque id, so a \code{\ref} to it resolves, and the link text takes the node's
+taxon as its word — "Definition", not "Section" — while a plain labelled heading
+stays "Section".
+<<a taxon heading is a node and its ref is typed>>=
+#[test]
+fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
+    let (_, r) = resolve(&[(
+        "<h1>T</h1>\
+         <h2 id=\"def:d\" data-taxon=\"definition\">D</h2>\
+         <h2 id=\"sec:s\">S</h2>\
+         <a data-ref=\"def:d\"></a><a data-ref=\"sec:s\"></a>",
+        false,
+    )]);
+    // The definition ref is typed by its taxon; the plain section ref is not.
+    assert_eq!(r.refs[0].href, "#def-d");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Definition defd"));
+    assert_eq!(r.refs[1].href, "#sec-s");
+    assert_eq!(r.refs[1].text.as_deref(), Some("Section secs"));
+}
+@
 <<cross-page refs qualify, same-page refs are fragments>>=
 #[test]
 fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
