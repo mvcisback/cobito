@@ -632,10 +632,13 @@ if grep -q 'taxon{' $tx/_site/index.html; then
   echo "the \\taxon directive leaked into the output as text" >&2
   exit 1
 fi
-# §6.4 a `>` line is a blockquote; a `\sidenote{…}` is an inline sidenote taxon,
-# a typed margin aside (the html-escape <aside> is no longer needed).
+# §6.4 a `>` line is a blockquote. A `\sidenote{…}` (§10) is a footnote: an
+# inline marker where it is written, and the note at the foot of the page. The
+# marker number is a CSS counter, so no digit enters the text.
 grep -q '<blockquote>' $tx/_site/index.html
-grep -qE '<aside[^>]*class="sidenote" data-taxon="sidenote">' $tx/_site/index.html
+grep -qE '<sup class="fn-ref" id="fnref-[0-9]+"><a href="#sn-[0-9]+"></a></sup>' $tx/_site/index.html
+grep -q '<section class="footnotes"' $tx/_site/index.html
+grep -qE '<li id="sn-[0-9]+">a margin note' $tx/_site/index.html
 if grep -q 'sidenote{' $tx/_site/index.html; then
   echo "the \\sidenote directive leaked into the output as text" >&2
   exit 1
