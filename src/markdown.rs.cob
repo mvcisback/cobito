@@ -937,9 +937,10 @@ peg::parser! {
         // It is a block directive, caught in `split_blocks`; inline it is inert, so a
         // stray one never renders as text and never fails the parse.
         rule taxonc() -> Inline = "\\taxon{" s:$((!"}" [_])*) "}" { Inline::Taxon(s.to_string()) }
-        // `\sidenote{…}` is an inline taxon (§10): the body is a typed node floated to
-        // the margin by CSS. The body recurses the grammar, so a sidenote can hold
-        // emphasis, a citation, or math.
+        // `\sidenote{…}` is an inline taxon (§10): the body is a typed note. It
+        // lowers to an `<aside class="sidenote">`; the site hoist then turns that
+        // into an inline marker plus a footnote at the foot of the page. The body
+        // recurses the grammar, so a sidenote can hold emphasis, a citation, or math.
         rule sidenote() -> Inline = "\\sidenote{" ns:nodes() "}" { Inline::Sidenote(ns) }
 
         rule dmath() -> Inline
@@ -989,7 +990,7 @@ enum Inline {
     /// A `\taxon{name}` directive. It is block-level (handled in `split_blocks`);
     /// inline it is inert, lowering to nothing.
     Taxon(String),
-    /// A `\sidenote{…}` inline taxon: a typed node floated to the margin by CSS.
+    /// A `\sidenote{…}` inline taxon: a typed note rendered as a page footnote.
     Sidenote(Vec<Inline>),
 }
 
@@ -1053,8 +1054,9 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
             // an inline one is a no-op.
             Inline::Taxon(_) => {}
             Inline::Sidenote(ns) => {
-                // A typed margin node: the `.sidenote` class carries the float CSS,
-                // and data-taxon is the taxon API (§10). No html-escape.
+                // A typed note: the `.sidenote` class marks it for the site hoist,
+                // which lifts it to a page footnote, and data-taxon is the taxon
+                // API (§10). No html-escape.
                 out.push_str("<aside class=\"sidenote\" data-taxon=\"sidenote\">");
                 lower(ns, math, out);
                 out.push_str("</aside>");

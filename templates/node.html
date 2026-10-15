@@ -22,6 +22,11 @@
 {% endif %}<article class="node-body">{{ body }}</article>
 {% if context %}<p class="node-context"><a href="{{ context }}">Read in context &rarr;</a></p>
 {% endif %}
+{% if footnotes %}<section class="footnotes" aria-label="Footnotes"><hr>
+<ol>{% for f in footnotes %}<li id="{{ f.id }}">{{ f.html }} <a class="fn-back" href="#{{ f.refid }}" aria-label="Back to text">&#8617;</a></li>
+{% endfor %}</ol>
+</section>
+{% endif %}
 {% if transcluded_by or referenced_by or cited_by %}<section class="backlinks">
 {% if transcluded_by %}<h2>Transcluded by</h2>
 <ul>{% for b in transcluded_by %}<li><a href="{{ b.href }}">{{ b.title }}</a></li>{% endfor %}</ul>

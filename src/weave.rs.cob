@@ -1017,6 +1017,21 @@ pub fn render(
         .map(|(id, html, href)| minijinja::context! { id => id, html => html, href => href })
         .collect();
 
+    // §10 footnotes: a document-global id → rendered-note map, built from every
+    // section's hoisted margins. Each page (and each node page) lists the notes
+    // its own markers point at, in marker order.
+    let note_map: std::collections::BTreeMap<String, String> = raws
+        .iter()
+        .flat_map(|r| r.margins.iter())
+        .map(|m| (m.id.clone(), m.html.clone()))
+        .collect();
+    let footnote_ctx = |body: &str| -> Vec<minijinja::Value> {
+        site::footnotes_in(body, &note_map)
+            .into_iter()
+            .map(|f| minijinja::context! { id => f.id, refid => f.refid, html => f.html })
+            .collect()
+    };
+
     let mut pages = Vec::with_capacity(res.pages.len());
     for (pi, meta) in res.pages.iter().enumerate() {
         let sections: Vec<&str> = wrapped
@@ -1025,6 +1040,8 @@ pub fn render(
             .filter(|(_, p)| **p == pi)
             .map(|(html, _)| html.as_str())
             .collect();
+        // The page's footnotes, gathered from the markers its sections carry.
+        let footnotes = footnote_ctx(&sections.concat());
         // The nav marks this page's own landing entry current, so each page ships
         // its own "you are here" (§5.3) — static, no script, every browser.
         let nav = nav_context(&res.nav, &meta.filename);
@@ -1040,6 +1057,7 @@ pub fn render(
                 next,
                 imports => &import_links,
                 references => &ref_ctx,
+                footnotes => &footnotes,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         pages.push(RenderedPage {
@@ -1068,6 +1086,8 @@ pub fn render(
     let based_nav = rebased_nav(&res.nav, "../");
     let mut node_pages = Vec::with_capacity(tx.node_pages().len());
     for np in tx.node_pages() {
+        // The node page lists only the notes its own body marks (§10).
+        let footnotes = footnote_ctx(&np.body);
         let html = node_tmpl
             .render(minijinja::context! {
                 id => np.id,
@@ -1080,6 +1100,7 @@ pub fn render(
                 cited_by => links_context(&np.cited_by),
                 embed,
                 nav => based_nav,
+                footnotes => &footnotes,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         node_pages.push((format!("n/{}.html", np.id), html));
@@ -2012,8 +2033,8 @@ fn sitemap_lists_every_page() {
 }
 @
 The archival JSON is the current schema, round-trips through the per-page narrowing,
-and hoists a sidenote into a margin entry — stripped from the JSON prose but kept
-inline in the woven HTML.
+and hoists a sidenote into a margin entry — stripped from the JSON prose, shown on
+the woven page as an inline marker plus a footnote at the foot of the page.
 <<site json is current schema and hoists sidenotes>>=
 #[test]
 fn site_json_is_current_schema_and_hoists_sidenotes() {
@@ -2028,14 +2049,19 @@ fn site_json_is_current_schema_and_hoists_sidenotes() {
         assert!(site::page_json(json, id).is_some());
     }
     // book.cob carries one sidenote on the Parsing page; it lands in a
-    // margin[] entry and is stripped from that section's JSON prose, while
-    // the woven HTML keeps it inline with the matching sn- id.
+    // margin[] entry and is stripped from that section's JSON prose.
     let whole = site::to_json(json);
     assert!(whole.contains("\"sn-1\""));
     assert!(whole.contains("\"kind\": \"sidenote\""));
     // No aside survives in the JSON prose bodies.
     assert!(!whole.contains("<aside"));
-    assert!(site.pages[1].html.contains("<aside id=\"sn-1\""));
+    // The woven page carries an inline marker at the note's point and the note
+    // itself in a footnotes list at the foot of the page, both keyed by sn-1.
+    let parsing = &site.pages[1].html;
+    assert!(parsing.contains("<sup class=\"fn-ref\" id=\"fnref-1\"><a href=\"#sn-1\">"));
+    assert!(parsing.contains("<section class=\"footnotes\""));
+    assert!(parsing.contains("<li id=\"sn-1\">"));
+    assert!(parsing.contains("href=\"#fnref-1\""));
 }
 @
 Footer pagination links each page's neighbours: the middle page has both, the first

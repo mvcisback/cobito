@@ -6,7 +6,8 @@ every page. Weaving this file back shows cob highlighting its own CSS — the fo
 grammar, and the reason the CSS grammar exists.
 
 The design is Tufte-flavoured: a centred reading column with a wide right margin
-that holds sidenotes and, later, the annotation overlay's margin slots. The page
+that holds the annotation overlay's margin slots. A sidenote reads as a footnote —
+an inline marker in the prose and the note at the foot of the page. The page
 frame is a CSS grid, and the reader gets a light or a dark theme from the operating
 system. Two rules run through the whole sheet. A float's identity — its opaque id, a
 section's permalink, a code line's number — is drawn from a data attribute as
@@ -32,6 +33,8 @@ style rule with a block.
 <<the section box>>
 
 <<the margin column>>
+
+<<the footnotes>>
 
 <<generated numbering>>
 
@@ -138,12 +141,12 @@ two themes stay in one place. \code{color-scheme} tells the browser to match its
 }
 @
 The page is a grid. Named line boundaries mark a \code{content} track — the reading
-column — and, to its right, a \code{margin} track for sidenotes. The two outer \code{1fr}
-tracks centre the whole content-plus-margin group, so the reading column sits a
-little left of centre and the margin has room. Every top-level block — the table of
-contents, the prose, the footer — sits in the \code{content} track. A narrow viewport has
-no room for a margin track, so the grid collapses to one centred column and the
-sidenotes fall inline.
+column — and, to its right, a \code{margin} track for the annotation slots. The two
+outer \code{1fr} tracks centre the whole content-plus-margin group, so the reading
+column sits a little left of centre and the margin has room. Every top-level block —
+the table of contents, the prose, the footer — sits in the \code{content} track. A
+narrow viewport has no room for a margin track, so the grid collapses to one centred
+column.
 
 Headings sit in the normal flow. The sticky navigation bar (below) shows the reader
 where they are, so a heading needs no sticky band of its own — and two sticky
@@ -172,7 +175,7 @@ reserves that much scroll margin at the top.
     padding-inline: 1rem;
   }
 
-  /* No room for a margin track: one centred column; sidenotes go inline. */
+  /* No room for a margin track: collapse to one centred column. */
   @media (max-width: 100rem) {
     body {
       justify-content: center;
@@ -191,7 +194,7 @@ reserves that much scroll margin at the top.
   }
 }
 @
-Every section is a positioning context for its margin slot and sidenotes.
+Every section is a positioning context for its margin slot.
 <<the section box>>=
 @layer layout {
   section {
@@ -200,40 +203,59 @@ Every section is a positioning context for its margin slot and sidenotes.
   }
 }
 @
-The margin column holds the annotation slot and sidenotes. A float — not a grid cell
-— keeps the note beside the point it marks: the note must line up with its anchor in
-the prose, not with a grid row. On a narrow screen there is no margin, so the note
-falls back to an indented aside within the column.
+The margin column holds the annotation slot. A float — not a grid cell — keeps the
+slot beside the point it marks, so an overlay note lines up with its anchor in the
+prose, not with a grid row.
 <<the margin column>>=
 @layer layout {
-  /* --- Margin column: annotation slot + sidenotes ----------------------- */
+  /* --- Margin column: annotation slot ----------------------------------- */
 
   .margin-slot {
     float: right;
     clear: right;
     width: 0;
   }
+}
+@
+A sidenote reads as a footnote: an inline marker at its point, and the note at the
+foot of the page. The marker is a superscript number the CSS draws from a counter,
+so the digit is never a text node and copy, paste, and the annotation layer's quote
+selectors survive (§5.4). The counter resets per page because each page is one HTML
+document. The footnotes list numbers itself with the ordered-list marker, which runs
+in the same order, so the two numbers agree without a second counter. The note links
+back to its marker.
+<<the footnotes>>=
+@layer components {
+  /* --- Footnote markers + the page-foot notes --------------------------- */
 
-  .sidenote {
-    float: right;
-    clear: right;
-    width: var(--margin);
-    margin-right: calc(-1 * (var(--margin) + var(--gap)));
-    font-size: 0.8rem;
-    line-height: 1.4;
+  main { counter-reset: footnote; }
+
+  .fn-ref {
+    counter-increment: footnote;
+  }
+  .fn-ref a {
+    text-decoration: none;
+    font-weight: 600;
+    color: var(--ref);
+  }
+  .fn-ref a::after { content: counter(footnote); }
+
+  .footnotes {
+    max-width: var(--measure);
+    margin: 3rem auto 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
     color: var(--ink);
   }
-
-  @media (max-width: 100rem) {
-    /* No room for a margin: inline the note as an indented aside. */
-    .sidenote {
-      float: none;
-      width: auto;
-      margin: 0.6rem 0 0.6rem 1.5rem;
-      padding-left: 0.8rem;
-      border-left: 2px solid var(--rule);
-    }
+  .footnotes hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    width: 6rem;
+    margin: 0 0 1rem;
   }
+  .footnotes ol { padding-left: 1.5rem; }
+  .footnotes li { margin: 0.4rem 0; }
+  .fn-back { margin-left: 0.3rem; text-decoration: none; }
 }
 @
 A float's number is generated content drawn from its data-id, so it is never
@@ -848,7 +870,7 @@ sideways on its own when the viewport is narrow.
 }
 @
 The rules above already adapt to a narrow viewport: the grid collapses to one column,
-the sidenotes fall inline, and a wide code chunk or table scrolls on its own. This
+and a wide code chunk or table scrolls on its own. This
 last block tunes a phone. The reading gutter gets smaller so the column uses more of
 the screen, the block spacing tightens, the scrolling nav gives each link a taller tap
 target, a long previous or next title wraps instead of overlapping its neighbour, and

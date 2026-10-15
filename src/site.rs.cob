@@ -68,12 +68,16 @@ Per-page JSON is this same object with \code{pages} narrowed to one entry. The \
 ## How the code implements this {#sec:Cafo}
 
 This module also owns the sidenote hoist. The contract keeps a section's prose and
-its margin material disjoint, so each \code{sidenote} aside is lifted out of the
+its note material disjoint, so each \code{sidenote} aside is lifted out of the
 rendered body into a structured \code{margin[]} entry with a stable \code{sn-N} id.
+On the woven page the aside becomes an inline marker; the note itself moves to a
+footnotes list at the foot of the page (§10). The marker links to the note and the
+note links back, both by the frozen id. The JSON keeps the note as a structured
+\code{margin[]} entry either way.
 
 The module is the JSON shape (a tree of serialize structs), the sidenote hoist,
-the document builder that fills the shape from the model, and the two serializers
-that write the whole document and one page.
+the per-page footnote collector, the document builder that fills the shape from the
+model, and the two serializers that write the whole document and one page.
 <<src/site.rs>>=
 <<the module banner>>
 
@@ -100,6 +104,8 @@ that write the whole document and one page.
 <<hoist sidenotes out of a body>>
 
 <<find the matching close>>
+
+<<collect footnotes for a page>>
 
 <<build the document>>
 
@@ -301,15 +307,18 @@ pub struct RawSection {
     pub margins: Vec<Margin>,
 }
 @
-\code{Hoisted} is the split output of the hoist: the page body keeps each aside inline
-(now id-tagged), the JSON body drops asides entirely, and \code{margins} collects them
-as structured entries. The page and JSON bodies share ids so a note lines up in
-both views.
+\code{Hoisted} is the split output of the hoist: the page body replaces each aside
+with an inline marker, the JSON body drops asides entirely, and \code{margins}
+collects them as structured entries. The marker's \code{href="#sn-N"} and the
+\code{margins} id share the same \code{sn-N} value, so the page footnote and the JSON
+entry line up.
 <<the hoist result>>=
 /// Result of lifting sidenotes out of a rendered docs body.
 pub struct Hoisted {
-    /// The body as it appears on the woven page: asides kept inline, each now
-    /// carrying its `id="sn-N"` so page and JSON share ids.
+    /// The body as it appears on the woven page: each aside replaced by an
+    /// inline marker `<sup class="fn-ref" id="fnref-N"><a href="#sn-N"></a></sup>`.
+    /// The note body itself moves to the page's footnotes list (see
+    /// `footnotes_in`), keyed by the same `sn-N` id.
     pub page_html: String,
     /// The body for `site.json`: asides removed entirely.
     pub json_html: String,
@@ -361,10 +370,14 @@ pub fn hoist_sidenotes(body: &str, next: &mut usize) -> Hoisted {
         let inner = &body[tag_end + 1..close];
         *next += 1;
         let id = format!("sn-{next}");
-        // Page: reopen the aside with its new id, keep it inline.
-        page.push_str(&format!("<aside id=\"{id}\"{}", &open_tag["<aside".len()..]));
-        page.push_str(inner);
-        page.push_str("</aside>");
+        // Page: the aside becomes an inline marker at the note's point. The note
+        // body moves to the page's footnotes list (see `footnotes_in`), keyed by
+        // this id; the marker links to it and it links back by `fnref-N`. The
+        // marker carries no text — CSS draws the number from a counter — so copy,
+        // paste, and the annotation layer's quote selectors survive (§5.4).
+        page.push_str(&format!(
+            "<sup class=\"fn-ref\" id=\"fnref-{next}\"><a href=\"#{id}\"></a></sup>"
+        ));
         // JSON: the aside is gone from prose; its content is structured margin.
         margins.push(Margin {
             kind: "sidenote",
@@ -409,6 +422,51 @@ fn matching_close(body: &str, mut pos: usize) -> Option<usize> {
         }
     }
     None
+}
+@
+A page carries its notes as a footnotes list at its foot (§10). The hoist already
+turned each aside into an inline marker and kept the note body in a \code{margin[]}
+entry; this gathers the notes a page actually shows. It reads the page body, finds
+each marker's \code{href="#sn-N"} in order, and returns the matching notes once each.
+So a note appears on the one page that marks it — and a node page shows only the
+notes its own body marks. A scope-prefixed marker (a transcluded copy, id
+\code{tx<n>-sn-N}) does not match and so does not pull the canonical note onto the
+copy's page; a transcluded note is a known deferred edge (§10).
+<<collect footnotes for a page>>=
+/// One note as the page renders it at its foot: the frozen `sn-N` id, the
+/// `fnref-N` id of the marker that points here (for the back-link), and the
+/// rendered note HTML.
+pub struct Footnote {
+    pub id: String,
+    pub refid: String,
+    pub html: String,
+}
+
+/// Gather the footnotes a page shows, in marker order. `notes` maps each `sn-N`
+/// id to its rendered HTML (built from every section's `margins`). `body` is the
+/// page's rendered HTML, carrying the inline markers the hoist left.
+pub fn footnotes_in(body: &str, notes: &BTreeMap<String, String>) -> Vec<Footnote> {
+    let needle = "href=\"#sn-";
+    let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut i = 0;
+    while let Some(rel) = body[i..].find(needle) {
+        let start = i + rel + "href=\"#".len();
+        let Some(off) = body[start..].find('"') else { break };
+        let end = start + off;
+        let id = &body[start..end];
+        if seen.insert(id.to_string()) {
+            if let Some(html) = notes.get(id) {
+                out.push(Footnote {
+                    id: id.to_string(),
+                    refid: id.replacen("sn-", "fnref-", 1),
+                    html: html.clone(),
+                });
+            }
+        }
+        i = end;
+    }
+    out
 }
 @
 The builder fills the JSON shape from three inputs: the model, the resolution,
@@ -806,8 +864,8 @@ fn forest_index_carries_the_macros() {
     assert!(json.contains("\"kind\": \"equation\""));
 }
 @
-A single sidenote is removed from the JSON body, kept inline on the page with its
-new id, captured as a margin, and the counter advances.
+A single sidenote is removed from the JSON body, replaced on the page by an inline
+marker, captured as a margin, and the counter advances.
 <<hoist lifts one sidenote>>=
 #[test]
 fn hoist_lifts_sidenote_and_ids_both_sides() {
@@ -816,10 +874,10 @@ fn hoist_lifts_sidenote_and_ids_both_sides() {
         "<p>before<aside class=\"sidenote\">note body</aside>after</p>",
         &mut n,
     );
-    // Page keeps the aside inline, now carrying its id.
+    // Page replaces the aside with an inline marker that links to the note.
     assert_eq!(
         h.page_html,
-        "<p>before<aside id=\"sn-1\" class=\"sidenote\">note body</aside>after</p>"
+        "<p>before<sup class=\"fn-ref\" id=\"fnref-1\"><a href=\"#sn-1\"></a></sup>after</p>"
     );
     // JSON prose has the aside removed entirely.
     assert_eq!(h.json_html, "<p>beforeafter</p>");
@@ -829,6 +887,26 @@ fn hoist_lifts_sidenote_and_ids_both_sides() {
     assert_eq!(h.margins[0].html, "note body");
     // The counter advanced so the next section's ids stay unique.
     assert_eq!(n, 1);
+}
+
+#[test]
+fn footnotes_in_collects_marked_notes_in_order() {
+    let mut notes = BTreeMap::new();
+    notes.insert("sn-1".to_string(), "first".to_string());
+    notes.insert("sn-2".to_string(), "second".to_string());
+    // A body that marks sn-2 then sn-1: the list follows marker order, and each
+    // footnote carries its back-link id.
+    let body = "<p>a<sup class=\"fn-ref\" id=\"fnref-2\"><a href=\"#sn-2\"></a></sup>\
+                b<sup class=\"fn-ref\" id=\"fnref-1\"><a href=\"#sn-1\"></a></sup></p>";
+    let fns = footnotes_in(body, &notes);
+    assert_eq!(fns.len(), 2);
+    assert_eq!((fns[0].id.as_str(), fns[0].refid.as_str(), fns[0].html.as_str()),
+               ("sn-2", "fnref-2", "second"));
+    assert_eq!((fns[1].id.as_str(), fns[1].refid.as_str(), fns[1].html.as_str()),
+               ("sn-1", "fnref-1", "first"));
+    // A scope-prefixed marker from a transcluded copy does not pull the note.
+    let scoped = "<a href=\"#tx1-sn-1\"></a>";
+    assert!(footnotes_in(scoped, &notes).is_empty());
 }
 @
 The shared counter means two sections get distinct ids.

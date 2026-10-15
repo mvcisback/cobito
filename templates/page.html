@@ -18,7 +18,11 @@
 <main>
 {% for section in sections %}{{ section }}
 {% endfor %}</main>
-{% if imports %}<section class="doc-imports" aria-label="Imports"><h2>Imports</h2>
+{% if footnotes %}<section class="footnotes" aria-label="Footnotes"><hr>
+<ol>{% for f in footnotes %}<li id="{{ f.id }}">{{ f.html }} <a class="fn-back" href="#{{ f.refid }}" aria-label="Back to text">&#8617;</a></li>
+{% endfor %}</ol>
+</section>
+{% endif %}{% if imports %}<section class="doc-imports" aria-label="Imports"><h2>Imports</h2>
 <ul>{% for i in imports %}<li><span class="import-alias">{{ i.alias }}</span> &larr; <span class="import-name">{{ i.name }}</span></li>{% endfor %}</ul>
 </section>
 {% endif %}{% if references %}<section class="doc-references" aria-label="References"><h2>References</h2>
