@@ -107,6 +107,8 @@ model, and the two serializers that write the whole document and one page.
 
 <<collect footnotes for a page>>
 
+<<wrap taxon nodes>>
+
 <<build the document>>
 
 <<a section's chunk uses>>
@@ -466,6 +468,90 @@ pub fn footnotes_in(body: &str, notes: &BTreeMap<String, String>) -> Vec<Footnot
         }
         i = end;
     }
+    out
+}
+@
+A taxon labels a typed node (§10). To let CSS draw a box around the whole node —
+not only its heading — the weaver wraps the node in a
+\code{<section class="taxon-node" data-taxon="NAME">} at render time. A node is a
+heading that carries \code{data-taxon} and the content under it, to the next
+heading at the same or a shallower level, or the body end. This runs only on the
+page render, not on the bodies that feed transclusion or the archival JSON, so
+node cutting and the JSON stay byte-unchanged.
+
+Like the hoist, this is deliberate string surgery on well-formed render output,
+not a parse: a \code{<h1>}–\code{<h6>} opener in a docs body is a real heading
+(any literal one in prose text is entity-escaped). It does not wrap an h1 (the
+page title) and does not nest — a taxon inside a boxed taxon keeps only the outer
+box, a rare case deferred to §10.
+<<wrap taxon nodes>>=
+/// The next `<h[1-6]` opener at or after `start`: its `<` index and its level.
+fn next_heading(body: &str, start: usize) -> Option<(usize, u8)> {
+    let bytes = body.as_bytes();
+    let mut j = start;
+    while let Some(rel) = body[j..].find("<h") {
+        let p = j + rel;
+        if p + 2 < body.len() && bytes[p + 2].is_ascii_digit() {
+            return Some((p, bytes[p + 2] - b'0'));
+        }
+        j = p + 2;
+    }
+    None
+}
+
+/// The heading opener at `p` as a slice and the index just past its `>`.
+fn heading_open(body: &str, p: usize) -> (&str, usize) {
+    let end = body[p..].find('>').map_or(body.len(), |x| p + x + 1);
+    (&body[p..end], end)
+}
+
+/// The `data-taxon` value in a heading opener, if any.
+fn taxon_of(open_tag: &str) -> Option<&str> {
+    let k = open_tag.find("data-taxon=\"")? + "data-taxon=\"".len();
+    let rest = &open_tag[k..];
+    let e = rest.find('"')?;
+    Some(&rest[..e])
+}
+
+/// Wrap each taxon node in a `<section class="taxon-node" data-taxon="NAME">` so
+/// CSS can box the whole node. Runs on one rendered docs body.
+pub fn wrap_taxa(body: &str) -> String {
+    let mut out = String::with_capacity(body.len() + 64);
+    let mut i = 0;
+    while let Some((p, level)) = next_heading(body, i) {
+        let (open, open_end) = heading_open(body, p);
+        match taxon_of(open) {
+            // Not a taxon, or an h1 page title: copy through the opener and go on.
+            None => {
+                out.push_str(&body[i..open_end]);
+                i = open_end;
+            }
+            Some(_) if level == 1 => {
+                out.push_str(&body[i..open_end]);
+                i = open_end;
+            }
+            Some(name) => {
+                out.push_str(&body[i..p]);
+                // The node ends at the next heading at this level or shallower.
+                let mut end = body.len();
+                let mut j = open_end;
+                while let Some((q, lv)) = next_heading(body, j) {
+                    if lv <= level {
+                        end = q;
+                        break;
+                    }
+                    j = q + 2;
+                }
+                out.push_str(&format!(
+                    "<section class=\"taxon-node\" data-taxon=\"{name}\">"
+                ));
+                out.push_str(&body[p..end]);
+                out.push_str("</section>");
+                i = end;
+            }
+        }
+    }
+    out.push_str(&body[i..]);
     out
 }
 @
@@ -907,6 +993,25 @@ fn footnotes_in_collects_marked_notes_in_order() {
     // A scope-prefixed marker from a transcluded copy does not pull the note.
     let scoped = "<a href=\"#tx1-sn-1\"></a>";
     assert!(footnotes_in(scoped, &notes).is_empty());
+}
+
+#[test]
+fn wrap_taxa_boxes_a_node_to_its_boundary() {
+    // One taxon h3, its body, then a shallower h2 that ends the node.
+    let body = "<h2>Intro</h2><p>a</p>\
+                <h3 id=\"def:x\" data-taxon=\"definition\">X</h3><p>b</p><p>c</p>\
+                <h2 id=\"next\">Next</h2><p>d</p>";
+    let out = wrap_taxa(body);
+    assert!(out.contains(
+        "<section class=\"taxon-node\" data-taxon=\"definition\">\
+         <h3 id=\"def:x\" data-taxon=\"definition\">X</h3><p>b</p><p>c</p></section>"
+    ));
+    // Content before the node and the boundary heading stay outside the box.
+    assert!(out.starts_with("<h2>Intro</h2><p>a</p><section"));
+    assert!(out.ends_with("</section><h2 id=\"next\">Next</h2><p>d</p>"));
+    // A heading with no taxon is never wrapped; an h1 title is left alone.
+    let plain = "<h1 data-taxon=\"definition\">Title</h1><h2>S</h2><p>x</p>";
+    assert_eq!(wrap_taxa(plain), plain);
 }
 @
 The shared counter means two sections get distinct ids.

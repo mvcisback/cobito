@@ -939,13 +939,20 @@ pub fn render(
         };
         raws.push(raw);
         bodies.push(page_body.clone());
+        // §10 box each taxon node in a wrapper the CSS can border. This runs only
+        // on the page render, so `bodies` (transclusion + archival) stays clean.
+        let for_page = if is_docs {
+            site::wrap_taxa(&page_body)
+        } else {
+            page_body.clone()
+        };
         wrapped.push(wrap_section(
             &section.id,
             class,
             &section.file,
             section.line,
             chunk,
-            &page_body,
+            &for_page,
         ));
     }
 
@@ -1093,11 +1100,13 @@ pub fn render(
     for np in tx.node_pages() {
         // The node page lists only the notes its own body marks (§10).
         let footnotes = footnote_ctx(&np.body);
+        // Box the node's own taxon too, so an `n/` page frames it like the page.
+        let node_body = site::wrap_taxa(&np.body);
         let html = node_tmpl
             .render(minijinja::context! {
                 id => np.id,
                 title => np.title,
-                body => np.body,
+                body => node_body,
                 context => np.context,
                 crumbs => links_context(&np.crumbs),
                 transcluded_by => links_context(&np.transcluded_by),

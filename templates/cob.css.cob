@@ -295,6 +295,24 @@ id sits in the right margin of its centred block.
     color: var(--ref);
   }
 
+  /* The weaver wraps a taxon node in <section class="taxon-node"> so a box can
+     enclose the whole node, not only its heading. Only the "claim" taxa are
+     boxed; an example or a remark keeps the label alone. The set is open — a
+     document adds a name to the list to box it. */
+  .taxon-node {
+    margin: 1.5rem 0;
+  }
+  .taxon-node:is(
+    [data-taxon="definition"], [data-taxon="theorem"], [data-taxon="lemma"],
+    [data-taxon="proposition"], [data-taxon="corollary"], [data-taxon="problem"]
+  ) {
+    padding: 0.2rem 1.2rem;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--ref);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ref) 4%, var(--bg));
+  }
+
   /* A wide display equation scrolls sideways rather than widening the page.
      KaTeX's own stylesheet does not guard this, and it matters most on a phone. */
   .katex-display {
