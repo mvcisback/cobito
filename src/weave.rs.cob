@@ -131,6 +131,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::cite::{self, Bib};
+use crate::custom;
 use crate::highlight::{self, Lang, LangConfig};
 use crate::import;
 use crate::lock::{LockError, LockFile, LockMode, Minter};
@@ -165,6 +166,13 @@ pub enum WeaveError {
         key: String,
     },
     Assets(String),
+    /// E042 — a `custom[NAME]` fence fault (§6.6): a missing handler, a non-zero
+    /// exit, a `<script>` in the output, or a malformed envelope.
+    Custom {
+        file: String,
+        line: u32,
+        err: crate::custom::CustomError,
+    },
     Io(std::io::Error),
     Template(String),
 }
@@ -190,6 +198,9 @@ impl fmt::Display for WeaveError {
                  check the key, or set `[cite] bib` in cob.toml"
             ),
             WeaveError::Assets(m) => write!(f, "error[E023]: {m}"),
+            WeaveError::Custom { file, line, err } => {
+                write!(f, "error[E042]: {}\n  --> {file}:{line}", err.message)
+            }
             WeaveError::Io(e) => write!(f, "error[E024]: writing site: {e}"),
             WeaveError::Template(m) => write!(f, "error[E025]: template: {m}"),
         }
@@ -401,6 +412,9 @@ pub struct Site {
     /// This document's outgoing cross-forest edges (§16). Written to
     /// `cob-exports.json` for the backlink aggregator to invert.
     pub edges: Vec<site::ForestEdge>,
+    /// Assets a `custom[NAME]` handler produced (§6.6): published path → bytes,
+    /// written into the site by `write_site`.
+    pub custom_assets: Vec<custom::Asset>,
 }
 
 impl Site {
@@ -744,6 +758,7 @@ pub fn render(
     lang_cfg: &LangConfig,
     loaded: &BTreeMap<String, site::ForestRef>,
     bib: &Bib,
+    fences: &BTreeMap<String, crate::config::FenceHandler>,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
@@ -791,6 +806,28 @@ pub fn render(
             _ => {
                 defs.insert(name.clone(), expansion.clone());
             }
+        }
+    }
+
+    // §6.6 custom fences: run each registered handler now, before the scan, so a
+    // handler that returns a `<figure id="fig:…">` is numbered like any other
+    // float. The handler sees the final macro table (`defs`) as context, so a
+    // figure typesets in the document's own notation. In the mint pass the
+    // handlers do not run; the scan reads the `<cob-custom>` placeholder's label
+    // instead, so an id is minted without the tool.
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut custom_assets: Vec<custom::Asset> = Vec::new();
+    for (frag, section) in frags.iter_mut().zip(&doc.sections) {
+        if let Frag::Docs(html) = frag {
+            let (expanded, mut a) =
+                custom::expand(html, &defs, fences, &root, Some(cache_root), &section.file, section.line)
+                    .map_err(|err| WeaveError::Custom {
+                        file: section.file.clone(),
+                        line: section.line,
+                        err,
+                    })?;
+            *html = expanded;
+            custom_assets.append(&mut a);
         }
     }
 
@@ -1138,6 +1175,7 @@ pub fn render(
         macros: defs,
         citations: exported_citations,
         edges,
+        custom_assets,
     })
 }
 @
@@ -1406,13 +1444,14 @@ pub fn write_site(
     lang_cfg: &LangConfig,
     loaded: &BTreeMap<String, site::ForestRef>,
     bib: &Bib,
+    fences: &BTreeMap<String, crate::config::FenceHandler>,
     forest_url: &str,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, lang_cfg, loaded, bib, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, lang_cfg, loaded, bib, fences, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -1438,6 +1477,14 @@ pub fn write_site(
     std::fs::write(out.join("cob-syntax.css"), include_str!("../templates/cob-syntax.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
+    // §6.6 write each asset a `custom` handler produced, at its published path.
+    for asset in &site.custom_assets {
+        let dest = out.join(&asset.path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(WeaveError::Io)?;
+        }
+        std::fs::write(&dest, &asset.bytes).map_err(WeaveError::Io)?;
+    }
     // Copy every local asset a page references (a figure image, §6.4), so the
     // site is self-contained; a missing one is a W107 lint, not a failure.
     let asset_lints = copy_assets(out, &site);
@@ -1607,6 +1654,7 @@ fn dev_render_lang(doc: &DocModel, lang: Option<Lang>, embed: &str) -> Site {
         &lang_cfg,
         &BTreeMap::new(),
         &Bib::default(),
+        &BTreeMap::new(),
         embed,
         &mut lock,
         LockMode::Mint,
@@ -1631,6 +1679,7 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
         &lang_cfg,
         &BTreeMap::new(),
         &Bib::default(),
+        &BTreeMap::new(),
         "",
         &mut lock,
         LockMode::Locked,

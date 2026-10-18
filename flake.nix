@@ -313,6 +313,29 @@
           printf '<svg xmlns="http://www.w3.org/2000/svg"></svg>' > $as/pics/unused.svg
           ( cd $as && $cob weave --locked a.cob --out _site2 )
           test ! -e $as/_site2/pics/unused.svg
+          # §6.6 custom fence: a `cob.toml`-registered CLI renders the body. A tiny shell
+          # handler (no heavy tool) echoes a figure, so the pipeline is exercised with only
+          # `sh` in the sandbox: the placeholder becomes a numbered float, `\ref` resolves,
+          # no `<cob-custom>` leaks, and two weaves are byte-identical.
+          cu=$TMPDIR/custom
+          mkdir -p $cu
+          cat > $cu/h.sh <<'HANDLER'
+          #!/bin/sh
+          cat >/dev/null
+          echo '{"html": "<figure id=\"fig:cu\">custom ok</figure>"}'
+          HANDLER
+          chmod +x $cu/h.sh
+          printf '[fence.demo]\ncmd = ["sh", "h.sh"]\n' > $cu/cob.toml
+          printf '# C\n\nSee \\ref{fig:cu}.\n\n```custom[demo] \\label{fig:cu}\n\\caption{A demo.}\nbody\n```\n' > $cu/c.cob
+          ( cd $cu && $cob lock c.cob >/dev/null && $cob weave --locked c.cob --out _site && $cob weave --locked c.cob --out _site2 )
+          diff -r $cu/_site $cu/_site2
+          grep -q 'custom ok' $cu/_site/index.html
+          grep -qE '<figure id="fig-cu" data-id="[0-9A-Za-z]{4}">' $cu/_site/index.html
+          grep -qE 'href="#fig-cu">Figure [0-9A-Za-z]{4}</a>' $cu/_site/index.html
+          if grep -q 'cob-custom' $cu/_site/index.html; then
+            echo "a custom fence placeholder leaked into the output" >&2
+            exit 1
+          fi
           # §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
           # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
           # and confirm the coloring is deterministic and structurally sound.

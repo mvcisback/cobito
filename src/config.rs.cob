@@ -81,6 +81,8 @@ then the tests.
 
 <<the forest table>>
 
+<<a fence handler>>
+
 <<the tangle table>>
 
 <<a tangle root>>
@@ -162,6 +164,24 @@ pub struct Config {
     pub cite: Cite,
     #[serde(default)]
     pub forest: Forest,
+    /// The `[fence.<name>]` tables (§6.6): each registers a CLI handler for a
+    /// `custom[<name>]` fence. `BTreeMap` keeps the order deterministic.
+    #[serde(rename = "fence", default)]
+    pub fences: BTreeMap<String, FenceHandler>,
+}
+@
+A \code{[fence.<name>]} table registers a handler for a \code{custom[<name>]} fence (§6.6).
+\code{cmd} is the argv of a program cob runs at weave time, from the project root; cob
+sends it the fence body and context as JSON and reads back the HTML. Declaring the
+handler in \code{cob.toml} — the project's own trusted config — is the consent to run
+it; an undeclared handler is the E042 error.
+<<a fence handler>>=
+/// One `[fence.<name>]` table (§6.6): the CLI that renders a `custom[<name>]`
+/// fence. `cmd` is the argv — the first element is the program, run from the
+/// project root — so a handler can be `["tools/fig"]` or `["python3", "x.py"]`.
+#[derive(Deserialize, Default, Clone)]
+pub struct FenceHandler {
+    pub cmd: Vec<String>,
 }
 @
 The \code{[forest]} table declares this forest's own identity (§16). \code{url} is where its

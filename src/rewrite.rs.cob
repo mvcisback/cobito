@@ -483,6 +483,22 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         Ok(())
                     }
                 }),
+                element!("cob-custom", {
+                    let st = st.clone();
+                    move |el| {
+                        // §6.6 In the mint pass a `custom` fence is still a
+                        // `<cob-custom>` placeholder (the handler has not run). If
+                        // its `data-label` is a float namespace, record it so `cob
+                        // lock` mints the id without the tool; at weave the handler
+                        // emits the real element and the id is already frozen.
+                        if let Some(id) = el.get_attribute("data-label") {
+                            if let Some(kind) = Kind::from_label(&id) {
+                                st.borrow_mut().labels.push(LabelDef { id, kind, section });
+                            }
+                        }
+                        Ok(())
+                    }
+                }),
                 element!("a[data-ref]", {
                     let st = st.clone();
                     move |el| {

@@ -118,6 +118,7 @@ Each module carries the specification for its own job. This is the reading order
 | The prose pipeline: reassembly, math substitution, ordering | \code{src/prose.rs.cob} |
 | The Markdown dialect and fenced-float directives | \code{src/markdown.rs.cob} |
 | The \code{algorithm} fence: a native pseudocode renderer | \code{src/pseudocode.rs.cob} |
+| The \code{custom} fence: a registered CLI renders the body | \code{src/custom.rs.cob} |
 | Math rendering: KaTeX at weave time, the cache | \code{src/math.rs.cob} |
 | Labels, numbering, cross-references, the resolver | \code{src/resolve.rs.cob} |
 | Stable ids and the lock file | \code{src/lock.rs.cob} |
@@ -387,6 +388,7 @@ introduces a code, it claims the next free number in this registry.
 | E039 | the bibliography file does not read or parse | \code{cite.rs} |
 | E040 | a \code{\cite} names a key no bibliography has | \code{weave.rs} |
 | E041 | \code{cob backlinks} could not write a fragment | \code{backlinks.rs} |
+| E042 | a \code{custom} fence handler fails (unregistered, non-zero exit, script, bad envelope) | \code{custom.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |

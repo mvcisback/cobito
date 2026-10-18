@@ -67,6 +67,7 @@ this is the crate root. Adding a module means adding one line.
 mod backlinks;
 mod cite;
 mod config;
+mod custom;
 mod diag;
 mod fetch;
 mod highlight;
@@ -349,6 +350,7 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         &lang_cfg,
         &loaded,
         &bib,
+        &cfg.fences,
         cfg.forest.url.as_deref().unwrap_or_default(),
         archive,
         mode,

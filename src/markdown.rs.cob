@@ -59,6 +59,9 @@ The kind word picks the block. The set is closed:
 - \code{algorithm} takes an optional \code{\caption{…}}, then a pseudocode body in the
   \code{algorithmic} grammar, and makes a numbered \code{<figure class="algorithm">}
   float (§6.5). It needs an \code{alg:} label to be referenceable.
+- \code{custom[name]} hands its body to a \code{cob.toml}-registered CLI and splices the
+  HTML it returns (§6.6) — the extension point for content cob has no native fence
+  for, like a LaTeX figure. Use it sparingly.
 - \code{html-escape} is the one door for raw HTML. Its body passes through verbatim. It
   subsumes the old \code{html} dialect and every raw-HTML island (a sidenote aside is
   now an \code{html-escape} fence).
@@ -602,6 +605,19 @@ fn render_fence(
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
         Fence::Table(label) => render_table(label.as_deref(), body, math),
         Fence::Algorithm(label) => render_algorithm(label.as_deref(), body, math),
+        Fence::Custom { name, label } => {
+            // The weaver runs the handler (§6.6); here we only carry the handler,
+            // label, and the peeled caption and body across to it, escaped so the
+            // body's `<`/`&`/`"` survive as the placeholder's text and attribute.
+            let (caption, rest) = take_caption(body)?;
+            Ok(format!(
+                "<cob-custom data-handler=\"{}\" data-label=\"{}\" data-caption=\"{}\">{}</cob-custom>",
+                prose::escape(&name),
+                prose::escape(label.as_deref().unwrap_or("")),
+                prose::escape(caption.as_deref().unwrap_or("")),
+                prose::escape(rest.trim()),
+            ))
+        }
         Fence::HtmlEscape => Ok(body.to_string()),
         Fence::Verbatim(lang) => {
             let class = match lang {
@@ -827,6 +843,10 @@ enum Fence {
     /// body is `algorithmic` control words, rendered to static HTML by the
     /// `pseudocode` module with inline math through the usual path.
     Algorithm(Option<String>),
+    /// A `custom[NAME]` fence (§6.6): a `cob.toml`-registered CLI renders the
+    /// body. The Markdown pass only emits a `<cob-custom>` placeholder; the
+    /// weaver runs the handler, because it holds the config and the macros.
+    Custom { name: String, label: Option<String> },
     HtmlEscape,
     Verbatim(Option<String>),
     /// A `def:`-labelled exposition of macros (§6.4). Its body is normal prose
@@ -849,7 +869,7 @@ The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
 <<parse the fence info>>=
-const KINDS: &str = "math, figure, table, algorithm, macros, imports, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, algorithm, custom[name], macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -858,6 +878,10 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
         .unwrap_or(info.len());
     let kind = &info[..end];
     let rest = info[end..].trim();
+    // A `custom[NAME]` fence names its handler in brackets before any modifier.
+    if kind == "custom" {
+        return parse_custom(rest);
+    }
     let mods = dialect::modifiers(rest)
         .map_err(|_| fence_err(format!("malformed modifier after `{kind}` fence; use {KINDS}")))?;
     match kind {
@@ -905,6 +929,32 @@ fn label_of(mods: &[Modifier], kind: &str, prefix: &str) -> Result<Option<String
         }
     }
     Ok(label)
+}
+
+/// Parse a `custom[NAME]` info line's remainder: the bracketed handler name,
+/// then an optional `\label{…}`. The label may use any namespace — the handler
+/// decides what element it emits — so the weaver passes it through untouched.
+fn parse_custom(rest: &str) -> Result<Fence, MarkdownError> {
+    let rest = rest
+        .strip_prefix('[')
+        .ok_or_else(|| kind_err("a `custom` fence names its handler: `custom[name]`"))?;
+    let close = rest
+        .find(']')
+        .ok_or_else(|| kind_err("a `custom` fence handler name is not closed: `custom[name]`"))?;
+    let name = rest[..close].trim();
+    if name.is_empty() {
+        return Err(kind_err("a `custom` fence names its handler: `custom[name]`"));
+    }
+    let mods = dialect::modifiers(rest[close + 1..].trim())
+        .map_err(|_| fence_err("malformed modifier after a `custom` fence"))?;
+    let mut label = None;
+    for m in &mods {
+        match m {
+            Modifier::Label(l) => label = Some(l.trim().to_string()),
+            Modifier::Lang(_) => return Err(fence_err("`\\lang` is not allowed on a `custom` fence")),
+        }
+    }
+    Ok(Fence::Custom { name: name.to_string(), label })
 }
 
 fn lang_of(mods: &[Modifier]) -> Result<Option<String>, MarkdownError> {
