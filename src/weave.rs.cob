@@ -1398,11 +1398,16 @@ fn referenced_assets(html: &str) -> Vec<String> {
 fn copy_assets(out: &Path, site: &Site) -> Vec<Lint> {
     let mut seen = std::collections::BTreeSet::new();
     let mut lints = Vec::new();
+    // A `custom` handler (§6.6) writes its own assets into the site; those are
+    // not project files, so skip them here — looking for them under the project
+    // would be a spurious W107.
+    let custom: std::collections::BTreeSet<&str> =
+        site.custom_assets.iter().map(|a| a.path.as_str()).collect();
     let page_html = site.pages.iter().map(|p| p.html.as_str());
     let node_html = site.node_pages.iter().map(|(_, h)| h.as_str());
     for html in page_html.chain(node_html) {
         for rel in referenced_assets(html) {
-            if !seen.insert(rel.clone()) {
+            if custom.contains(rel.as_str()) || !seen.insert(rel.clone()) {
                 continue;
             }
             // Never copy from outside the project.
