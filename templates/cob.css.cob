@@ -269,6 +269,17 @@ id sits in the right margin of its centred block.
     margin: 1.5rem 0;
   }
 
+  /* A figure image scales to the reading column rather than its intrinsic size,
+     so a wide export (an SVG from the custom LaTeX fence, say) does not overflow
+     the page. It centres under its caption. */
+  figure img,
+  figure svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+
   figcaption,
   caption {
     font-size: 0.9rem;
