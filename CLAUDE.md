@@ -19,6 +19,7 @@ nix develop                              # devShell: rust toolchain (no noweb); 
 cargo test                               # hermetic unit tests
 cargo run -- dump-ir fixtures/hello.cob   # native reader events (--from-markup <f>: parse a frozen .markup)
 cargo run -- weave fixtures/hello.cob     # writes _site/ (needs COB_KATEX_ASSETS)
+cargo run -- weave                        # no files: the book named by [[document]] files in cob.toml (§5.2)
 cargo run -- weave --archive book.cob     # also emit site.json + per-page JSON (§8)
 cargo run -- weave --locked book.cob      # never mint; error on a label absent from cob.lock (§7.1)
 cargo run -- lock fixtures/book.cob       # mint ids; auto-anchor every unlabelled h2/h3 into the .cob source (§7.1)

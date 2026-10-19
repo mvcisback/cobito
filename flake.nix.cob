@@ -678,6 +678,35 @@ if grep -q 'cob-custom' $cu/_site/index.html; then
   echo "a custom fence placeholder leaked into the output" >&2
   exit 1
 fi
+# §5.2/§7 a book: the `[[document]] files` in cob.toml name the sources, so
+# `cob lock` and `cob weave` need no file arguments. A `ch:`/`part:` label on a
+# page heading makes the chapter a `\ref` target ("Chapter <id>", "Part <id>"),
+# and `\ref{label}{text}` keeps the author's text. A page is not a node: no
+# permalink prefix on the h1 and no `n/` directory.
+bk=$TMPDIR/book
+mkdir -p $bk
+cat > $bk/cob.toml <<'MANIFEST'
+[[document]]
+id = "bk"
+title = "Bk"
+files = ["a.cob", "b.cob"]
+MANIFEST
+cat > $bk/a.cob <<'PAGE'
+# Alpha {#part:a}
+
+See \ref{ch:b} and \ref{ch:b}{the second chapter}.
+PAGE
+cat > $bk/b.cob <<'PAGE'
+# Beta {#ch:b}
+
+Back to \ref{part:a}.
+PAGE
+( cd $bk && $cob lock >/dev/null && $cob weave --locked --out _site )
+grep -qE 'href="beta.html#beta">Chapter [0-9A-Za-z]{4}</a>' $bk/_site/index.html
+grep -q 'href="beta.html#beta">the second chapter</a>' $bk/_site/index.html
+grep -qE 'href="index.html#index">Part [0-9A-Za-z]{4}</a>' $bk/_site/beta.html
+grep -q '<h1 id="beta">Beta' $bk/_site/beta.html
+test ! -e $bk/_site/n
 @
 This group checks syntax highlighting (§5.5). The \code{hl.cob} fixture has a Rust root
 and a Nix root. Each root pulls an abstract chunk in through a hole. The group

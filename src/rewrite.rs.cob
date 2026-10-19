@@ -222,6 +222,14 @@ impl Kind {
     /// a typed node is reachable by its own page and `\ref`. A float, chunk, or
     /// citation namespace is not a heading, so it is excluded. The taxon, not the
     /// namespace, names the kind (the `def:` prefix also tags a notation fence).
+    /// Is a label one a page heading (an h1) may carry (§7)? Only `ch:` and
+    /// `part:`. An h1 is a page, not a node, so these labels make it a `\ref`
+    /// target and nothing more. Any other label on an h1 (a `sec:` one, say) means
+    /// nothing, as it always did, so an existing document is not changed by this.
+    pub fn label_is_page_heading(id: &str) -> bool {
+        matches!(id.split_once(':').map(|(ns, _)| ns), Some("ch" | "part"))
+    }
+
     pub fn label_is_heading_node(id: &str) -> bool {
         id.contains(':')
             && !matches!(

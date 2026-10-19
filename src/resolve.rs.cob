@@ -35,6 +35,11 @@ selector that touches it.
   \code{def:}, \code{thm:}, \code{ex:}, and so on — and becomes a referenceable node (§10);
   its taxon names the word a \code{\ref} to it reads. A float-only ref id on a
   heading is not a heading node.
+- A page heading (an h1) may carry a \code{ch:} or \code{part:} label: \code{# Title {#ch:name}}. It is
+  then a target for \code{\ref}, which reads "Chapter" or "Part" with a frozen id and links to
+  the page. A page is not a node, so it gets no permalink prefix and no \code{n/} page. A book
+  needs this to refer to its own chapters. \code{\ref{ch:name}{Title}} keeps the author's link text,
+  so a table of contents can name a chapter by its title.
 - The numbering scheme is \code{flat} or \code{by-page}; the default is \code{flat}, so a page
   boundary does not leak into a stable reference. M2 implements \code{flat}.
 - cob numbers an equation by default. A \code{data-nonumber} equation div opts out.
@@ -225,9 +230,18 @@ fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
     }
 }
 
-/// The word a `\ref` to a heading node reads, from the node's taxon (§10):
-/// "definition" becomes "Definition". A heading with no taxon is a "Section".
-fn heading_ref_word(taxon: Option<&str>) -> String {
+/// The word a `\ref` to a heading reads. A page heading (an h1) takes it from its
+/// label's namespace: `ch:` is a "Chapter", `part:` a "Part". Any other heading
+/// takes it from the node's taxon (§10): "definition" becomes "Definition". A
+/// heading with neither is a "Section".
+fn heading_ref_word(taxon: Option<&str>, label: &str, level: u8) -> String {
+    if level == 1 {
+        match label.split_once(':').map(|(ns, _)| ns) {
+            Some("ch") => return "Chapter".to_string(),
+            Some("part") => return "Part".to_string(),
+            _ => {}
+        }
+    }
     match taxon {
         Some(t) if !t.is_empty() => {
             let mut c = t.chars();
@@ -326,19 +340,30 @@ opaque id is carried out so \code{apply} can stamp the permalink and node link.
     // (page, level, anchor, text) for nav construction.
     let mut nav_flat: Vec<(usize, u8, String, String)> = Vec::new();
     // Labels the author declared via a heading id, any node namespace (§10):
-    // (id, page, anchor, fallback text, taxon). The taxon names the ref word.
-    let mut heading_labels: Vec<(String, usize, String, String, Option<String>)> = Vec::new();
+    // (id, page, anchor, fallback text, taxon, level). The taxon names the ref word
+    // of a section; the level tells a page-heading label from a section label.
+    let mut heading_labels: Vec<(String, usize, String, String, Option<String>, u8)> = Vec::new();
 
     for h in &scan.headings {
         let page = section_page[h.section];
         let mut uid = None;
         let anchor = if h.level == 1 {
-            pages[page].id.clone()
+            // An h1 is its page and anchors to the page id. A labelled one (`ch:`,
+            // `part:`) is also a ref target, so `\ref{ch:x}` reaches the chapter.
+            // It earns an id for the ref text but no `uid`: a page is not a node,
+            // so it gets no permalink prefix and no `n/` page.
+            let a = pages[page].id.clone();
+            if let Some(given) = &h.given_id {
+                if Kind::label_is_page_heading(given) {
+                    heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), None, 1));
+                }
+            }
+            a
         } else if let Some(given) = &h.given_id {
             let a = anchor_of(given);
             if Kind::label_is_heading_node(given) {
                 uid = label_ids.get(given).cloned();
-                heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), h.taxon.clone()));
+                heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), h.taxon.clone(), h.level));
             }
             a
         } else {
@@ -387,16 +412,17 @@ code. A repeat id is E014.
             },
         )?;
     }
-    for (id, page, anchor, text, taxon) in heading_labels {
+    for (id, page, anchor, text, taxon, level) in heading_labels {
         // §7.1: a `\ref{…}` to a heading renders the kind-qualified opaque id
         // ("Definition k3f9"), not the heading text, which rots on rename. The
         // kind word comes from the node's taxon (§10) — "Definition", "Theorem"
-        // — or is "Section" for a plain heading. The heading text survives only
+        // — or is "Section" for a plain heading; a page heading reads "Chapter" or
+        // "Part" from its `ch:`/`part:` label. The heading text survives only
         // as a fallback if the id was never minted (Mint always mints; `--locked`
         // would already have failed on a missing label).
         let opaque = label_ids.get(&id).cloned();
         let display = match &opaque {
-            Some(uid) => format!("{} {uid}", heading_ref_word(taxon.as_deref())),
+            Some(uid) => format!("{} {uid}", heading_ref_word(taxon.as_deref(), &id, level)),
             None => text,
         };
         insert(
@@ -615,6 +641,8 @@ mod tests {
 
     <<a taxon heading is a node and its ref is typed>>
 
+    <<a labelled page heading is a ref target but not a node>>
+
     <<a cross-document ref targets the imported forest>>
 
     <<chunk refs target the defining section>>
@@ -695,10 +723,16 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
         .map(|l| (l.id.clone(), fake_id(&l.id)))
         .collect();
     // Mirror weave's `mintable`: a labelled heading in a node namespace also
-    // earns a frozen id, so a `\ref` to a definition or theorem resolves.
+    // earns a frozen id, so a `\ref` to a definition, a theorem, or a chapter
+    // resolves.
     for h in &sc.headings {
         if let Some(g) = &h.given_id {
-            if h.level != 1 && Kind::label_is_heading_node(g) {
+            let earns = if h.level == 1 {
+                Kind::label_is_page_heading(g)
+            } else {
+                Kind::label_is_heading_node(g)
+            };
+            if earns {
                 label_ids.entry(g.clone()).or_insert_with(|| fake_id(g));
             }
         }
@@ -772,6 +806,34 @@ fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
     assert_eq!(r.refs[0].text.as_deref(), Some("Definition defd"));
     assert_eq!(r.refs[1].href, "#sec-s");
     assert_eq!(r.refs[1].text.as_deref(), Some("Section secs"));
+}
+@
+A page heading (an h1) with a \code{ch:} or \code{part:} label is a target for \code{\ref}: the
+thesis refers to its chapters and parts about sixty times. The ref reads "Chapter" or
+"Part" with the frozen id, and links to the chapter's page. But a page is not a node,
+so the heading earns no permalink uid and no \code{n/} page.
+<<a labelled page heading is a ref target but not a node>>=
+#[test]
+fn a_labelled_page_heading_is_a_ref_target_but_not_a_node() {
+    let (_, r) = resolve(&[
+        (
+            "<h1 id=\"part:p\">Intro</h1><a data-ref=\"ch:b\"></a><a data-ref=\"part:p\"></a>",
+            false,
+        ),
+        ("<h1 id=\"ch:b\">Body</h1><h2 id=\"sec:s\">S</h2>", false),
+        // A non-page label on an h1 (a `sec:` one) means nothing, as it always
+        // did: an existing document is not changed by page labels.
+        ("<h1 id=\"sec:old\">Old</h1>", false),
+    ]);
+    assert!(r.labels.contains_key("ch:b") && !r.labels.contains_key("sec:old"));
+    // A cross-page ref lands on the chapter's page; a same-page ref is a fragment.
+    assert_eq!(r.refs[0].href, "body.html#body");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Chapter chb"));
+    assert_eq!(r.refs[1].href, "#index");
+    assert_eq!(r.refs[1].text.as_deref(), Some("Part partp"));
+    // Only the h2 earns a uid: no h1 is a node.
+    let uids: Vec<bool> = r.heading_uids.iter().map(|u| u.is_some()).collect();
+    assert_eq!(uids, vec![false, false, true, false]);
 }
 @
 <<cross-page refs qualify, same-page refs are fragments>>=

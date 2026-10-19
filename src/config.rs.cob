@@ -11,6 +11,11 @@ files in order. A \code{[tangle]} table sets the default output directory, and a
 \code{[[tangle.root]]} table per root sets that root's line-pragma format. A \code{[weave]}
 table holds the highlight language keys (§5.5).
 
+The \code{files} of a \code{[[document]]} are the book. Their order is the reading order, and
+it is the only place that order is written down. \code{cob weave} and \code{cob lock} read
+it when the command line names no files, so a build, a review loop, and a CI check all
+share one book. A file named on the command line wins over the manifest.
+
 ```verbatim \lang{toml}
 [[document]]
 id = "cob"

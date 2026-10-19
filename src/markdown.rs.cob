@@ -23,6 +23,7 @@ Marks are commands, not punctuation, so there is no flanking rule to get wrong:
   brace uses \code{\{} or \code{\}}.
 - \code{$…$} is inline math and \code{$$…$$} is display math. A literal dollar is \code{\$}.
 - \code{\ref{ns:name}} makes the same \code{<a data-ref>} the resolver reads (§7).
+  \code{\ref{ns:name}{link text}} keeps your text as the link, for a table of contents.
 - \code{\cite{key}} makes one \code{<a data-cite>} marker per key; \code{\cite{k1, k2}} makes two.
   The weaver mints each cited work a node id and draws the \code{[id]} marker (§14).
 - \code{\transclude{sec:name}} makes the transclusion island the weaver expands (§10).
@@ -1015,7 +1016,12 @@ peg::parser! {
         rule codespan() -> Inline = "`" v:$((!"`" [_])*) "`" { Inline::Code(v.to_string()) }
         rule lonetick() -> Inline = "`" { Inline::Text("`".to_string()) }
 
-        rule refc() -> Inline = "\\ref{" s:$((!"}" [_])*) "}" { Inline::Ref(s.to_string()) }
+        // `\ref{label}` reads as the target's kind and id. A second group,
+        // `\ref{label}{link text}`, keeps the author's text and still resolves the
+        // link — a table of contents names a chapter by its title.
+        rule refc() -> Inline
+            = "\\ref{" s:$((!"}" [_])*) "}" t:reftext()? { Inline::Ref(s.to_string(), t) }
+        rule reftext() -> Vec<Inline> = "{" ns:nodes() "}" { ns }
         rule citec() -> Inline = "\\cite{" s:$((!"}" [_])*) "}" { Inline::Cite(s.to_string()) }
         rule transclude() -> Inline
             = "\\transclude{" s:$((!"}" [_])*) "}" { Inline::Transclude(s.to_string()) }
@@ -1070,7 +1076,8 @@ enum Inline {
     Strong(Vec<Inline>),
     Code(String),
     Math { src: String, display: bool },
-    Ref(String),
+    /// `\ref{label}` with optional author link text (`\ref{label}{text}`).
+    Ref(String, Option<Vec<Inline>>),
     Cite(String),
     Transclude(String),
     /// A `\taxon{name}` directive. It is block-level (handled in `split_blocks`);
@@ -1119,8 +1126,12 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
                 out.push_str(&prose::escape(v));
                 out.push_str("</code>");
             }
-            Inline::Ref(id) => {
-                out.push_str(&format!("<a data-ref=\"{}\"></a>", prose::escape(id.trim())))
+            Inline::Ref(id, text) => {
+                out.push_str(&format!("<a data-ref=\"{}\">", prose::escape(id.trim())));
+                if let Some(ns) = text {
+                    lower(ns, math, out);
+                }
+                out.push_str("</a>");
             }
             Inline::Cite(keys) => {
                 // `\cite{k1, k2}` lowers to one inert marker per key; the weaver
@@ -1470,13 +1481,17 @@ fn multiline_caption_with_braces_is_balanced() {
     ));
 }
 @
-A ref command lowers to a data-ref anchor.
+A ref command lowers to a data-ref anchor. A second group is the author's link text,
+which a table of contents uses to name a chapter by its title; the resolver keeps that
+text and still sets the link. The text may hold other commands.
 <<a ref lowers to a data-ref>>=
 #[test]
 fn ref_lowers_to_a_data_ref() {
     let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
     assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
     assert!(html.contains("<a data-ref=\"eq:wrap\"></a>"));
+    let (titled, _) = run("\\ref{ch:x}{The \\emph{Title}}");
+    assert!(titled.contains("<a data-ref=\"ch:x\">The <em>Title</em></a>"));
 }
 @
 A backtick span is literal inline code — commands inside it never lower — and an

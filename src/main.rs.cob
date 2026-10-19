@@ -105,11 +105,13 @@ const USAGE: &str = "\
 cob — web-first literate programming (early scaffold)
 
 USAGE:
-    cob weave <file.cob>...        weave to _site/ (single page; M2 adds splitting)
+    cob weave [file.cob]...        weave to _site/; with no files, the book named by
+                                  the [[document]] files in cob.toml (§5.2)
     cob fetch                     pin new/changed git imports, cache their index (§13)
     cob update [alias]            re-resolve git imports to the newest matching release (§13)
     cob backlinks <site-dir>...   write reverse-backlink fragments across built forests (§16)
-    cob lock <file.cob>...         mint frozen ids for every label into cob.lock (§7.1)
+    cob lock [file.cob]...         mint frozen ids for every label into cob.lock (§7.1);
+                                  with no files, the book named in cob.toml
     cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     cob labels <file.cob>          list the file's label → id map from cob.lock
     cob id <file.cob> <label>      print the frozen id for one label
@@ -152,11 +154,11 @@ fn main() -> ExitCode {
     match args.split_first().map(|(cmd, rest)| (cmd.as_str(), rest)) {
         Some(("dump-ir", files)) if !files.is_empty() => dump_ir(files),
         Some(("dump-model", files)) if !files.is_empty() => dump_model(files),
-        Some(("weave", args)) if !args.is_empty() => weave_cmd(args),
+        Some(("weave", args)) => weave_cmd(args),
         Some(("fetch", rest)) if rest.is_empty() => fetch_cmd(),
         Some(("update", rest)) if rest.len() <= 1 => update_cmd(rest.first().map(String::as_str)),
         Some(("backlinks", dirs)) if !dirs.is_empty() => backlinks_cmd(dirs),
-        Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
+        Some(("lock", files)) => lock_cmd(files),
         Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
@@ -206,10 +208,32 @@ builds the model, loads config, resolves the highlighting language, then calls
 counted; \code{--deny-warnings} turns a nonzero count into a nonzero exit after the
 site is written, so CI fails but the artifact stays available.
 
-The option loop walks the argument iterator by hand. \code{--out} consumes the next
-argument as a directory; a missing value is a usage error. Everything the loop
-does not recognise is treated as a file.
+A book has many files, and their order is the reading order. That order belongs in
+one place: the \code{files} list of the \code{[[document]]} table in \code{cob.toml} (§5.2).
+\code{document_files} gives the files named on the command line when there are any.
+With none, it gives that list, so \code{cob weave} and \code{cob lock} need no
+arguments, and the build, the review loop, and the docs all share one book order.
 <<the weave command>>=
+/// The document's source files: those named on the command line, else the
+/// `files` of the `[[document]]` table in `cob.toml`. An error names both ways to
+/// say it.
+fn document_files(named: Vec<String>) -> Result<Vec<String>, String> {
+    if !named.is_empty() {
+        return Ok(named);
+    }
+    let none = "cob: no .cob files given. Name them on the command line, or list them \
+                in the `files` of a [[document]] table in cob.toml"
+        .to_string();
+    match config::Config::load(Path::new(".")) {
+        Ok(Some(cfg)) => match cfg.document() {
+            Some(d) if !d.files.is_empty() => Ok(d.files.clone()),
+            _ => Err(none),
+        },
+        Ok(None) => Err(none),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn weave_cmd(args: &[String]) -> ExitCode {
     let mut out = "_site".to_string();
     let mut archive = false;
@@ -232,10 +256,13 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             _ => files.push(a.clone()),
         }
     }
-    if files.is_empty() {
-        eprintln!("cob: weave needs at least one .cob file");
-        return ExitCode::from(2);
-    }
+    let files = match document_files(files) {
+        Ok(f) => f,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(2);
+        }
+    };
 
     let events = match markup::read(&files) {
         Ok(events) => events,
@@ -484,6 +511,14 @@ The report shows how many were newly minted.
 /// `.cob` source. Ids already present are left untouched; new ones are written back
 /// so a later `--locked` weave finds them.
 fn lock_cmd(files: &[String]) -> ExitCode {
+    let files = match document_files(files.to_vec()) {
+        Ok(f) => f,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(2);
+        }
+    };
+    let files = files.as_slice();
     let doc = match build_doc(files) {
         Ok(doc) => doc,
         Err(code) => return code,
