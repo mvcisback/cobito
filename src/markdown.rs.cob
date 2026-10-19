@@ -64,8 +64,9 @@ The kind word picks the block. The set is closed:
   here (§10): a definition, a theorem, an example. Its first line is its title,
   \code{# Title \taxon{definition} \label{def:x}}; both commands are optional, and the
   label takes a node namespace (\code{def:}, \code{thm:}, \code{ex:}, …). The lines under it are the
-  content, in full command Markdown; a heading in it (\code{##} and deeper) is an inner
-  sub-heading, and a nested \code{node} fence is a sub-node. The node's
+  content, in full command Markdown. A heading in it (\code{##} and deeper) is a real
+  heading, one level deeper each, with its own table-of-contents entry and node that end
+  at the fence; a nested \code{node} fence is a sub-node. The node's
   extent is the fence, so unlike a \code{\taxon} heading it does not swallow the prose after
   it. A label makes it referenceable: it earns an opaque id, a node page, a typed
   \code{\ref} ("Definition k3f9"), and transclusion. Macros in scope are inherited inside.
@@ -261,22 +262,26 @@ pub fn render(
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
-    render_ctx(input, math, defs, false, false)
+    render_ctx(input, math, defs, false, None)
 }
 
 /// The block loop. `macros` is true only while rendering a `macros` fence body,
 /// where a `\def`/`\let` line is a macro definition (§6.4), not prose. A `macros`
 /// body records its definitions in `defs` (name → expansion); every other block
-/// ignores it. `node` is true inside a `node` fence, where a heading is an inner
-/// sub-heading, not a document heading (§10).
+/// ignores it. `node` is `Some(t)` inside a `node` fence, where `t` is the fence's
+/// own level below the enclosing heading (§10): an inner heading is then a heading
+/// of the fence, `t` plus its extra `#`s deep. It is `None` at the top level.
 fn render_ctx(
     input: &str,
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
     macros: bool,
-    node: bool,
+    node: Option<u8>,
 ) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
+    // The level of the latest heading in this context, so a fence nested under it
+    // sits one level deeper (§10).
+    let mut cur = node.unwrap_or(0);
     // A `\taxon{name}` directive applies to the heading that immediately follows it.
     let mut pending_taxon: Option<String> = None;
     for block in split_blocks(input, macros) {
@@ -286,15 +291,18 @@ fn render_ctx(
                 pending_taxon = Some(name);
                 continue;
             }
-            RawBlock::Heading { level, text } if node => {
-                render_node_heading(level, &text, math, pending_taxon.take().as_deref())?
+            RawBlock::Heading { level, text } if node.is_some() => {
+                let (html, rel) =
+                    render_node_heading(level, &text, math, pending_taxon.take().as_deref(), node.unwrap_or(0))?;
+                cur = rel;
+                html
             }
             RawBlock::Heading { level, text } => {
                 render_heading(level, &text, math, pending_taxon.take().as_deref())?
             }
             RawBlock::Fence { info, body } => {
                 pending_taxon = None;
-                render_fence(&info, &body, math, defs)?
+                render_fence(&info, &body, math, defs, cur)?
             }
             RawBlock::List { ordered, items } => {
                 pending_taxon = None;
@@ -549,7 +557,7 @@ fn render_quote(
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
     macros: bool,
-    node: bool,
+    node: Option<u8>,
 ) -> Result<String, MarkdownError> {
     let inner: Vec<String> = raw
         .lines()
@@ -582,16 +590,17 @@ fn render_heading(
     Ok(format!("<h{level}{attr}>{inner}</h{level}>"))
 }
 
-/// A heading inside a `node` fence (§10). The fence's title line is the document's
-/// `#`, so `##` is the first inner level. It lowers to `<h4>`…`<h6>` with class
-/// `node-h`: below the three structural levels the weaver tracks, so it never joins
-/// the table of contents and never cuts a node. A `{#id}` stays as a plain anchor.
+/// A heading inside a `node` fence (§10), and its level below the enclosing
+/// heading. The fence's own title sits at `title`; a `##` is one deeper, a `###`
+/// two deeper. It is a real heading: the weaver gives it an anchor, a table-of-
+/// contents entry, and a node of its own, which ends at the fence's end.
 fn render_node_heading(
     level: usize,
     text: &str,
     math: &mut Vec<Math>,
     taxon: Option<&str>,
-) -> Result<String, MarkdownError> {
+    title: u8,
+) -> Result<(String, u8), MarkdownError> {
     if level == 1 {
         return Err(fence_err(
             "a `node` fence has one title line, its first; a heading inside it starts at `##`",
@@ -603,14 +612,15 @@ fn render_node_heading(
              nest a `node` fence for a node of its own",
         ));
     }
+    let rel = title.saturating_add((level - 1) as u8);
     let (inline_src, id) = split_heading_attr(text.trim());
     let inner = render_inline(inline_src.trim(), math)?;
     let id = match id {
         Some(id) => format!(" id=\"{}\"", prose::escape(id)),
         None => String::new(),
     };
-    let tag = (level + 2).min(6);
-    Ok(format!("<h{tag} class=\"node-h\"{id}>{inner}</h{tag}>"))
+    let tag = (rel as usize + 1).min(6);
+    Ok((format!("<h{tag} data-rel=\"{rel}\"{id}>{inner}</h{tag}>"), rel))
 }
 
 fn split_heading_attr(text: &str) -> (&str, Option<&str>) {
@@ -668,13 +678,14 @@ fn render_fence(
     body: &str,
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
+    cur: u8,
 ) -> Result<String, MarkdownError> {
     match parse_fence_info(info)? {
         Fence::Math(label) => Ok(render_math(label.as_deref(), body, math)),
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
         Fence::Table(label) => render_table(label.as_deref(), body, math),
         Fence::Algorithm(label) => render_algorithm(label.as_deref(), body, math),
-        Fence::Node => render_node(body, math, defs),
+        Fence::Node => render_node(body, math, defs, cur),
         Fence::Custom { name, label } => {
             // The weaver runs the handler (§6.6); here we only carry the handler,
             // label, and the peeled caption and body across to it, escaped so the
@@ -708,7 +719,7 @@ fn render_fence(
             // aware. Each definition is recorded in `defs` (name → expansion) and
             // passed to KaTeX's `macros` option, so it expands everywhere without
             // leaking into any formula's source (§6.4).
-            let inner = render_ctx(body, math, defs, true, false)?;
+            let inner = render_ctx(body, math, defs, true, None)?;
             Ok(format!(
                 "<div class=\"macros\" id=\"{}\">{inner}</div>",
                 prose::escape(&label)
@@ -908,16 +919,21 @@ is part of the document that holds it. (A \code{macros} fence inside a node defi
 macros for the whole book, as one in any file of a book does, because math renders
 against one table.)
 
-A node can hold headings, as a file can. The title line is the fence's \code{#}, so
-\code{##} is its first inner level, \code{###} the next, and so on. An inner heading
-lowers to \code{<h4>} to \code{<h6>} with the class \code{node-h}. Those levels are below the three that
-the weaver tracks, so an inner heading never joins the table of contents and never
-cuts a node. It is a sub-heading inside one node, not a node of its own. A node that
-needs sub-nodes nests a \code{node} fence, which has its own title, label, and page. A
-second \code{#} line, or a \code{\taxon} before an inner heading, is an error. The title is a paragraph, not a
-heading, so it never enters the table of contents. The element is a \code{section}. It always carries a
-title paragraph, so the weaver has one place to put the node's permalink. The label
-becomes the element's \code{id}.
+Think of every heading as a node fence whose closing delimiter is left out. A node
+fence is the long form: it makes the end explicit. So a node fence holds headings, as a
+file does, and they are real headings. A titled fence opens with a heading of its own,
+one level below the heading it sits under. The title line is the fence's \code{#}, so
+\code{##} is one level deeper, \code{###} two. Each is a table-of-contents entry and a
+node with an anchor, an id, and a page; its node ends at the next heading of the same or
+a shallower level, or at the end of the fence, whichever comes first. The renderer
+computes the depth below the enclosing heading. The weaver adds the enclosing heading's
+level, because only the weaver sees the whole document, and sets the tag. A nested fence
+continues from the heading it follows. An untitled fence has no text to show, so it takes
+no level and no table-of-contents entry; its label stays on the section. A second \code{#}
+line, or a \code{\taxon} before an inner heading, is an error: nest a fence instead. The
+fence's element is a \code{section}, so the box around a definition ends with the fence. A titled fence puts the label on its heading as the id. An untitled one keeps an empty
+title paragraph, so the weaver has one place to put the node's permalink, and puts the
+label on the section.
 <<render a node fence>>=
 /// What a node's title line carries (§10): the title text, and the optional taxon
 /// and label that were taken out of it.
@@ -931,20 +947,30 @@ fn render_node(
     body: &str,
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
+    cur: u8,
 ) -> Result<String, MarkdownError> {
     let (head, rest) = split_node_head(body)?;
-    let title_html = if head.title.is_empty() {
-        String::new()
-    } else {
-        render_inline(&head.title, math)?
-    };
-    let inner = render_ctx(rest.trim(), math, defs, false, true)?;
     let tax = match &head.taxon {
         Some(t) => format!(" data-taxon=\"{}\"", prose::escape(t)),
         None => String::new(),
     };
+    // A titled node is a heading one level below the one it sits under; an untitled
+    // node holds a place for no heading, so it takes no level of its own.
+    let titled = !head.title.is_empty();
+    let rel = if titled { cur.saturating_add(1) } else { cur };
+    let inner = render_ctx(rest.trim(), math, defs, false, Some(rel))?;
+    if !titled {
+        return Ok(format!(
+            "<section class=\"taxon-node\"{}{tax}>\n<p class=\"node-title\"{tax}></p>\n{inner}\n</section>",
+            id_attr(head.label.as_deref())
+        ));
+    }
+    let title_html = render_inline(&head.title, math)?;
+    // The tag is a placeholder: the weaver reads `data-rel`, adds the enclosing
+    // heading's level, and sets the real tag (`rewrite::apply`).
+    let tag = (rel as usize + 1).min(6);
     Ok(format!(
-        "<section class=\"taxon-node\"{}{tax}>\n<p class=\"node-title\"{tax}>{title_html}</p>\n{inner}\n</section>",
+        "<section class=\"taxon-node\"{tax}>\n<h{tag} class=\"node-head\" data-rel=\"{rel}\"{}{tax}>{title_html}</h{tag}>\n{inner}\n</section>",
         id_attr(head.label.as_deref())
     ))
 }
@@ -1783,8 +1809,8 @@ fn mismatched_label_namespace_is_e030() {
 @
 A node fence (§10) is a small document, the same as a separate file transcluded right
 here. Its first line is its title with the taxon and the label on it. The node is a
-\code{section} carrying the label as its id and the taxon, with a title paragraph that is
-not a heading. Everything in the fence is in the node, and the prose after the fence
+\code{section} that holds a real heading carrying the label as its id and the taxon (an
+untitled node keeps an empty title paragraph and the label on the section). Everything in the fence is in the node, and the prose after the fence
 is not: that is the reason the fence exists. The body is full command Markdown, so
 display math and a longer-fenced nested fence work inside it. The commands may sit in
 either order on the title line, and both are optional.
@@ -1795,8 +1821,12 @@ fn a_node_fence_is_one_typed_node() {
         "```node\n# A \\emph{thing} \\taxon{definition} \\label{def:x}\nA body $x$.\n\n\
          $$y = 1$$\n\nSecond paragraph.\n```\n\nAfter the node.",
     );
-    assert!(html.contains("<section class=\"taxon-node\" id=\"def:x\" data-taxon=\"definition\">"));
-    assert!(html.contains("<p class=\"node-title\" data-taxon=\"definition\">A <em>thing</em></p>"));
+    // A titled node opens with a real heading, one level below its context, that
+    // carries the label as its id and the taxon. The weaver sets the real tag.
+    assert!(html.contains("<section class=\"taxon-node\" data-taxon=\"definition\">"));
+    assert!(html.contains(
+        "<h2 class=\"node-head\" data-rel=\"1\" id=\"def:x\" data-taxon=\"definition\">A <em>thing</em></h2>"
+    ));
     assert_eq!(math.len(), 2, "inline and display math inside the node");
     // The node ends where the fence ends: the prose after it is outside.
     let end = html.find("</section>").expect("the node closes");
@@ -1804,7 +1834,8 @@ fn a_node_fence_is_one_typed_node() {
     assert!(html[end..].contains("<p>After the node.</p>"));
     assert!(!html[..end].contains("After the node."));
 
-    // The label may come first, and a title may be empty: `# \taxon{…}` alone.
+    // The label may come first, and a title may be empty: `# \taxon{…}` alone. An
+    // untitled node holds a place for no heading, so the label stays on the section.
     let (swapped, _) = run("```node\n# \\label{thm:t} \\taxon{theorem}\nEvery thing is a thing.\n```");
     assert!(swapped.contains("<section class=\"taxon-node\" id=\"thm:t\" data-taxon=\"theorem\">"));
     assert!(swapped.contains("<p class=\"node-title\" data-taxon=\"theorem\"></p>"));
@@ -1815,7 +1846,7 @@ fn a_node_fence_is_one_typed_node() {
     assert!(!bare.contains(" id="));
     let (untyped, _) = run("```node\n# Just a title\nBody.\n```");
     assert!(untyped.contains("<section class=\"taxon-node\">"));
-    assert!(untyped.contains("<p class=\"node-title\">Just a title</p>"));
+    assert!(untyped.contains("data-rel=\"1\">Just a title</h2>"));
 
     // A longer outer fence holds a nested fence.
     let (nested, _) = run(
@@ -1868,33 +1899,37 @@ fn a_node_fence_errors() {
     }
 }
 @
-A node holds headings. An inner heading is a sub-heading at level four or deeper, with
-the class \code{node-h}, and it keeps a \code{{#id}} as a plain anchor. Levels past six
-stop at six. A nested node fence is a sub-node with its own element.
+A node holds headings, and they are real headings. Each is one level deeper than the one
+above, counted from the heading the fence sits under. A nested titled fence sits one
+level under the heading it follows, and an untitled one takes no level.
 <<a node fence holds headings>>=
 #[test]
 fn a_node_fence_holds_headings() {
     let mut math = Vec::new();
     let html = render(
-        "```node\n# T \\taxon{theorem} \\label{thm:t}\nIntro.\n\n## Step one {#step}\n\nText.\n\n### Detail\n\nMore.\n\n##### Deep\n\nx\n```",
+        "```node\n# T \\taxon{theorem} \\label{thm:t}\nIntro.\n\n## Step one {#step}\n\nText.\n\n### Detail\n\nMore.\n```",
         &mut math,
         &mut BTreeMap::new(),
     )
     .unwrap();
-    assert!(html.contains("<h4 class=\"node-h\" id=\"step\">Step one</h4>"));
-    assert!(html.contains("<h5 class=\"node-h\">Detail</h5>"));
-    assert!(html.contains("<h6 class=\"node-h\">Deep</h6>"));
-    // No structural heading is made: the weaver tracks h1 to h3 only.
-    assert!(!html.contains("<h1") && !html.contains("<h2") && !html.contains("<h3"));
-    // A nested node fence is a sub-node.
+    // Each heading is one level deeper than the one above, counted from the
+    // enclosing heading: the title is 1, `##` is 2, `###` is 3. They are real
+    // headings, so the weaver tracks them like any other.
+    assert!(html.contains("data-rel=\"1\" id=\"thm:t\""));
+    assert!(html.contains("<h3 data-rel=\"2\" id=\"step\">Step one</h3>"));
+    assert!(html.contains("<h4 data-rel=\"3\">Detail</h4>"));
+    // A nested titled fence sits one level under the heading it follows.
     let nested = render(
-        "````node\n# Outer \\taxon{theorem} \\label{thm:o}\n## Part\n\n```node\n# \\taxon{lemma} \\label{lem:i}\nInner.\n```\n````",
+        "````node\n# Outer \\taxon{theorem} \\label{thm:o}\n## Part\n\n```node\n# Inner \\taxon{lemma} \\label{lem:i}\nBody.\n```\n````",
         &mut math,
         &mut BTreeMap::new(),
     )
     .unwrap();
     assert_eq!(nested.matches("<section class=\"taxon-node\"").count(), 2);
-    assert!(nested.contains("<h4 class=\"node-h\">Part</h4>"));
+    assert!(nested.contains("data-rel=\"3\" id=\"lem:i\""));
+    // An untitled node takes no level: its `##` is one below its context.
+    let bare = render("```node\n# \\taxon{remark}\n## Aside\n\nx\n```", &mut math, &mut BTreeMap::new()).unwrap();
+    assert!(bare.contains("<h2 data-rel=\"1\">Aside</h2>"));
 }
 @
 A verbatim fence with a \code{\lang{}} modifier keeps a language class. A bare

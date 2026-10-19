@@ -733,7 +733,7 @@ A thing is an element of $\thing$.
 
 ## Why it matters
 
-It is a sub-heading inside the node, not a node of its own.
+It is a real heading inside the node.
 
 ```node
 # \taxon{lemma} \label{lem:y}
@@ -746,27 +746,27 @@ After the definition.
 See \ref{def:x}.
 PAGE
 ( cd $nf && $cob lock n.cob >/dev/null && $cob weave --locked n.cob --out _site )
-grep -qE '<section class="taxon-node" id="def-x" data-taxon="definition" data-id="[0-9A-Za-z]{4}">' $nf/_site/index.html
-grep -qE '<p class="node-title" data-taxon="definition"><a class="sec-uid"' $nf/_site/index.html
+# A titled node fence is a heading node: a real heading one level under `## Basics`
+# (so an h3) that carries the label as its id and the taxon, with an opaque id, a
+# typed ref, and a table-of-contents entry. Its node ends at the fence.
+grep -qE '<h3 class="node-head" data-rel="1" id="def-x" data-taxon="definition">' $nf/_site/index.html
+grep -qE '<a class="sec-uid" href="#def-x" data-id="[0-9A-Za-z]{4}"></a>' $nf/_site/index.html
 grep -qE 'href="#def-x">Definition [0-9A-Za-z]{4}</a>' $nf/_site/index.html
-# The node fence's own page is named by its opaque id. (The `## Basics` heading
-# node has a page too, and it rightly holds the prose under the heading.)
-nid=$(grep -oE 'id="def-x" data-taxon="definition" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
+nid=$(grep -oE 'href="#def-x" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
 test -f $nf/_site/n/$nid.html
 grep -q 'A thing' $nf/_site/n/$nid.html
 if grep -q 'After the definition' $nf/_site/n/$nid.html; then
   echo "a node fence's page holds the prose after the fence" >&2
   exit 1
 fi
-# A node holds headings. An inner heading is an h4 sub-heading in the node (and so
-# on the node's page), not a table-of-contents entry, and a nested `node` fence is
-# a sub-node with a page of its own.
-grep -q '<h4 class="node-h">Why it matters</h4>' $nf/_site/index.html
-grep -q '<h4 class="node-h">Why it matters</h4>' $nf/_site/n/$nid.html
-if sed -n '/<nav class="toc">/,/<\/nav>/p' $nf/_site/index.html | grep -q 'Why it matters'; then
-  echo "an inner node heading is in the table of contents" >&2
-  exit 1
-fi
+# A heading inside the fence is a real heading, one level deeper, in the table of
+# contents, on the node's page, and the node's page ends at the fence.
+grep -q '<h4 data-rel="2" id="why-it-matters">Why it matters</h4>' $nf/_site/index.html
+grep -q '<h4 data-rel="2" id="why-it-matters">Why it matters</h4>' $nf/_site/n/$nid.html
+sed -n '/<nav class="toc">/,/<\/nav>/p' $nf/_site/index.html | grep -q 'A thing'
+sed -n '/<nav class="toc">/,/<\/nav>/p' $nf/_site/index.html | grep -q 'Why it matters'
+# An untitled nested fence has no heading: its label stays on the section, and it is
+# a node with a page of its own.
 grep -qE '<section class="taxon-node" id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}">' $nf/_site/index.html
 lid=$(grep -oE 'id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
 grep -q 'Inner lemma' $nf/_site/n/$lid.html

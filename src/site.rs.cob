@@ -521,6 +521,11 @@ pub fn wrap_taxa(body: &str) -> String {
     while let Some((p, level)) = next_heading(body, i) {
         let (open, open_end) = heading_open(body, p);
         match taxon_of(open) {
+            // A heading inside a `node` fence (§10) already sits in its fence's box.
+            Some(_) if open.contains(" data-rel=") => {
+                out.push_str(&body[i..open_end]);
+                i = open_end;
+            }
             // Not a taxon, or an h1 page title: copy through the opener and go on.
             None => {
                 out.push_str(&body[i..open_end]);

@@ -572,11 +572,19 @@ the \code{chunks} section already represents.
         lints,
     })
 @
-The nav builder folds the flat heading list into a tree: h1s are roots, h2s nest
-under the last h1, h3s under the last h2, with a graceful fallback when a level is
-skipped. An h1's href is the page file; a deeper heading's is a fragment within
+The nav builder folds the flat heading list into a tree: h1s are roots, and each deeper
+heading nests under the latest heading above it in level, at any depth (a `node` fence
+can reach h6), with a graceful fallback when a level is skipped. An h1's href is the page file; a deeper heading's is a fragment within
 it.
 <<build the nav tree>>=
+/// Put `node` under the latest node above it in level, at any depth, else beside it.
+fn nest(nodes: &mut Vec<NavNode>, node: NavNode) {
+    match nodes.last_mut() {
+        Some(last) if last.level < node.level => nest(&mut last.children, node),
+        _ => nodes.push(node),
+    }
+}
+
 fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<NavNode> {
     let mut roots: Vec<NavNode> = Vec::new();
     for (page, level, anchor, text) in flat {
@@ -599,25 +607,7 @@ fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<Na
             },
             children: Vec::new(),
         };
-        match level {
-            1 => roots.push(node),
-            2 => {
-                if let Some(h1) = roots.last_mut() {
-                    h1.children.push(node);
-                } else {
-                    roots.push(node);
-                }
-            }
-            _ => {
-                if let Some(h2) = roots.last_mut().and_then(|h1| h1.children.last_mut()) {
-                    h2.children.push(node);
-                } else if let Some(h1) = roots.last_mut() {
-                    h1.children.push(node);
-                } else {
-                    roots.push(node);
-                }
-            }
-        }
+        nest(&mut roots, node);
     }
     roots
 }

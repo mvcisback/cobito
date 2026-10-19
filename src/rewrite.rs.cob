@@ -291,6 +291,9 @@ pub struct Heading {
     /// The `data-taxon` the heading carries (§10), if any. It names the typed
     /// node — "definition", "theorem" — and so the word a `\ref` to it reads.
     pub taxon: Option<String>,
+    /// The heading sits inside a `node` fence (§10), so its node ends where the
+    /// fence ends, not at the next heading of the same level.
+    pub in_fence: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -321,6 +324,15 @@ pub struct Scan {
     pub first_tag: Vec<Option<String>>,
     /// Figures and tables that never got a caption (§7 requires one).
     pub uncaptioned: Vec<usize>,
+    /// The level of the latest heading outside any `node` fence: the base that a
+    /// fence's relative levels add to (§10).
+    pub base: u8,
+}
+
+/// The document level of a heading in a `node` fence: the enclosing heading's
+/// level plus the fence-relative depth, never an `h1` (a page) and never past `h6`.
+pub fn fence_level(base: u8, rel: u8) -> u8 {
+    base.saturating_add(rel).clamp(2, 6)
 }
 @
 \code{ScanState} is the per-section working state. Headings and refs accumulate
@@ -335,21 +347,24 @@ struct ScanState {
     labels: Vec<LabelDef>,
     refs: Vec<RefSite>,
     uncaptioned: usize,
-    /// Heading being accumulated: (level, given id, taxon, text so far).
-    heading: Option<(u8, Option<String>, Option<String>, String)>,
+    /// Heading being accumulated: (level, given id, taxon, text so far, in a fence).
+    heading: Option<(u8, Option<String>, Option<String>, String, bool)>,
+    /// See `Scan::base`.
+    base: u8,
     /// Ref site being accumulated: (target, saw text).
     reference: Option<(String, bool)>,
 }
 
 impl ScanState {
     fn flush_heading(&mut self, section: usize) {
-        if let Some((level, given_id, taxon, text)) = self.heading.take() {
+        if let Some((level, given_id, taxon, text, in_fence)) = self.heading.take() {
             self.headings.push(Heading {
                 section,
                 level,
                 text: text.trim().to_string(),
                 given_id,
                 taxon,
+                in_fence,
             });
         }
     }
@@ -389,7 +404,7 @@ no counter. Results append to the document-wide \code{Scan}.
 /// figure/table/equation so weave can mint/resolve its opaque id (§7.1); the id
 /// itself is assigned later, so this pass keeps no counter.
 pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteError> {
-    let st = Rc::new(RefCell::new(ScanState::default()));
+    let st = Rc::new(RefCell::new(ScanState { base: out.base, ..ScanState::default() }));
     // Headings and refs are flushed lazily — when the next one starts, or at
     // the end of the section — which keeps us off lol_html's end-tag handlers.
     {
@@ -404,22 +419,33 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         Ok(())
                     }
                 }),
-                element!("h1,h2,h3", {
+                element!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", {
                     let st = st.clone();
                     move |el| {
                         let mut st = st.borrow_mut();
                         st.flush_heading(section);
-                        let level = el.tag_name().as_bytes()[1] - b'0';
+                        let tag = el.tag_name().as_bytes()[1] - b'0';
+                        // A heading in a `node` fence carries its depth below the
+                        // enclosing heading (§10); any other heading is its tag.
+                        let rel = el.get_attribute("data-rel").and_then(|r| r.parse::<u8>().ok());
+                        let level = match rel {
+                            Some(r) => fence_level(st.base, r),
+                            None => {
+                                st.base = tag;
+                                tag
+                            }
+                        };
                         st.heading = Some((
                             level,
                             el.get_attribute("id"),
                             el.get_attribute("data-taxon"),
                             String::new(),
+                            rel.is_some(),
                         ));
                         Ok(())
                     }
                 }),
-                text!("h1,h2,h3", {
+                text!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", {
                     let st = st.clone();
                     move |t| {
                         if let Some(h) = st.borrow_mut().heading.as_mut() {
@@ -559,6 +585,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
     let mut st = st.borrow_mut();
     st.flush_heading(section);
     st.flush_ref(section);
+    out.base = st.base;
     out.first_tag.push(st.first_tag.take());
     if st.uncaptioned > 0 {
         out.uncaptioned.push(section);
@@ -595,6 +622,8 @@ pub struct Plan<'a> {
     pub label_ids: &'a BTreeMap<String, String>,
     heading: usize,
     reference: usize,
+    /// See `Scan::base`; the apply pass tracks it the same way the scan does.
+    base: u8,
 }
 
 impl<'a> Plan<'a> {
@@ -611,6 +640,7 @@ impl<'a> Plan<'a> {
             label_ids,
             heading: 0,
             reference: 0,
+            base: 0,
         }
     }
 }
@@ -625,6 +655,7 @@ section continues where this one left off.
 /// Pass 2.
 pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     let heading_idx = RefCell::new(plan.heading);
+    let base = RefCell::new(plan.base);
     let ref_idx = RefCell::new(plan.reference);
     let heading_anchors = plan.heading_anchors;
     let heading_uids = plan.heading_uids;
@@ -647,7 +678,16 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     };
 
     let handlers: Vec<Handler> = vec![
-            element!("h1,h2,h3", |el| {
+            element!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", |el| {
+                // Track the base level the same way the scan did (§10), and give a
+                // heading in a `node` fence its real tag from its depth.
+                match el.get_attribute("data-rel").and_then(|r| r.parse::<u8>().ok()) {
+                    Some(r) => {
+                        let level = fence_level(*base.borrow(), r);
+                        el.set_tag_name(&format!("h{level}")).ok();
+                    }
+                    None => *base.borrow_mut() = el.tag_name().as_bytes()[1] - b'0',
+                }
                 let mut i = heading_idx.borrow_mut();
                 if let Some(anchor) = heading_anchors.get(*i) {
                     el.set_attribute("id", anchor).ok();
@@ -785,6 +825,7 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     ];
     let out = run(html, handlers)?;
     plan.heading = heading_idx.into_inner();
+    plan.base = base.into_inner();
     plan.reference = ref_idx.into_inner();
     Ok(out)
 }
@@ -872,6 +913,24 @@ fn scan_collects_headings_with_text_and_level() {
     // Text from nested elements is part of the heading.
     assert_eq!((s.headings[1].level, s.headings[1].text.as_str()), (2, "Lexing"));
     assert_eq!(s.headings[1].given_id.as_deref(), Some("sec:lex"));
+}
+
+#[test]
+fn a_fence_heading_takes_its_level_from_the_enclosing_heading() {
+    // The levels run on from the heading the fence sits under, and the base
+    // returns to the next ordinary heading after the fence.
+    let s = scan_one(
+        "<h1>A</h1><h2>S</h2><section class=\"taxon-node\">\
+         <h3 class=\"node-head\" data-rel=\"1\" id=\"def:x\">T</h3>\
+         <h4 data-rel=\"2\">I</h4></section><h2>N</h2><h3>M</h3>",
+    );
+    let levels: Vec<u8> = s.headings.iter().map(|h| h.level).collect();
+    assert_eq!(levels, vec![1, 2, 3, 4, 2, 3]);
+    let fenced: Vec<bool> = s.headings.iter().map(|h| h.in_fence).collect();
+    assert_eq!(fenced, vec![false, false, true, true, false, false]);
+    // Depth is capped at h6 and never makes a page: no heading is an h1.
+    assert_eq!(fence_level(5, 4), 6);
+    assert_eq!(fence_level(0, 1), 2);
 }
 @
 The first tag is the opening element, so an h1 marks a page boundary but a buried

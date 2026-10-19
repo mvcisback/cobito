@@ -64,12 +64,16 @@ down to the next heading, and the boxed style draws its border around all of it.
 A \code{node} fence (§6.4) marks a node and gives it an explicit extent: the fence. Think of
 it as a separate file that is transcluded right where it is written. Its first line is the
 title that a file would open with, \code{# Title \taxon{definition} \label{def:x}}, and the lines
-under it are its content. The Markdown pass lowers it to a \code{section} that carries the
-taxon and the label, with a title paragraph first. The title is a paragraph and not a
-heading, so the node stays out of the table of contents and no heading boundary cuts it. A
-labelled node earns an opaque id and is cut the way a float is, by balancing its tag, so it
-needs no heading rule. So it gets its own page, a typed \code{\ref} whose word is the taxon,
-and transclusion, and the prose after the fence is not in any of them.
+under it are its content. Think of every heading as a fence with its closing delimiter left
+out: the fence is the long form, and it makes the end explicit. The Markdown pass lowers a
+titled fence to a \code{section} that holds a real heading, one level below the heading the
+fence sits under, with the taxon and the label on it. So the node is a heading node like
+any other: it has an anchor, a table-of-contents entry, an opaque id, its own page, a typed
+\code{\ref} whose word is the taxon, and transclusion. The one difference is its end. A heading
+node ends at the next heading of the same or a shallower level; a node in a fence also ends
+at the fence, so the prose after the fence is in none of them. A heading inside the fence is
+a real heading too, and it also ends at the fence. An untitled fence has no heading. It is
+cut the way a float is, by balancing its tag.
 
 The node differs from a real separate file in one way: it inherits the macros in scope.
 A file must import the macros it uses. A node is part of the document that holds it, so
@@ -336,6 +340,18 @@ impl Context {
             // A `macros` island is a homeless node (§10): it shows only on its own
             // page and where it is transcluded, so strip it from a heading node's
             // body too — not just the reading flow.
+            // A heading in a `node` fence (§10) ends no later than the fence does.
+            let end = if h.in_fence {
+                match fence_close(&bodies[pos[i].0], pos[i].1) {
+                    Some(close) => {
+                        let cap = (pos[i].0, close);
+                        Some(end.map_or(cap, |e| e.min(cap)))
+                    }
+                    None => end,
+                }
+            } else {
+                end
+            };
             let raw = slice_body(bodies, pos[i], end);
             nodes.insert(
                 res.heading_anchors[i].clone(),
@@ -645,6 +661,23 @@ fn element_start(body: &str, anchor: &str) -> Option<usize> {
     let needle = format!("id=\"{anchor}\"");
     let p = body.find(&needle)?;
     body[..p].rfind('<')
+}
+
+/// The offset of the closing `</section>` of the innermost `node` fence that holds
+/// the byte at `at` (§10), or `None`. It walks back over the fence openers before
+/// `at` and balances each, so a nested fence is found before the one around it.
+fn fence_close(body: &str, at: usize) -> Option<usize> {
+    const OPEN: &str = "<section class=\"taxon-node\"";
+    let mut from = at;
+    while let Some(start) = body[..from].rfind(OPEN) {
+        if let Some(end) = balance(body, start, "section") {
+            if end > at {
+                return Some(end - "</section>".len());
+            }
+        }
+        from = start;
+    }
+    None
 }
 
 /// Like `element_start`, but `0` when the id is absent — for a heading, which is
@@ -1300,6 +1333,19 @@ fn a_float_element_is_cut_by_balancing_its_tag() {
     );
     // An anchor that is not in the body yields nothing.
     assert!(cut_element(body, "fig-none").is_none());
+}
+
+#[test]
+fn a_fence_heading_ends_at_the_innermost_fence() {
+    let body = "<section class=\"taxon-node\"><h3 id=\"a\">A</h3>x\
+                <section class=\"taxon-node\"><h4 id=\"b\">B</h4>y</section>z</section>after";
+    let a = body.find("<h3").unwrap();
+    let b = body.find("<h4").unwrap();
+    // The inner heading ends at the inner fence, the outer at the outer.
+    assert_eq!(&body[b..fence_close(body, b).unwrap()], "<h4 id=\"b\">B</h4>y");
+    assert!(body[a..fence_close(body, a).unwrap()].ends_with("y</section>z"));
+    // Outside every fence there is nothing to cap the heading.
+    assert!(fence_close(body, body.len() - 1).is_none());
 }
 @
 A float title reads the caption text, tags stripped, or falls back to the kind

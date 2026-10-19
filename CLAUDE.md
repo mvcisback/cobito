@@ -99,14 +99,18 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `` # Title \taxon{definition} \label{def:x} `` (both commands optional, any order),
   and the lines under it are its content. It differs from a real file in one way: it
   inherits the macros in scope. It lowers to
-  `<section class="taxon-node" id data-taxon>` with a title `<p class="node-title">`
-  (never a heading), is cut by balancing its tag like a float, and earns an opaque id,
-  a node page, a typed `\ref` ("Definition k3f9"), and transclusion. The label is any
+  `<section class="taxon-node" data-taxon>` holding a real heading (the title, one
+  level below the heading the fence sits under, carrying the label and taxon), so it is a
+  heading node with a table-of-contents entry, an opaque id, a node page, a typed `\ref`
+  ("Definition k3f9"), and transclusion. Think of every heading as a fence whose closing
+  delimiter is left out; the fence only makes the end explicit, so its node ends at the
+  fence. An untitled fence has no heading: it keeps an empty `<p class="node-title">`, the
+  label on the section, and is cut by balancing its tag like a float. The label is any
   node namespace; a float namespace is E030, a second `#` line is E030, a taxon on an inner
   heading is E030, text on the info line is E030, a missing title line is E030. A
-  node holds headings: `##` and deeper lower to `<h4>`–`<h6 class="node-h">`, which
-  are not in the table of contents and do not cut nodes; nest a `node` fence for a
-  sub-node.
+  node holds headings: `##` and deeper are real headings, one level deeper each (counted
+  from the enclosing heading, up to `h6`), with their own table-of-contents entries and
+  nodes that end at the fence; a nested titled fence continues from the heading it follows.
 - `flake.nix` is **generated** from `flake.nix.cob` — cob's own build file told as a
   literate program (the first self-host dogfood, `cobito.cob` §13). Edit the `.cob` and
   re-tangle (`cob tangle flake.nix.cob --out .`), never hand-edit `flake.nix`. The
