@@ -629,6 +629,17 @@ fn collect_cite_keys(frags: &[Frag]) -> Vec<String> {
 /// so no citation text enters a text node. A key with no id (never minted) is left
 /// as written — the collect/mint pass already errored on an unknown key.
 fn rewrite_cites(html: &str, ids: &BTreeMap<String, String>) -> String {
+    rewrite_cites_with(html, ids, |id| format!("#cite-{id}"))
+}
+
+/// `rewrite_cites` with the link target chosen by the caller. A page links into its
+/// own References list (`#cite-<id>`). A node page has no such list, so it links each
+/// cite to the cited work's own node page instead.
+fn rewrite_cites_with(
+    html: &str,
+    ids: &BTreeMap<String, String>,
+    href: impl Fn(&str) -> String,
+) -> String {
     let pat = "<a data-cite=\"";
     if !html.contains(pat) {
         return html.to_string();
@@ -647,7 +658,8 @@ fn rewrite_cites(html: &str, ids: &BTreeMap<String, String>) -> String {
         let key = &html[s..s + q];
         match ids.get(key) {
             Some(id) => out.push_str(&format!(
-                "<a class=\"cite\" data-id=\"{id}\" href=\"#cite-{id}\"></a>"
+                "<a class=\"cite\" data-id=\"{id}\" href=\"{}\"></a>",
+                href(id)
             )),
             None => out.push_str(&html[p..s + q + tail.len()]),
         }
@@ -1144,8 +1156,22 @@ pub fn render(
     for np in tx.node_pages() {
         // The node page lists only the notes its own body marks (§10).
         let footnotes = footnote_ctx(&np.body);
+        // A node body is cut before the §14 cite pass, so its cites are still inert
+        // markers. A node page has no References list to land in, so each cite links
+        // to the cited work's own page: a sibling in `n/`, or the imported forest's.
+        let lowered = if cite_ids.is_empty() {
+            np.body.clone()
+        } else {
+            rewrite_cites_with(&np.body, &cite_ids, |id| {
+                references
+                    .iter()
+                    .find(|(rid, _, _)| rid == id)
+                    .map(|(_, _, href)| href.strip_prefix("n/").unwrap_or(href).to_string())
+                    .unwrap_or_else(|| format!("{id}.html"))
+            })
+        };
         // Box the node's own taxon too, so an `n/` page frames it like the page.
-        let node_body = site::wrap_taxa(&np.body);
+        let node_body = site::wrap_taxa(&lowered);
         let html = node_tmpl
             .render(minijinja::context! {
                 id => np.id,
@@ -1602,6 +1628,8 @@ mod tests {
     <<the sitemap lists every page>>
 
     <<site json is current schema and hoists sidenotes>>
+
+    <<a cite lowers to the href its page wants>>
 
     <<footer pagination links neighbours>>
 
@@ -2105,6 +2133,26 @@ fn sitemap_lists_every_page() {
     assert!(site.sitemap.contains("href=\"parsing.html#sec-lexing\">Lexing</a>"));
     // The footer of an ordinary page points at the sitemap.
     assert!(site.pages[0].html.contains("href=\"sitemap.html\""));
+}
+@
+A citation marker lowers to the same link element everywhere, but its target depends
+on the page. A document page links into its own References list. A node page has no
+such list — its body is cut before the citation pass — so it links to the cited work's
+own page. Without this a citation inside any node was a dead, empty anchor.
+<<a cite lowers to the href its page wants>>=
+#[test]
+fn a_cite_lowers_to_the_href_its_page_wants() {
+    let mut ids = BTreeMap::new();
+    ids.insert("key".to_string(), "ab12".to_string());
+    let html = "<p>x <a data-cite=\"key\"></a> y <a data-cite=\"nokey\"></a></p>";
+    assert_eq!(
+        rewrite_cites(html, &ids),
+        "<p>x <a class=\"cite\" data-id=\"ab12\" href=\"#cite-ab12\"></a> y <a data-cite=\"nokey\"></a></p>"
+    );
+    assert_eq!(
+        rewrite_cites_with(html, &ids, |id| format!("{id}.html")),
+        "<p>x <a class=\"cite\" data-id=\"ab12\" href=\"ab12.html\"></a> y <a data-cite=\"nokey\"></a></p>"
+    );
 }
 @
 The archival JSON is the current schema, round-trips through the per-page narrowing,
