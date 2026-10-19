@@ -369,6 +369,13 @@ id sits in the right margin of its centred block.
     color: var(--ref);
   }
 
+  /* A heading inside a `node` fence is an inner sub-heading (h4 to h6), not a node
+     of its own. It reads as a run-in label, smaller than a section heading. */
+  .node-h {
+    font-size: 1em;
+    margin: 1rem 0 0.3rem;
+  }
+
   /* The weaver wraps a taxon node in <section class="taxon-node"> so a box can
      enclose the whole node, not only its heading. Only the "claim" taxa are
      boxed; an example or a remark keeps the label alone. The set is open — a

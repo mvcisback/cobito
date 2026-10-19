@@ -727,10 +727,19 @@ We write $\thing$ for a thing.
 
 ## Basics
 
-```node
+````node
 # A thing \taxon{definition} \label{def:x}
 A thing is an element of $\thing$.
+
+## Why it matters
+
+It is a sub-heading inside the node, not a node of its own.
+
+```node
+# \taxon{lemma} \label{lem:y}
+Inner lemma about $\thing$.
 ```
+````
 
 After the definition.
 
@@ -749,6 +758,18 @@ if grep -q 'After the definition' $nf/_site/n/$nid.html; then
   echo "a node fence's page holds the prose after the fence" >&2
   exit 1
 fi
+# A node holds headings. An inner heading is an h4 sub-heading in the node (and so
+# on the node's page), not a table-of-contents entry, and a nested `node` fence is
+# a sub-node with a page of its own.
+grep -q '<h4 class="node-h">Why it matters</h4>' $nf/_site/index.html
+grep -q '<h4 class="node-h">Why it matters</h4>' $nf/_site/n/$nid.html
+if sed -n '/<nav class="toc">/,/<\/nav>/p' $nf/_site/index.html | grep -q 'Why it matters'; then
+  echo "an inner node heading is in the table of contents" >&2
+  exit 1
+fi
+grep -qE '<section class="taxon-node" id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}">' $nf/_site/index.html
+lid=$(grep -oE 'id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
+grep -q 'Inner lemma' $nf/_site/n/$lid.html
 @
 This group checks syntax highlighting (§5.5). The \code{hl.cob} fixture has a Rust root
 and a Nix root. Each root pulls an abstract chunk in through a hole. The group

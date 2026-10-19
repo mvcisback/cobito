@@ -64,7 +64,8 @@ The kind word picks the block. The set is closed:
   here (§10): a definition, a theorem, an example. Its first line is its title,
   \code{# Title \taxon{definition} \label{def:x}}; both commands are optional, and the
   label takes a node namespace (\code{def:}, \code{thm:}, \code{ex:}, …). The lines under it are the
-  content, in full command Markdown, and a heading below the title is an error. The node's
+  content, in full command Markdown; a heading in it (\code{##} and deeper) is an inner
+  sub-heading, and a nested \code{node} fence is a sub-node. The node's
   extent is the fence, so unlike a \code{\taxon} heading it does not swallow the prose after
   it. A label makes it referenceable: it earns an opaque id, a node page, a typed
   \code{\ref} ("Definition k3f9"), and transclusion. Macros in scope are inherited inside.
@@ -260,18 +261,20 @@ pub fn render(
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
-    render_ctx(input, math, defs, false)
+    render_ctx(input, math, defs, false, false)
 }
 
 /// The block loop. `macros` is true only while rendering a `macros` fence body,
 /// where a `\def`/`\let` line is a macro definition (§6.4), not prose. A `macros`
 /// body records its definitions in `defs` (name → expansion); every other block
-/// ignores it.
+/// ignores it. `node` is true inside a `node` fence, where a heading is an inner
+/// sub-heading, not a document heading (§10).
 fn render_ctx(
     input: &str,
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
     macros: bool,
+    node: bool,
 ) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
     // A `\taxon{name}` directive applies to the heading that immediately follows it.
@@ -282,6 +285,9 @@ fn render_ctx(
             RawBlock::Taxon(name) => {
                 pending_taxon = Some(name);
                 continue;
+            }
+            RawBlock::Heading { level, text } if node => {
+                render_node_heading(level, &text, math, pending_taxon.take().as_deref())?
             }
             RawBlock::Heading { level, text } => {
                 render_heading(level, &text, math, pending_taxon.take().as_deref())?
@@ -304,7 +310,7 @@ fn render_ctx(
             }
             RawBlock::Quote(raw) => {
                 pending_taxon = None;
-                render_quote(&raw, math, defs, macros)?
+                render_quote(&raw, math, defs, macros, node)?
             }
         };
         if !html.is_empty() {
@@ -332,7 +338,8 @@ enum RawBlock {
 }
 @
 The line loop. A blank line is a separator. A fence runs to its closing fence,
-blank lines included. A heading is one line. A list is a run of item lines. Every
+blank lines included. A heading is one line. A list is a run of item lines; an indented
+line under an item continues it, so inline math can wrap. Every
 other run of non-blank lines is a paragraph, cut at the next fence, heading, or
 list.
 <<split into blocks>>=
@@ -406,6 +413,15 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
                     Some(content) => {
                         items.push(content);
                         i += 1;
+                        // An indented line under an item continues that item, so
+                        // inline math or a long sentence can wrap across lines.
+                        while i < lines.len() && is_item_continuation(lines[i]) {
+                            if let Some(last) = items.last_mut() {
+                                last.push('\n');
+                                last.push_str(lines[i].trim());
+                            }
+                            i += 1;
+                        }
                     }
                     None => break,
                 }
@@ -435,6 +451,16 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
         blocks.push(RawBlock::Paragraph(para));
     }
     blocks
+}
+
+/// A line that continues the list item above it: indented, not blank, and not
+/// itself a list item, fence, or taxon line.
+fn is_item_continuation(line: &str) -> bool {
+    line.starts_with([' ', '\t'])
+        && !line.trim().is_empty()
+        && list_item(line.trim_start()).is_none()
+        && fence_open(line).is_none()
+        && taxon_line(line).is_none()
 }
 
 /// A `macros` body line that begins a `\def` or `\let` definition. The keyword
@@ -523,6 +549,7 @@ fn render_quote(
     math: &mut Vec<Math>,
     defs: &mut BTreeMap<String, String>,
     macros: bool,
+    node: bool,
 ) -> Result<String, MarkdownError> {
     let inner: Vec<String> = raw
         .lines()
@@ -531,7 +558,7 @@ fn render_quote(
             l.strip_prefix(' ').unwrap_or(l).to_string()
         })
         .collect();
-    let body = render_ctx(&inner.join("\n"), math, defs, macros)?;
+    let body = render_ctx(&inner.join("\n"), math, defs, macros, node)?;
     Ok(format!("<blockquote>{body}</blockquote>"))
 }
 
@@ -553,6 +580,37 @@ fn render_heading(
         attr.push_str(&format!(" data-taxon=\"{}\"", prose::escape(name)));
     }
     Ok(format!("<h{level}{attr}>{inner}</h{level}>"))
+}
+
+/// A heading inside a `node` fence (§10). The fence's title line is the document's
+/// `#`, so `##` is the first inner level. It lowers to `<h4>`…`<h6>` with class
+/// `node-h`: below the three structural levels the weaver tracks, so it never joins
+/// the table of contents and never cuts a node. A `{#id}` stays as a plain anchor.
+fn render_node_heading(
+    level: usize,
+    text: &str,
+    math: &mut Vec<Math>,
+    taxon: Option<&str>,
+) -> Result<String, MarkdownError> {
+    if level == 1 {
+        return Err(fence_err(
+            "a `node` fence has one title line, its first; a heading inside it starts at `##`",
+        ));
+    }
+    if taxon.is_some() {
+        return Err(fence_err(
+            "a heading inside a `node` fence cannot be a taxon node; \
+             nest a `node` fence for a node of its own",
+        ));
+    }
+    let (inline_src, id) = split_heading_attr(text.trim());
+    let inner = render_inline(inline_src.trim(), math)?;
+    let id = match id {
+        Some(id) => format!(" id=\"{}\"", prose::escape(id)),
+        None => String::new(),
+    };
+    let tag = (level + 2).min(6);
+    Ok(format!("<h{tag} class=\"node-h\"{id}>{inner}</h{tag}>"))
 }
 
 fn split_heading_attr(text: &str) -> (&str, Option<&str>) {
@@ -650,7 +708,7 @@ fn render_fence(
             // aware. Each definition is recorded in `defs` (name → expansion) and
             // passed to KaTeX's `macros` option, so it expands everywhere without
             // leaking into any formula's source (§6.4).
-            let inner = render_ctx(body, math, defs, true)?;
+            let inner = render_ctx(body, math, defs, true, false)?;
             Ok(format!(
                 "<div class=\"macros\" id=\"{}\">{inner}</div>",
                 prose::escape(&label)
@@ -850,9 +908,14 @@ is part of the document that holds it. (A \code{macros} fence inside a node defi
 macros for the whole book, as one in any file of a book does, because math renders
 against one table.)
 
-A heading below the title line is an error. A heading starts a node of its own, and it
-cannot nest inside the fence's element. The title is a paragraph, not a heading, so it
-never enters the table of contents. The element is a \code{section}. It always carries a
+A node can hold headings, as a file can. The title line is the fence's \code{#}, so
+\code{##} is its first inner level, \code{###} the next, and so on. An inner heading
+lowers to \code{<h4>} to \code{<h6>} with the class \code{node-h}. Those levels are below the three that
+the weaver tracks, so an inner heading never joins the table of contents and never
+cuts a node. It is a sub-heading inside one node, not a node of its own. A node that
+needs sub-nodes nests a \code{node} fence, which has its own title, label, and page. A
+second \code{#} line, or a \code{\taxon} before an inner heading, is an error. The title is a paragraph, not a
+heading, so it never enters the table of contents. The element is a \code{section}. It always carries a
 title paragraph, so the weaver has one place to put the node's permalink. The label
 becomes the element's \code{id}.
 <<render a node fence>>=
@@ -870,21 +933,12 @@ fn render_node(
     defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
     let (head, rest) = split_node_head(body)?;
-    if split_blocks(rest, false)
-        .iter()
-        .any(|b| matches!(b, RawBlock::Heading { .. }))
-    {
-        return Err(fence_err(
-            "a `node` fence cannot hold a heading below its title line; \
-             a heading starts a node of its own",
-        ));
-    }
     let title_html = if head.title.is_empty() {
         String::new()
     } else {
         render_inline(&head.title, math)?
     };
-    let inner = render_ctx(rest.trim(), math, defs, false)?;
+    let inner = render_ctx(rest.trim(), math, defs, false, true)?;
     let tax = match &head.taxon {
         Some(t) => format!(" data-taxon=\"{}\"", prose::escape(t)),
         None => String::new(),
@@ -1411,6 +1465,7 @@ mod tests {
     <<a node fence is one typed node>>
 
     <<a node fence errors>>
+    <<a node fence holds headings>>
 
     <<a code fence with a language>>
 
@@ -1521,6 +1576,15 @@ fn heading_and_list() {
     let (html, _) = run("# Title {#sec:top}\n\n- one\n- two\n");
     assert!(html.contains("<h1 id=\"sec:top\">Title</h1>"));
     assert!(html.contains("<ul><li>one</li><li>two</li></ul>"));
+}
+
+#[test]
+fn an_indented_line_continues_a_list_item() {
+    let (html, _) = run("1. first $a,\n   b$ done\n2. second\n   goes on\n3. third\n");
+    // One list of three items, not three lists with paragraphs between.
+    assert_eq!(html.matches("<ol>").count(), 1, "{html}");
+    assert_eq!(html.matches("<li>").count(), 3, "{html}");
+    assert!(html.contains("second goes on") || html.contains("second\ngoes on"), "{html}");
 }
 @
 An \code{html-escape} fence passes its body through verbatim — the one raw-HTML door.
@@ -1763,9 +1827,9 @@ fn a_node_fence_is_one_typed_node() {
 @
 A node fence must open with a single-hash title line. Its label is in a node namespace;
 a float namespace is E030, because a float label would collide with the float it names.
-A heading below the title line is an error too: a heading starts a node of its own, and
-it cannot nest inside a fence's element. The info line is the bare word, so text there,
-or the old bracket form, is E030 with a message that says where the taxon goes.
+A second single-hash line, or a \code{\taxon} before an inner heading, is an error too.
+The info line is the bare word, so text there, or the old bracket form, is E030 with a
+message that says where the taxon goes.
 <<a node fence errors>>=
 #[test]
 fn a_node_fence_errors() {
@@ -1774,10 +1838,13 @@ fn a_node_fence_errors() {
     let is_e030 = |e: &MarkdownError| matches!(e, MarkdownError::Fence { code: "E030", .. });
     // A float namespace on a node.
     assert!(is_e030(&err("```node\n# \\taxon{definition} \\label{fig:x}\nbody\n```")));
-    // A heading below the title line.
-    let e = err("```node\n# \\taxon{theorem}\n## Inner\nbody\n```");
+    // A second title line, and a taxon on an inner heading.
+    let e = err("```node\n# \\taxon{theorem}\n# Again\nbody\n```");
     assert!(is_e030(&e));
-    assert!(e.to_string().contains("heading"));
+    assert!(e.to_string().contains("one title line"));
+    let e = err("```node\n# T\n\\taxon{lemma}\n## Inner\nbody\n```");
+    assert!(is_e030(&e));
+    assert!(e.to_string().contains("cannot be a taxon node"));
     // No title line, a `##` title line, or a body that starts with prose.
     for bad in ["```node\nbody only\n```", "```node\n## Two hashes \\taxon{x}\nbody\n```"] {
         let e = err(bad);
@@ -1799,6 +1866,35 @@ fn a_node_fence_errors() {
     ] {
         assert!(is_e030(&err(bad)), "{bad}");
     }
+}
+@
+A node holds headings. An inner heading is a sub-heading at level four or deeper, with
+the class \code{node-h}, and it keeps a \code{{#id}} as a plain anchor. Levels past six
+stop at six. A nested node fence is a sub-node with its own element.
+<<a node fence holds headings>>=
+#[test]
+fn a_node_fence_holds_headings() {
+    let mut math = Vec::new();
+    let html = render(
+        "```node\n# T \\taxon{theorem} \\label{thm:t}\nIntro.\n\n## Step one {#step}\n\nText.\n\n### Detail\n\nMore.\n\n##### Deep\n\nx\n```",
+        &mut math,
+        &mut BTreeMap::new(),
+    )
+    .unwrap();
+    assert!(html.contains("<h4 class=\"node-h\" id=\"step\">Step one</h4>"));
+    assert!(html.contains("<h5 class=\"node-h\">Detail</h5>"));
+    assert!(html.contains("<h6 class=\"node-h\">Deep</h6>"));
+    // No structural heading is made: the weaver tracks h1 to h3 only.
+    assert!(!html.contains("<h1") && !html.contains("<h2") && !html.contains("<h3"));
+    // A nested node fence is a sub-node.
+    let nested = render(
+        "````node\n# Outer \\taxon{theorem} \\label{thm:o}\n## Part\n\n```node\n# \\taxon{lemma} \\label{lem:i}\nInner.\n```\n````",
+        &mut math,
+        &mut BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(nested.matches("<section class=\"taxon-node\"").count(), 2);
+    assert!(nested.contains("<h4 class=\"node-h\">Part</h4>"));
 }
 @
 A verbatim fence with a \code{\lang{}} modifier keeps a language class. A bare

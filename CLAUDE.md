@@ -102,8 +102,11 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `<section class="taxon-node" id data-taxon>` with a title `<p class="node-title">`
   (never a heading), is cut by balancing its tag like a float, and earns an opaque id,
   a node page, a typed `\ref` ("Definition k3f9"), and transclusion. The label is any
-  node namespace; a float namespace is E030, a heading below the title line is E030,
-  text on the info line is E030, a missing title line is E030.
+  node namespace; a float namespace is E030, a second `#` line is E030, a taxon on an inner
+  heading is E030, text on the info line is E030, a missing title line is E030. A
+  node holds headings: `##` and deeper lower to `<h4>`–`<h6 class="node-h">`, which
+  are not in the table of contents and do not cut nodes; nest a `node` fence for a
+  sub-node.
 - `flake.nix` is **generated** from `flake.nix.cob` — cob's own build file told as a
   literate program (the first self-host dogfood, `cobito.cob` §13). Edit the `.cob` and
   re-tangle (`cob tangle flake.nix.cob --out .`), never hand-edit `flake.nix`. The
