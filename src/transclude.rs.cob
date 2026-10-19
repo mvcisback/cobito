@@ -61,13 +61,19 @@ level. That is the right extent for a section. It is the wrong extent for a defi
 or a theorem. A \code{\taxon{definition}} heading takes in all the prose that follows it,
 down to the next heading, and the boxed style draws its border around all of it.
 
-A \code{node[taxon]} fence (§6.4) marks a node and gives it an explicit extent: the fence.
-The Markdown pass lowers it to a \code{section} that carries the taxon and the label, with
-a title paragraph first. The title is a paragraph and not a heading, so the node stays out
-of the table of contents and no heading boundary cuts it. A labelled node earns an opaque
-id and is cut the way a float is, by balancing its tag, so it needs no heading rule. So it
-gets its own page, a typed \code{\ref} whose word is the taxon, and transclusion, and the
-prose after the fence is not in any of them.
+A \code{node} fence (§6.4) marks a node and gives it an explicit extent: the fence. Think of
+it as a separate file that is transcluded right where it is written. Its first line is the
+title that a file would open with, \code{# Title \taxon{definition} \label{def:x}}, and the lines
+under it are its content. The Markdown pass lowers it to a \code{section} that carries the
+taxon and the label, with a title paragraph first. The title is a paragraph and not a
+heading, so the node stays out of the table of contents and no heading boundary cuts it. A
+labelled node earns an opaque id and is cut the way a float is, by balancing its tag, so it
+needs no heading rule. So it gets its own page, a typed \code{\ref} whose word is the taxon,
+and transclusion, and the prose after the fence is not in any of them.
+
+The node differs from a real separate file in one way: it inherits the macros in scope.
+A file must import the macros it uses. A node is part of the document that holds it, so
+the definitions outside it are in force inside it.
 
 ## Floats are nodes too {#sec:Fx3r}
 

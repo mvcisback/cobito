@@ -365,20 +365,29 @@
           grep -qE 'href="index.html#index">Part [0-9A-Za-z]{4}</a>' $bk/_site/beta.html
           grep -q '<h1 id="beta">Beta' $bk/_site/beta.html
           test ! -e $bk/_site/n
-          # §10 a `node[taxon]` fence is a node with an explicit extent: exactly the fence.
-          # It is a labelled section with a title paragraph (never a heading), it earns an
-          # opaque id, a typed ref ("Definition <id>"), and a node page, and the prose after
-          # the fence is in none of them.
+          # §10 a `node` fence is a small document, a separate file transcluded in place,
+          # with an explicit extent: exactly the fence. Its first line is its title with the
+          # taxon and label on it. It is a labelled section with a title paragraph (never a
+          # heading), it earns an opaque id, a typed ref ("Definition <id>"), and a node
+          # page, and the prose after the fence is in none of them. It inherits the macros
+          # in scope: the one used inside it is defined outside it, and the weave fails
+          # on an unknown macro if the node did not see it.
           nf=$TMPDIR/nodefence
           mkdir -p $nf
           cat > $nf/n.cob <<'PAGE'
           # N
 
+          ```macros \label{def:n-notation}
+          We write $\thing$ for a thing.
+
+          \def\thing{\mathcal{T}}
+          ```
+
           ## Basics
 
-          ```node[definition] \label{def:x}
-          \title{A thing}
-          A thing is an $x$.
+          ```node
+          # A thing \taxon{definition} \label{def:x}
+          A thing is an element of $\thing$.
           ```
 
           After the definition.
