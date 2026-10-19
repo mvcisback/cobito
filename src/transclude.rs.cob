@@ -54,6 +54,21 @@ section with no directive is byte-identical to today, and the archival \code{sit
 still records the canonical nodes once (§8). The client does the inlining at view
 time, so the woven bytes stay deterministic and small.
 
+## A node fence is a node with an explicit extent {#sec:NdFx}
+
+A heading node runs from its heading to the next heading at the same or a shallower
+level. That is the right extent for a section. It is the wrong extent for a definition
+or a theorem. A \code{\taxon{definition}} heading takes in all the prose that follows it,
+down to the next heading, and the boxed style draws its border around all of it.
+
+A \code{node[taxon]} fence (§6.4) marks a node and gives it an explicit extent: the fence.
+The Markdown pass lowers it to a \code{section} that carries the taxon and the label, with
+a title paragraph first. The title is a paragraph and not a heading, so the node stays out
+of the table of contents and no heading boundary cuts it. A labelled node earns an opaque
+id and is cut the way a float is, by balancing its tag, so it needs no heading rule. So it
+gets its own page, a typed \code{\ref} whose word is the taxon, and transclusion, and the
+prose after the fence is not in any of them.
+
 ## Floats are nodes too {#sec:Fx3r}
 
 A figure, a table, and an equation are nodes too. Each one already earns an
@@ -722,6 +737,11 @@ fn balance(body: &str, start: usize, name: &str) -> Option<usize> {
 /// is no caption. A figure reads its `figcaption`, a table its `caption`, an
 /// equation has none.
 fn float_title(html: &str, kind: &str) -> String {
+    // A `node` fence (§10) is a `section.taxon-node`: it reads its title paragraph,
+    // or its taxon word when it has no title.
+    if html.starts_with("<section class=\"taxon-node\"") {
+        return node_fence_title(html);
+    }
     let cap = match kind {
         "figure" => inner_text(html, "figcaption"),
         "table" => inner_text(html, "caption"),
@@ -737,6 +757,35 @@ fn float_title(html: &str, kind: &str) -> String {
             _ => "Float",
         }
         .to_string(),
+    }
+}
+
+/// The title of a `node` fence element (§10): the text of its
+/// `<p class="node-title" …>` paragraph, else its taxon word capitalized
+/// ("definition" reads "Definition"). Rendering stamps the permalink and node link
+/// into that paragraph as empty anchors, so the text is only the author's title.
+fn node_fence_title(html: &str) -> String {
+    if let Some(at) = html.find("<p class=\"node-title\"") {
+        if let Some(open_end) = html[at..].find('>').map(|x| at + x + 1) {
+            if let Some(e) = html[open_end..].find("</p>").map(|x| open_end + x) {
+                let t = strip_tags(&html[open_end..e]);
+                if !t.trim().is_empty() {
+                    return t.trim().to_string();
+                }
+            }
+        }
+    }
+    let taxon = html
+        .find("data-taxon=\"")
+        .and_then(|s| {
+            let s = s + "data-taxon=\"".len();
+            html[s..].find('"').map(|e| &html[s..s + e])
+        })
+        .unwrap_or("node");
+    let mut c = taxon.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => "Node".to_string(),
     }
 }
 
@@ -1260,5 +1309,14 @@ fn a_float_title_reads_its_caption_or_its_kind() {
     // An equation has no caption, so the kind word is the title.
     let eq = "<div class=\"equation\" id=\"eq-x\">y</div>";
     assert_eq!(float_title(eq, "equation"), "Equation");
+    // A `node` fence (§10) reads its title paragraph, ignoring the empty permalink
+    // anchors the weaver stamps into it; with no title it reads its taxon word.
+    let titled = "<section class=\"taxon-node\" id=\"def-x\" data-taxon=\"definition\" data-id=\"ab\">\n\
+                  <p class=\"node-title\" data-taxon=\"definition\"><a class=\"sec-uid\" href=\"#def-x\" \
+                  data-id=\"ab\"></a><a class=\"node-link\"></a>A <em>thing</em></p>\n<p>Body.</p></section>";
+    assert_eq!(float_title(titled, "section"), "A thing");
+    let untitled = "<section class=\"taxon-node\" id=\"thm-t\" data-taxon=\"theorem\">\n\
+                    <p class=\"node-title\" data-taxon=\"theorem\"></p>\n<p>Body.</p></section>";
+    assert_eq!(float_title(untitled, "section"), "Theorem");
 }
 @

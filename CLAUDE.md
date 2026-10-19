@@ -92,6 +92,14 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   W105, an unknown target W106 — both inert markers, never an error. The node body
   is cut from the final section bodies by the `id` `apply` stamps on every heading;
   deferred slices (floats as nodes, per-node pages, cross-document) are in §10.
+  A heading node swallows the prose after it up to the next heading, which is wrong
+  for a definition or theorem. A **`node[taxon]` fence** (`` ```node[definition]
+  \label{def:x} ``, optional leading `\title{…}`) is a node with an *explicit extent*:
+  exactly the fence. It lowers to `<section class="taxon-node" id data-taxon>` with a
+  title `<p class="node-title">` (never a heading), is cut by balancing its tag like a
+  float, and earns an opaque id, a node page, a typed `\ref` ("Definition k3f9"), and
+  transclusion. Its label is any node namespace; a float namespace is E030, a heading
+  inside is E030, a missing/bad taxon is E034.
 - `flake.nix` is **generated** from `flake.nix.cob` — cob's own build file told as a
   literate program (the first self-host dogfood, `cobito.cob` §13). Edit the `.cob` and
   re-tangle (`cob tangle flake.nix.cob --out .`), never hand-edit `flake.nix`. The
@@ -148,6 +156,7 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   fenced-float directives. There is no `dialect` key; the old raw-HTML dialect is
   retired, and the one raw-HTML door is the `html-escape` fence. A fence's info
   line is grammar-owned: a **kind** from a closed set (`math`, `figure`, `table`,
+  `algorithm`, `node[taxon]`, `custom[handler]`, `macros`, `imports`,
   `html-escape`, `verbatim`) then optional modifiers the peg grammar parses. A
   bare fence (no kind) or an unknown kind is **E034** — a typo is an error, not a
   wrong render.

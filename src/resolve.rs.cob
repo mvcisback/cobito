@@ -397,9 +397,15 @@ code. A repeat id is E014.
         // minted before planning, so a labelled float always has one; a missing
         // entry degrades to the bare kind word rather than panicking.
         let opaque = label_ids.get(&l.id);
-        let text = match opaque {
-            Some(id) => format!("{} {id}", l.kind.word()),
+        // A `node` fence carries a taxon (§10), which names the word: "Definition".
+        // A float takes the word of its kind.
+        let word = match &l.taxon {
+            Some(_) => heading_ref_word(l.taxon.as_deref(), &l.id, 2),
             None => l.kind.word().to_string(),
+        };
+        let text = match opaque {
+            Some(id) => format!("{word} {id}"),
+            None => word,
         };
         insert(
             l.id.clone(),
@@ -643,6 +649,8 @@ mod tests {
 
     <<a labelled page heading is a ref target but not a node>>
 
+    <<a node fence is a labelled typed node>>
+
     <<a cross-document ref targets the imported forest>>
 
     <<chunk refs target the defining section>>
@@ -806,6 +814,26 @@ fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
     assert_eq!(r.refs[0].text.as_deref(), Some("Definition defd"));
     assert_eq!(r.refs[1].href, "#sec-s");
     assert_eq!(r.refs[1].text.as_deref(), Some("Section secs"));
+}
+@
+A node fence (§10) is a labelled typed node that is not a heading. Its label is any
+node namespace, and its taxon names the word a \code{\ref} to it reads. It is an element, so
+it earns an opaque id like a float but adds no heading uid, and its anchor is the
+colon-free label.
+<<a node fence is a labelled typed node>>=
+#[test]
+fn a_node_fence_is_a_labelled_typed_node() {
+    let (_, r) = resolve(&[(
+        "<h1>T</h1><section class=\"taxon-node\" id=\"thm:t\" data-taxon=\"theorem\">\
+         <p class=\"node-title\" data-taxon=\"theorem\"></p></section>\
+         <a data-ref=\"thm:t\"></a>",
+        false,
+    )]);
+    assert_eq!(r.refs[0].href, "#thm-t");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Theorem thmt"));
+    assert!(r.labels.contains_key("thm:t"));
+    // A node fence is not a heading: it adds no heading uid.
+    assert!(r.heading_uids.iter().all(|u| u.is_none()));
 }
 @
 A page heading (an h1) with a \code{ch:} or \code{part:} label is a target for \code{\ref}: the

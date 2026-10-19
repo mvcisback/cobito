@@ -355,10 +355,25 @@ id sits in the right margin of its centred block.
     color: var(--ref);
   }
 
+  /* A `node` fence (§10) is a <section class="taxon-node"> from the start, with a
+     title paragraph where a heading node has its heading. The paragraph draws the
+     same generated label, and holds the node's permalink and node link. It is
+     never a heading, so it stays out of the table of contents. */
+  .node-title {
+    margin: 0.3rem 0 0.5rem;
+    font-weight: bold;
+  }
+  .node-title[data-taxon]::before {
+    content: attr(data-taxon) ". ";
+    text-transform: capitalize;
+    color: var(--ref);
+  }
+
   /* The weaver wraps a taxon node in <section class="taxon-node"> so a box can
      enclose the whole node, not only its heading. Only the "claim" taxa are
      boxed; an example or a remark keeps the label alone. The set is open — a
-     document adds a name to the list to box it. */
+     document adds a name to the list to box it. A `node` fence is already that
+     element, so the same rule boxes it, and its box ends where the fence ends. */
   .taxon-node {
     margin: 1.5rem 0;
   }

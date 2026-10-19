@@ -60,6 +60,12 @@ The kind word picks the block. The set is closed:
 - \code{algorithm} takes an optional \code{\caption{…}}, then a pseudocode body in the
   \code{algorithmic} grammar, and makes a numbered \code{<figure class="algorithm">}
   float (§6.5). It needs an \code{alg:} label to be referenceable.
+- \code{node[taxon]} is one typed node whose extent is the fence (§10): a definition, a
+  theorem, an example. It takes an optional \code{\label{ns:name}} in a node namespace
+  (\code{def:}, \code{thm:}, \code{ex:}, …) and an optional leading \code{\title{…}}. Its body is
+  full command Markdown, and a heading inside is an error. The label makes it
+  referenceable: it earns an opaque id, a node page, a typed \code{\ref} ("Definition k3f9"),
+  and transclusion. Unlike a \code{\taxon} heading, it does not swallow the prose after it.
 - \code{custom[name]} hands its body to a \code{cob.toml}-registered CLI and splices the
   HTML it returns (§6.6) — the extension point for content cob has no native fence
   for, like a LaTeX figure. Use it sparingly.
@@ -164,6 +170,8 @@ renderers, the inline grammar and its lowering, the fence helpers, and the tests
 <<render a table fence>>
 
 <<render an algorithm fence>>
+
+<<render a node fence>>
 
 <<peel a caption>>
 
@@ -606,6 +614,7 @@ fn render_fence(
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
         Fence::Table(label) => render_table(label.as_deref(), body, math),
         Fence::Algorithm(label) => render_algorithm(label.as_deref(), body, math),
+        Fence::Node { taxon, label } => render_node(&taxon, label.as_deref(), body, math, defs),
         Fence::Custom { name, label } => {
             // The weaver runs the handler (§6.6); here we only carry the handler,
             // label, and the peeled caption and body across to it, escaped so the
@@ -821,6 +830,56 @@ fn render_algorithm(
     ))
 }
 @
+A node fence (§10) holds one typed node. Its extent is the fence: a definition or a
+theorem ends where the fence ends, and the prose after the fence is not in it. That is
+the point of the fence over a \code{\taxon} heading, whose node runs on to the next
+heading. The body is full command Markdown — paragraphs, lists, display math,
+sidenotes, even a nested fence in a longer outer one — so it renders through the block
+renderer again. A heading inside is an error: a heading starts a node of its own, and
+it cannot nest inside a fence's element. An optional leading \code{\title{…}} names the
+node; the title is a paragraph, not a heading, so it never enters the table of contents.
+The element is a \code{section}, and it always carries a title paragraph so the weaver
+has one place to put the node's permalink. The label becomes the element's \code{id}.
+<<render a node fence>>=
+fn render_node(
+    taxon: &str,
+    label: Option<&str>,
+    body: &str,
+    math: &mut Vec<Math>,
+    defs: &mut BTreeMap<String, String>,
+) -> Result<String, MarkdownError> {
+    let (title, rest) = take_title(body)?;
+    let rest = rest.trim();
+    if split_blocks(rest, false)
+        .iter()
+        .any(|b| matches!(b, RawBlock::Heading { .. }))
+    {
+        return Err(fence_err(
+            "a `node` fence cannot hold a heading; a heading starts a node of its own",
+        ));
+    }
+    let title_html = match title {
+        Some(t) => render_inline(&t, math)?,
+        None => String::new(),
+    };
+    let inner = render_ctx(rest, math, defs, false)?;
+    let tax = prose::escape(taxon);
+    Ok(format!(
+        "<section class=\"taxon-node\"{} data-taxon=\"{tax}\">\n<p class=\"node-title\" data-taxon=\"{tax}\">{title_html}</p>\n{inner}\n</section>",
+        id_attr(label)
+    ))
+}
+
+/// A leading `\title{…}` (brace-balanced) peeled off a node fence body, with the
+/// rest of the body after it. No title is not an error.
+fn take_title(body: &str) -> Result<(Option<String>, String), MarkdownError> {
+    if !body.trim_start().starts_with("\\title") {
+        return Ok((None, body.to_string()));
+    }
+    let (title, pos) = dialect::title(body).map_err(|_| fence_err("malformed `\\title{…}`"))?;
+    Ok((Some(title), body[pos..].to_string()))
+}
+@
 A leading \code{\caption{…}} (brace-balanced, possibly multi-line) is peeled off a fence
 body by the grammar, which returns its raw source and the byte offset where the rest
 of the body starts. The remainder goes to the float renderer.
@@ -848,6 +907,11 @@ enum Fence {
     /// body. The Markdown pass only emits a `<cob-custom>` placeholder; the
     /// weaver runs the handler, because it holds the config and the macros.
     Custom { name: String, label: Option<String> },
+    /// A `node[taxon]` fence (§10): its body is one typed node — a definition, a
+    /// theorem — whose extent is exactly the fence, not the heading-to-heading run
+    /// a `\taxon` heading node has. It is a block element, so it has a node page,
+    /// a typed `\ref`, and transclusion like a float, but its body is prose.
+    Node { taxon: String, label: Option<String> },
     HtmlEscape,
     Verbatim(Option<String>),
     /// A `def:`-labelled exposition of macros (§6.4). Its body is normal prose
@@ -870,7 +934,7 @@ The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
 <<parse the fence info>>=
-const KINDS: &str = "math, figure, table, algorithm, custom[name], macros, imports, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, algorithm, node[taxon], custom[name], macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -882,6 +946,9 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     // A `custom[NAME]` fence names its handler in brackets before any modifier.
     if kind == "custom" {
         return parse_custom(rest);
+    }
+    if kind == "node" {
+        return parse_node(rest);
     }
     let mods = dialect::modifiers(rest)
         .map_err(|_| fence_err(format!("malformed modifier after `{kind}` fence; use {KINDS}")))?;
@@ -930,6 +997,44 @@ fn label_of(mods: &[Modifier], kind: &str, prefix: &str) -> Result<Option<String
         }
     }
     Ok(label)
+}
+
+/// Parse a `node[TAXON]` info line's remainder (§10): the bracketed taxon, then an
+/// optional `\label{ns:name}`. The taxon is an open set of names — `definition`,
+/// `theorem`, anything — as it is for a `\taxon` heading; only its spelling is
+/// checked. The label must be in a node namespace (`def:`, `thm:`, `ex:`, …), not
+/// a float's, and it is what makes the node referenceable and gives it a page.
+fn parse_node(rest: &str) -> Result<Fence, MarkdownError> {
+    let rest = rest
+        .strip_prefix('[')
+        .ok_or_else(|| kind_err("a `node` fence names its taxon: `node[definition]`"))?;
+    let close = rest
+        .find(']')
+        .ok_or_else(|| kind_err("a `node` fence taxon is not closed: `node[definition]`"))?;
+    let taxon = rest[..close].trim();
+    if taxon.is_empty() || !taxon.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(kind_err(
+            "a `node` fence taxon is a name of letters, digits, and `-`: `node[definition]`",
+        ));
+    }
+    let mods = dialect::modifiers(rest[close + 1..].trim())
+        .map_err(|_| fence_err("malformed modifier after a `node` fence"))?;
+    let mut label = None;
+    for m in &mods {
+        match m {
+            Modifier::Label(l) => {
+                let l = l.trim();
+                if !crate::rewrite::Kind::label_is_heading_node(l) {
+                    return Err(fence_err(format!(
+                        "label `{l}` on a `node` fence must use a node namespace such as `def:` or `thm:`"
+                    )));
+                }
+                label = Some(l.to_string());
+            }
+            Modifier::Lang(_) => return Err(fence_err("`\\lang` is not allowed on a `node` fence")),
+        }
+    }
+    Ok(Fence::Node { taxon: taxon.to_string(), label })
 }
 
 /// Parse a `custom[NAME]` info line's remainder: the bracketed handler name,
@@ -1052,6 +1157,9 @@ peg::parser! {
             / "\\lang{" v:$(cb_atom()*) "}" { Modifier::Lang(unescape_braces(v)) }
         pub rule caption() -> (String, usize)
             = ws() "\\caption{" v:$(cb_atom()*) "}" p:position!() [_]* { (v.to_string(), p) }
+        // A node fence's optional leading `\title{…}`, peeled the same way.
+        pub rule title() -> (String, usize)
+            = ws() "\\title{" v:$(cb_atom()*) "}" p:position!() [_]* { (v.to_string(), p) }
 
         pub rule macrodef() -> MacroDef
             = ws() "\\def" name:cs() params:param()* "{" body:$(cb_atom()*) "}" ws()
@@ -1257,6 +1365,10 @@ mod tests {
     <<a ref inside code is literal>>
 
     <<a mismatched namespace is e030>>
+
+    <<a node fence is one typed node>>
+
+    <<a node fence errors>>
 
     <<a code fence with a language>>
 
@@ -1561,6 +1673,67 @@ fn mismatched_label_namespace_is_e030() {
         render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(err, MarkdownError::Fence { code: "E030", .. }));
     assert!(err.to_string().contains("fig:"));
+}
+@
+A node fence (§10) is one typed node whose extent is the fence. The node is a
+\code{section} carrying the label as its id and the taxon, with a title paragraph that is
+not a heading. Everything in the fence is in the node, and the prose after the fence
+is not: that is the reason the fence exists. The body is full command Markdown, so
+display math and a longer-fenced nested fence work inside it.
+<<a node fence is one typed node>>=
+#[test]
+fn a_node_fence_is_one_typed_node() {
+    let (html, math) = run(
+        "```node[definition] \\label{def:x}\n\\title{A \\emph{thing}}\nA body $x$.\n\n\
+         $$y = 1$$\n\nSecond paragraph.\n```\n\nAfter the node.",
+    );
+    assert!(html.contains("<section class=\"taxon-node\" id=\"def:x\" data-taxon=\"definition\">"));
+    assert!(html.contains("<p class=\"node-title\" data-taxon=\"definition\">A <em>thing</em></p>"));
+    assert_eq!(math.len(), 2, "inline and display math inside the node");
+    // The node ends where the fence ends: the prose after it is outside.
+    let end = html.find("</section>").expect("the node closes");
+    assert!(html[..end].contains("Second paragraph."));
+    assert!(html[end..].contains("<p>After the node.</p>"));
+    assert!(!html[..end].contains("After the node."));
+
+    // No label and no title: still a node element, with an empty title paragraph.
+    let (bare, _) = run("```node[remark]\nJust a remark.\n```");
+    assert!(bare.contains("<section class=\"taxon-node\" data-taxon=\"remark\">"));
+    assert!(bare.contains("<p class=\"node-title\" data-taxon=\"remark\"></p>"));
+    assert!(!bare.contains(" id="));
+
+    // A longer outer fence holds a nested fence.
+    let (nested, _) = run(
+        "````node[example] \\label{ex:n}\nSee below.\n\n```figure \\label{fig:inner}\n\\caption{c}\n<img>\n```\n````",
+    );
+    assert!(nested.contains("id=\"ex:n\""));
+    assert!(nested.contains("<figure id=\"fig:inner\">"));
+}
+@
+A node fence must name its taxon and label itself in a node namespace. A float
+namespace is E030, because a float label would collide with the float it names. A
+heading inside is an error too: a heading starts a node of its own, and it cannot nest
+inside a fence's element. A missing or malformed taxon is E034.
+<<a node fence errors>>=
+#[test]
+fn a_node_fence_errors() {
+    let mut math = Vec::new();
+    let mut err = |src: &str| render(src, &mut math, &mut BTreeMap::new()).unwrap_err();
+    // A float namespace on a node.
+    let e = err("```node[definition] \\label{fig:x}\nbody\n```");
+    assert!(matches!(e, MarkdownError::Fence { code: "E030", .. }));
+    // A heading inside a node.
+    let e = err("```node[theorem]\n## Inner\nbody\n```");
+    assert!(matches!(e, MarkdownError::Fence { code: "E030", .. }));
+    assert!(e.to_string().contains("heading"));
+    // `\lang` is for verbatim only.
+    let e = err("```node[theorem] \\lang{rust}\nbody\n```");
+    assert!(matches!(e, MarkdownError::Fence { code: "E030", .. }));
+    // No taxon, an unclosed taxon, and a bad spelling are E034.
+    for bad in ["```node\nbody\n```", "```node[theorem\nbody\n```", "```node[]\nbody\n```", "```node[a b]\nbody\n```"] {
+        let e = err(bad);
+        assert!(matches!(e, MarkdownError::Fence { code: "E034", .. }), "{bad}");
+    }
 }
 @
 A verbatim fence with a \code{\lang{}} modifier keeps a language class. A bare

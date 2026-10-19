@@ -365,6 +365,39 @@
           grep -qE 'href="index.html#index">Part [0-9A-Za-z]{4}</a>' $bk/_site/beta.html
           grep -q '<h1 id="beta">Beta' $bk/_site/beta.html
           test ! -e $bk/_site/n
+          # §10 a `node[taxon]` fence is a node with an explicit extent: exactly the fence.
+          # It is a labelled section with a title paragraph (never a heading), it earns an
+          # opaque id, a typed ref ("Definition <id>"), and a node page, and the prose after
+          # the fence is in none of them.
+          nf=$TMPDIR/nodefence
+          mkdir -p $nf
+          cat > $nf/n.cob <<'PAGE'
+          # N
+
+          ## Basics
+
+          ```node[definition] \label{def:x}
+          \title{A thing}
+          A thing is an $x$.
+          ```
+
+          After the definition.
+
+          See \ref{def:x}.
+          PAGE
+          ( cd $nf && $cob lock n.cob >/dev/null && $cob weave --locked n.cob --out _site )
+          grep -qE '<section class="taxon-node" id="def-x" data-taxon="definition" data-id="[0-9A-Za-z]{4}">' $nf/_site/index.html
+          grep -qE '<p class="node-title" data-taxon="definition"><a class="sec-uid"' $nf/_site/index.html
+          grep -qE 'href="#def-x">Definition [0-9A-Za-z]{4}</a>' $nf/_site/index.html
+          # The node fence's own page is named by its opaque id. (The `## Basics` heading
+          # node has a page too, and it rightly holds the prose under the heading.)
+          nid=$(grep -oE 'id="def-x" data-taxon="definition" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
+          test -f $nf/_site/n/$nid.html
+          grep -q 'A thing' $nf/_site/n/$nid.html
+          if grep -q 'After the definition' $nf/_site/n/$nid.html; then
+            echo "a node fence's page holds the prose after the fence" >&2
+            exit 1
+          fi
           # §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
           # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
           # and confirm the coloring is deterministic and structurally sound.

@@ -299,6 +299,9 @@ pub struct LabelDef {
     pub id: String,
     pub kind: Kind,
     pub section: usize,
+    /// The taxon of a `node` fence (§10), which names the word a `\ref` to it reads
+    /// ("Definition"). `None` for a float or a `macros` node.
+    pub taxon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -443,7 +446,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         st.uncaptioned += 1;
                         if let Some(id) = el.get_attribute("id") {
                             if Kind::from_label(&id) == Some(kind) {
-                                st.labels.push(LabelDef { id, kind, section });
+                                st.labels.push(LabelDef { id, kind, section, taxon: None });
                             }
                         }
                         Ok(())
@@ -468,6 +471,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                                     id,
                                     kind: Kind::Equation,
                                     section,
+                                    taxon: None,
                                 });
                             }
                         }
@@ -485,8 +489,29 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                                     id,
                                     kind: Kind::Macro,
                                     section,
+                                    taxon: None,
                                 });
                             }
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("section.taxon-node", {
+                    let st = st.clone();
+                    move |el| {
+                        // A `node` fence (§10) is a labelled typed node. Record it
+                        // like a float so weave mints its opaque id, with its taxon
+                        // so a `\ref` to it reads "Definition <id>". Its kind is
+                        // Section whatever its namespace: `def:` also tags a
+                        // notation fence, but this element is a normal in-flow node.
+                        // An unlabelled node has no id and so no identity.
+                        if let Some(id) = el.get_attribute("id") {
+                            st.borrow_mut().labels.push(LabelDef {
+                                id,
+                                kind: Kind::Section,
+                                section,
+                                taxon: el.get_attribute("data-taxon"),
+                            });
                         }
                         Ok(())
                     }
@@ -501,7 +526,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         // emits the real element and the id is already frozen.
                         if let Some(id) = el.get_attribute("data-label") {
                             if let Some(kind) = Kind::from_label(&id) {
-                                st.borrow_mut().labels.push(LabelDef { id, kind, section });
+                                st.borrow_mut().labels.push(LabelDef { id, kind, section, taxon: None });
                             }
                         }
                         Ok(())
@@ -610,6 +635,8 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     // rendered "Figure <id>" label has to live on the caption, not the container.
     let pending_fig: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let pending_tbl: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    // The (opaque id, anchor) a `node` fence just took, for its title paragraph.
+    let pending_node: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(None));
 
     // The opaque id for a float, keyed by its human label, when one was minted.
     let id_of = |el: &lol_html::html_content::Element| -> Option<String> {
@@ -711,6 +738,38 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                     }
                 }
                 Ok(())
+            }),
+            element!("section.taxon-node", {
+                let pending_node = pending_node.clone();
+                move |el| {
+                    // A `node` fence (§10). A labelled one takes its opaque id and its
+                    // colon-free anchor, like a float. The id and anchor wait in a
+                    // one-slot cell for the title paragraph, its first child, which
+                    // carries the permalink and node link: CSS `attr()` reads only an
+                    // element's own attributes, the same wrinkle as a figure caption.
+                    if let Some(label) = el.get_attribute("id") {
+                        let anchor = anchor_of(&label);
+                        if let Some(opaque) = label_ids.get(&label) {
+                            el.set_attribute("data-id", opaque).ok();
+                            *pending_node.borrow_mut() = Some((opaque.clone(), anchor.clone()));
+                        }
+                        el.set_attribute("id", &anchor).ok();
+                    }
+                    Ok(())
+                }
+            }),
+            element!("p.node-title", {
+                let pending_node = pending_node.clone();
+                move |el| {
+                    if let Some((opaque, anchor)) = pending_node.borrow_mut().take() {
+                        let tag = format!(
+                            "<a class=\"sec-uid\" href=\"#{anchor}\" data-id=\"{opaque}\"></a>{}",
+                            node_link(&opaque)
+                        );
+                        el.prepend(&tag, ContentType::Html);
+                    }
+                    Ok(())
+                }
             }),
             element!("a[data-ref]", |el| {
                 let mut i = ref_idx.borrow_mut();
