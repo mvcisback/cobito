@@ -1,0 +1,10 @@
+{
+  "name": "cob-tikzfig",
+  "private": true,
+  "version": "0.1.0",
+  "description": "cob custom[tikzfig] fence handler: web-native TikZ/TeX → SVG at weave time",
+  "main": "index.js",
+  "dependencies": {
+    "node-tikzjax": "^1.0.5"
+  }
+}

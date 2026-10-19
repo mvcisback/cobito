@@ -12,7 +12,10 @@ the project's own trusted config — is the consent to run it; an undeclared
 handler is E042. cob runs the command from the project root, sends it a JSON blob
 on stdin (the fence body, the macros in scope, the config, and a writable output
 directory), and reads a JSON envelope back: the HTML, and a map of assets to copy
-into the site.
+into the site. cob forwards the parsed `cob.toml` to the handler as well, so a
+handler's `[fence.NAME]` table may carry project options — e.g. the shipped
+\code{tikzfig} handler (\code{tools/tikzfig}) reads a \code{preamble_file} of project
+TikZ styles; anything beyond `cmd` is ignored by cob itself.
 
 Three rules keep a custom fence inside cob's guarantees. The output must carry no
 `<script>` (the no-JS content rule, §6.3) — a script in the result is E042, not a
