@@ -104,6 +104,17 @@ tooling. \code{cob lock} is a fast pass that mints and populates \code{cob.lock}
 full weave, and the committed lock is greppable. \code{cob labels <file>} lists a
 file's label-to-id map; \code{cob id <file> <label>} prints one id for scripting.
 
+These three all go label → id, and need the file in hand first. The reverse
+direction — the one an editor actually needs — starts from a woven page: a reader
+sees "Proposition 7F5U" and wants to open the \code{.cob} that defines it, to fix the
+prose. \code{cob find <id-or-label>} does that: it takes either the frozen id or the
+label name, searches every file in \code{cob.lock} (not just one), and prints
+\code{file:line} — the line found by searching that file's text for the label's own
+defining syntax (\code{\\label{name}} on a fence or node-fence title line, \code{{#name}} on a
+heading), since a definition always spells its label out literally and a reference
+never does (a \code{\\ref{name}} is a different word). A citation has no such line —
+its home is the \code{.bib} file, not a \code{.cob} — so it prints the key instead.
+
 ## How the code implements this {#sec:erRn}
 
 The module holds the id alphabet, the on-disk types, the error, a minter, the
@@ -358,6 +369,8 @@ impl LockFile {
 
     <<find and rename a section>>
 
+    <<find any label by id or name>>
+
     <<a file's labels>>
 
     <<the fetch pins>>
@@ -549,6 +562,26 @@ pub fn rename(&mut self, file: &str, old: &str, new: &str) -> bool {
     }
 }
 @
+\code{find_section} answers one narrow question (\code{cob rename-label}'s: which
+section carries this id). \code{cob find} asks the general one — a reader looking at
+"Proposition 7F5U" in a woven page, or a label they already know by name, wants the
+\code{.cob} file and label back, whatever kind of node it is. So this scans every
+kind, and matches on either the frozen id or the label's own name, since a reader
+may have either in hand.
+<<find any label by id or name>>=
+/// The `(file, label, entry)` whose frozen id or label name is `needle`, if any —
+/// unlike `find_section`, not restricted to `Kind::Section` (§7.1, `cob find`).
+pub fn find_label(&self, needle: &str) -> Option<(String, String, LockEntry)> {
+    for (file, inner) in &self.files {
+        for (label, entry) in inner {
+            if entry.id == needle || label == needle {
+                return Some((file.clone(), label.clone(), entry.clone()));
+            }
+        }
+    }
+    None
+}
+@
 A file's label-to-entry pairs in sorted order, for \code{cob labels}.
 <<a file's labels>>=
 /// A file's `label → entry` pairs in sorted order (for `cob labels`).
@@ -703,6 +736,23 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let lock = LockFile::load(&path).unwrap();
         assert!(lock.get("f.cob", "fig:x").is_none());
+    }
+
+    #[test]
+    fn find_label_matches_by_id_or_by_name_not_restricted_to_sections() {
+        // Unlike find_section, every kind is reachable — a reader with a
+        // rendered "Proposition 7F5U" in hand has no way to know it is not a
+        // section before asking.
+        let mut lock = LockFile::default();
+        let mut m = Minter::seeded(5);
+        let id = lock.mint("parser.cob", "fig:pipeline", Kind::Figure, &mut m);
+        let (file, label, entry) = lock.find_label(&id).expect("found by id");
+        assert_eq!(file, "parser.cob");
+        assert_eq!(label, "fig:pipeline");
+        assert_eq!(entry.kind, Kind::Figure);
+        let (file2, _, _) = lock.find_label("fig:pipeline").expect("found by name");
+        assert_eq!(file2, "parser.cob");
+        assert!(lock.find_label("no-such-thing").is_none());
     }
 }
 @

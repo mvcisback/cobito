@@ -43,6 +43,8 @@ it does not.
 
 <<the id command>>
 
+<<the find command>>
+
 <<resolve the highlighting config>>
 
 <<the language command>>
@@ -115,6 +117,7 @@ USAGE:
     cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     cob labels <file.cob>          list the file's label → id map from cob.lock
     cob id <file.cob> <label>      print the frozen id for one label
+    cob find <id-or-label>        find which file defines a label or id, from cob.lock (§7.1)
     cob language <file.cob> <chunk> print the highlighting language for a chunk (§5.5)
     cob where <file.cob> <root> <line> map a tangled-file line back to its .cob source (§11)
     cob tokens <file.cob>          print whole-file semantic tokens, one per line (§5.5, #2)
@@ -162,6 +165,7 @@ fn main() -> ExitCode {
         Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
+        Some(("find", rest)) if rest.len() == 1 => find_cmd(&rest[0]),
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
         Some(("where", rest)) if rest.len() == 3 => where_cmd(&rest[0], &rest[1], &rest[2]),
         Some(("tokens", files)) if files.len() == 1 => tokens_cmd(&files[0]),
@@ -673,6 +677,67 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
         None => {
             eprintln!("cob: no id for label `{label}` in {file} (run `cob lock`)");
             ExitCode::FAILURE
+        }
+    }
+}
+@
+The find command is the reverse of \code{id}: given an id or a label name, it
+searches every file in \code{cob.lock}, not one named up front, because that is the
+whole point — you have the id from a woven page and do not yet know which file it
+is in. Once it has the \code{(file, label)} pair, it reads that file and looks for the
+label's own defining text: \code{\\label{name}} on a fence or node-fence title line, or
+\code{{#name}} on a heading. Both are literal substrings the source must spell out at
+the point of definition, and neither ever appears at a \code{\\ref{name}} use site, so
+the first matching line is the definition, not a mention. A citation has no such
+line in any \code{.cob} — it lives in the bibliography — so that case prints the key
+instead of a file:line.
+<<the find command>>=
+/// `cob find <id-or-label>`: given a frozen id or a label name, print the
+/// `.cob` file and line that defines it (§7.1) — the reverse of `cob id`, which
+/// needs the file already in hand. A citation has no defining line in any
+/// `.cob` file, so it prints the key instead.
+fn find_cmd(needle: &str) -> ExitCode {
+    let lock = match lock::LockFile::load(Path::new("cob.lock")) {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (file, label, entry) = match lock.find_label(needle) {
+        Some(found) => found,
+        None => {
+            eprintln!("cob: no label or id `{needle}` in cob.lock (run `cob lock`)");
+            return ExitCode::FAILURE;
+        }
+    };
+    if entry.kind == rewrite::Kind::Citation {
+        println!("{label} is a citation ({}): see the bibliography, not a .cob file", entry.id);
+        return ExitCode::SUCCESS;
+    }
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("cob: {file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let as_label = format!("label{{{label}}}");
+    let as_heading = format!("{{#{label}}}");
+    match text
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains(&as_label) || line.contains(&as_heading))
+    {
+        Some((i, _)) => {
+            println!("{file}:{} ({} {})", i + 1, entry.kind.word(), entry.id);
+            ExitCode::SUCCESS
+        }
+        None => {
+            // The lock and the source have drifted (a hand edit, a stale lock).
+            // Still useful: the file is right, just not the line.
+            println!("{file} ({} {}, line not found — try `cob lock`)", entry.kind.word(), entry.id);
+            ExitCode::SUCCESS
         }
     }
 }
