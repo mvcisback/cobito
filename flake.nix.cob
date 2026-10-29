@@ -31,18 +31,26 @@ The \code{main} flake is one attribute set. It has a \code{description} and two 
 \code{nixpkgs} is pinned. \code{seed} is the \code{tangled} release branch, pinned by tag: it
 holds the committed \code{.rs}/\code{.css} that a build on \code{main} compiles first, before
 \code{cob} tangles the \code{.cob} again (§13). \code{seed} is \code{flake = false} — cob reads its
-tree, not its outputs. The \code{outputs} function starts with a \code{let} block of shared
+tree, not its outputs. \code{seed} resolves against the public GitHub mirror, not the
+self-hosted forge: \code{tangled} and its tags are pushed to both on release, and anyone
+building cobito — a downstream flake's CI, a contributor with no account on the
+self-hosted forge — needs to reach \code{seed} without an ssh key or a Tailscale
+connection. A flake that depends on cobito as an input inherits whatever \code{seed}
+resolves to; pointing it at a public, token-free URL means no consumer ever needs to
+override it. The \code{outputs} function starts with a \code{let} block of shared
 helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
 <<flake.nix>>=
 {
   description = "cobito — a web-first literate programming system";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  # The `tangled` release branch on the forge, pinned by tag: the committed
-  # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
-  # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
+  # The `tangled` release branch, pinned by tag, on the public GitHub mirror —
+  # not the self-hosted forge: the committed .rs/.css seed a build on `main`
+  # (§13), and anyone depending on cobito (a downstream flake's CI, a
+  # contributor) must be able to fetch it without an ssh key. A release pushes
+  # `tangled` + the new tag to both remotes; bump this ref to match.
   inputs.seed = {
-    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.2";
+    url = "github:mvcisback/cobito/v0.1.2";
     flake = false;
   };
 

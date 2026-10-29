@@ -31,16 +31,16 @@
       "locked": {
         "lastModified": 1790147867,
         "narHash": "sha256-lwyO9WER9EUCUs7xDCBCims3qozXqEH6ivTFjzSeKhw=",
-        "ref": "refs/tags/v0.1.2",
+        "owner": "mvcisback",
+        "repo": "cobito",
         "rev": "1a5ffbef7b30ad1a8256b6a0dee7e05f027abd50",
-        "revCount": 3,
-        "type": "git",
-        "url": "ssh://gitea@git.chanlatte.casa/marcell/cobito.git"
+        "type": "github"
       },
       "original": {
-        "ref": "refs/tags/v0.1.2",
-        "type": "git",
-        "url": "ssh://gitea@git.chanlatte.casa/marcell/cobito.git"
+        "owner": "mvcisback",
+        "ref": "v0.1.2",
+        "repo": "cobito",
+        "type": "github"
       }
     },
     "tree-sitter-bash": {

@@ -2,11 +2,13 @@
   description = "cobito — a web-first literate programming system";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  # The `tangled` release branch on the forge, pinned by tag: the committed
-  # .rs/.css seed a build on `main` (§13). A release pushes a new tag and bumps
-  # this ref. An absolute forge URL (not `git+file:.`) so the lock is portable.
+  # The `tangled` release branch, pinned by tag, on the public GitHub mirror —
+  # not the self-hosted forge: the committed .rs/.css seed a build on `main`
+  # (§13), and anyone depending on cobito (a downstream flake's CI, a
+  # contributor) must be able to fetch it without an ssh key. A release pushes
+  # `tangled` + the new tag to both remotes; bump this ref to match.
   inputs.seed = {
-    url = "git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=refs/tags/v0.1.2";
+    url = "github:mvcisback/cobito/v0.1.2";
     flake = false;
   };
 
