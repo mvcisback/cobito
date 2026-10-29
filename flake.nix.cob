@@ -142,6 +142,18 @@ the whole point of a release snapshot: proof that these committed bytes build.
         cobDoc = mkCob pkgs self ./Cargo.lock
           (cobGrammars ++ [{ id = "cob"; exts = [ "cob" ]; src = treeSitterCob; symbol = "tree_sitter_cob"; }])
           true;
+        # A compiled cob.so for an editor that loads tree-sitter grammars at
+        # runtime (neovim, Helix, Zed) — `nix build .#treeSitterCobLib`, then
+        # point the editor's grammar path at `result/cob.so`. cobDoc above
+        # does not use this: tree-sitter-highlight links the grammar source
+        # directly via its own build script, never a dynamic library.
+        treeSitterCobLib = pkgs.runCommand "tree-sitter-cob-lib"
+          { nativeBuildInputs = [ pkgs.gcc ]; } ''
+          mkdir -p $out
+          cc -O2 -fPIC -std=c11 -I ${treeSitterCob}/src -shared \
+            ${treeSitterCob}/src/parser.c ${treeSitterCob}/src/scanner.c \
+            -o $out/cob.so
+        '';
         default = cob;
       });
 
@@ -339,6 +351,18 @@ treeSitterCob = pkgs.runCommand "tree-sitter-cob"
   chmod -R +w $out
           export HOME=$TMPDIR
   cd $out && tree-sitter generate
+'';
+# A compiled cob.so for an editor that loads tree-sitter grammars at runtime
+# (neovim, Helix, Zed) — `nix build .#treeSitterCobLib`, then point the
+# editor's grammar path at `result/cob.so`. cobDoc below does not use this:
+# tree-sitter-highlight links the grammar source directly via its own build
+# script, never a dynamic library.
+treeSitterCobLib = pkgs.runCommand "tree-sitter-cob-lib"
+  { nativeBuildInputs = [ pkgs.gcc ]; } ''
+  mkdir -p $out
+  cc -O2 -fPIC -std=c11 -I ${treeSitterCob}/src -shared \
+    ${treeSitterCob}/src/parser.c ${treeSitterCob}/src/scanner.c \
+    -o $out/cob.so
 '';
 # The development output: cob with the grammars cobito needs to weave its own
 # documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks

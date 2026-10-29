@@ -431,7 +431,9 @@ mod tests {
 @ ## Using it in an editor {#sec:AXnG}
 
 An editor runs `cob lsp` as the language server for `.cob` files and turns on
-semantic highlighting. In neovim (0.9 and later):
+semantic highlighting. This needs a `cob` binary on `PATH` — `nix develop` in a
+clone of this repo, or `nix build .#cob` and add `result/bin` to `PATH`. In
+neovim (0.9 and later):
 
 ```verbatim \lang{lua}
 vim.filetype.add({ extension = { cob = "cob" } })

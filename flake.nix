@@ -139,6 +139,18 @@
                   export HOME=$TMPDIR
           cd $out && tree-sitter generate
         '';
+        # A compiled cob.so for an editor that loads tree-sitter grammars at runtime
+        # (neovim, Helix, Zed) — `nix build .#treeSitterCobLib`, then point the
+        # editor's grammar path at `result/cob.so`. cobDoc below does not use this:
+        # tree-sitter-highlight links the grammar source directly via its own build
+        # script, never a dynamic library.
+        treeSitterCobLib = pkgs.runCommand "tree-sitter-cob-lib"
+          { nativeBuildInputs = [ pkgs.gcc ]; } ''
+          mkdir -p $out
+          cc -O2 -fPIC -std=c11 -I ${treeSitterCob}/src -shared \
+            ${treeSitterCob}/src/parser.c ${treeSitterCob}/src/scanner.c \
+            -o $out/cob.so
+        '';
         # The development output: cob with the grammars cobito needs to weave its own
         # documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks
         # weave and highlight cob's own sources, so they use this build; it also runs the

@@ -269,14 +269,26 @@ the file type let an editor match `.cob` to this grammar.
 @ ## Using it in neovim
 
 neovim (0.9 and later) reads a tree-sitter grammar and its queries from the
-runtime path. First build the parser: tangle this document, run `tree-sitter
-generate`, then `tree-sitter build -o cob.so` in `tree-sitter-cob/`. Then tell
-neovim about the `.cob` file type, the parser, and the queries.
+runtime path. The flake ships the compiled parser as a package, so building it
+is one command, from a clone of this repo:
+
+```verbatim \lang{sh}
+nix build .#treeSitterCobLib   # writes result/cob.so
+```
+
+Without nix: tangle this document, then from `tree-sitter-cob/` run
+`tree-sitter generate` followed by `tree-sitter build -o cob.so` (the
+`tree-sitter` CLI needs a C compiler on `PATH` either way). Then tell neovim
+about the `.cob` file type, the parser, and the queries — the path below is
+whichever of the two the `cob.so` landed at (a `/nix/store/...` path does not
+move after a rebuild, so pasting it once is fine for a quick trial; symlink to
+`result/cob.so` in your dotfiles for something that survives `nix build`
+running again).
 
 ```verbatim \lang{lua}
 vim.filetype.add({ extension = { cob = "cob" } })
 vim.treesitter.language.add("cob", { path = "/path/to/cob.so" })
--- put highlights.scm and injections.scm under ~/.config/nvim/queries/cob/
+-- copy tree-sitter-cob/queries/*.scm to ~/.config/nvim/queries/cob/
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "cob",
   callback = function() vim.treesitter.start() end,
@@ -286,4 +298,9 @@ vim.api.nvim_create_autocmd("FileType", {
 The injections hand the code and the prose to other grammars, so install the Rust,
 Nix, Bash, CSS, and Markdown parsers too (for example with nvim-treesitter). A
 grammar cob does not ship still colors here when the editor has it.
+
+To check the setup without opening neovim at all: `nix flake check` runs this
+grammar against every `.cob` file in the repo (`checks.treesitter`, §5.5) and
+fails on the first `ERROR`/`MISSING` node — the same pass/fail signal neovim's
+highlighter would hit, just without a UI.
 @
