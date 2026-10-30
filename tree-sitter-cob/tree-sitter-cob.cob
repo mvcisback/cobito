@@ -269,31 +269,49 @@ the file type let an editor match `.cob` to this grammar.
 @ ## Using it in neovim
 
 neovim (0.9 and later) reads a tree-sitter grammar and its queries from the
-runtime path. The flake ships the compiled parser as a package, so building it
-is one command, from a clone of this repo:
+runtime path. The flake ships the compiled parser as a package, built from a
+clone of this repo:
 
 ```verbatim \lang{sh}
-nix build .#treeSitterCobLib   # writes result/cob.so
+nix build .#treeSitterCobLib
+# writes result/parser (the compiled grammar), result/queries/*.scm,
+# result/tree-sitter.json — the same shape pkgs.tree-sitter.buildGrammar
+# produces, so it plugs into the standard nvim-treesitter tooling, not just
+# a bespoke path.
 ```
 
 Without nix: tangle this document, then from `tree-sitter-cob/` run
-`tree-sitter generate` followed by `tree-sitter build -o cob.so` (the
-`tree-sitter` CLI needs a C compiler on `PATH` either way). Then tell neovim
-about the `.cob` file type, the parser, and the queries — the path below is
-whichever of the two the `cob.so` landed at (a `/nix/store/...` path does not
-move after a rebuild, so pasting it once is fine for a quick trial; symlink to
-`result/cob.so` in your dotfiles for something that survives `nix build`
-running again).
+`tree-sitter generate` followed by `tree-sitter build -o parser` (the
+`tree-sitter` CLI needs a C compiler on `PATH` either way).
+
+**Declaratively, through nvim-treesitter** (home-manager's neovim module,
+nvf, nixvim, or any other setup built on `nixpkgs#vimPlugins.nvim-treesitter`):
+wrap the package with `pkgs.neovimUtils.grammarToPlugin`, which expects
+exactly the `$out/parser` + `$out/queries` shape above, and add the result to
+wherever that setup collects extra grammars (nvf: `vim.treesitter.grammars`;
+home-manager's `programs.neovim`: `extraPackages`/`plugins`, a parser from
+`grammarToPlugin` behaves like any other treesitter plugin). The queries
+still need registering explicitly — the wrapped plugin does not read
+`tree-sitter-cob/queries/*.scm` on its own — so pass their contents too
+(nvf: `vim.treesitter.queries`, one entry per query type).
+
+**Directly, with no plugin manager**, for a quick trial: point neovim at
+`result/parser` and `result/queries/*.scm` by hand.
 
 ```verbatim \lang{lua}
 vim.filetype.add({ extension = { cob = "cob" } })
-vim.treesitter.language.add("cob", { path = "/path/to/cob.so" })
--- copy tree-sitter-cob/queries/*.scm to ~/.config/nvim/queries/cob/
+vim.treesitter.language.add("cob", { path = "/path/to/result/parser" })
+-- copy tree-sitter-cob/queries/*.scm (or result/queries/*.scm) to
+-- ~/.config/nvim/queries/cob/
 vim.api.nvim_create_autocmd("FileType", {
   pattern = "cob",
   callback = function() vim.treesitter.start() end,
 })
 ```
+
+A `/nix/store/...` path does not move after a rebuild, so pasting `result`'s
+resolved target once is fine for a quick trial; symlink to `result/parser` in
+your dotfiles for something that survives `nix build` running again.
 
 The injections hand the code and the prose to other grammars, so install the Rust,
 Nix, Bash, CSS, and Markdown parsers too (for example with nvim-treesitter). A

@@ -139,17 +139,30 @@
                   export HOME=$TMPDIR
           cd $out && tree-sitter generate
         '';
-        # A compiled cob.so for an editor that loads tree-sitter grammars at runtime
-        # (neovim, Helix, Zed) — `nix build .#treeSitterCobLib`, then point the
-        # editor's grammar path at `result/cob.so`. cobDoc below does not use this:
-        # tree-sitter-highlight links the grammar source directly via its own build
-        # script, never a dynamic library.
+        # A grammar package in the same shape `pkgs.tree-sitter.buildGrammar`
+        # produces — $out/parser (a bare compiled library, no extension) plus
+        # $out/queries and $out/tree-sitter.json — so it plugs directly into the
+        # ecosystem that already expects that shape: `pkgs.neovimUtils.grammarToPlugin`,
+        # nvf's `vim.treesitter.grammars`, home-manager's neovim module, any other
+        # nvim-treesitter setup. A bare $out/cob.so would not: none of those read
+        # that path. cobDoc below does not use this either way — tree-sitter-highlight
+        # links the grammar source directly via its own build script, never a
+        # dynamic library.
         treeSitterCobLib = pkgs.runCommand "tree-sitter-cob-lib"
-          { nativeBuildInputs = [ pkgs.gcc ]; } ''
+          {
+            # pname (not the derivation name string) is what grammarToPlugin's
+            # lib.getName reads, and must strip to exactly "cob" — the language id
+            # tree_sitter_cob's symbol name and §5.5's grammar id both already use.
+            pname = "tree-sitter-cob";
+            version = "0.1.0";
+            nativeBuildInputs = [ pkgs.gcc ];
+          } ''
           mkdir -p $out
           cc -O2 -fPIC -std=c11 -I ${treeSitterCob}/src -shared \
             ${treeSitterCob}/src/parser.c ${treeSitterCob}/src/scanner.c \
-            -o $out/cob.so
+            -o $out/parser
+          cp -r ${treeSitterCob}/queries $out/queries
+          cp ${treeSitterCob}/tree-sitter.json $out/tree-sitter.json
         '';
         # The development output: cob with the grammars cobito needs to weave its own
         # documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks
