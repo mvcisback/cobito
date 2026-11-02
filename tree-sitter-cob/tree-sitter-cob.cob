@@ -45,10 +45,13 @@ module.exports = grammar({
   // The format is line-oriented, so whitespace is significant: no extras.
   extras: $ => [],
 
+  // Named (no leading underscore), not hidden: an editor highlights these
+  // markers directly — a hidden external token leaves no node for a
+  // highlight query to bind to.
   externals: $ => [
-    $._at,        // "@" at column 0 before whitespace — a control/index line
-    $._def_open,  // the def open, at column 0 when the line ends with ">>="
-    $._use_open,  // the use open, when a ">>" follows on the line
+    $.at,        // "@" at column 0 before whitespace — a control/index line
+    $.def_open,  // the def open, at column 0 when the line ends with ">>="
+    $.use_open,  // the use open, when a ">>" follows on the line
   ],
 
   // After a chunk definition, "@" is an index line or the chunk ending; "%def"
@@ -72,7 +75,7 @@ module.exports = grammar({
     code_body: $ => repeat1($._body_line),
 
     chunk_definition: $ => seq(
-      $._def_open,
+      $.def_open,
       field('name', $.chunk_name),
       '>>=',
       /[^\n]*/,
@@ -86,7 +89,7 @@ module.exports = grammar({
       '\n',
     ),
 
-    chunk_use: $ => seq($._use_open, field('name', $.use_name), '>>'),
+    chunk_use: $ => seq($.use_open, field('name', $.use_name), '>>'),
     use_name: $ => /[^\n>]+/,
 
     // The escapes for a literal double-angle open or close inside code.
@@ -96,12 +99,12 @@ module.exports = grammar({
     // or a lone "<" or "@" that begins neither.
     code_text: $ => choice(/[^\n<@]+/, '<', '@'),
 
-    index_line: $ => prec.dynamic(1, seq($._at, /[ \t]/, '%def', field('names', /[^\n]*/), '\n')),
+    index_line: $ => prec.dynamic(1, seq($.at, /[ \t]/, '%def', field('names', /[^\n]*/), '\n')),
 
     doc_chunk: $ => seq($.control_line, repeat($.doc_line)),
 
     control_line: $ => seq(
-      $._at,
+      $.at,
       optional(seq(/[ \t]/, field('text', /[^\n]*/))),
       '\n',
     ),
@@ -186,24 +189,28 @@ bool tree_sitter_cob_external_scanner_scan(void *payload, TSLexer *lexer, const 
 @ ## The highlights query
 
 This query colors the literate scaffolding. The chunk name is a `@function`
-(definition or reference), the `>>` and `>>=` closers are `@punctuation.special`,
-an escape is `@string.escape`, and `%def` is a `@keyword`. The `<<` and `@`
-openers are hidden scanner tokens, so the name and the closers carry the color.
-Code and prose get their color from the injected grammars.
+(definition or reference), the `<<`/`>>`/`>>=` openers and closers are
+`@punctuation.special`, an escape is `@string.escape`, and `%def` and `@` are
+`@keyword` — the noweb markers that make a line a chunk boundary or a
+control line, not prose or code. Code and prose get their color from the
+injected grammars.
 
 <<tree-sitter-cob/queries/highlights.scm>>=
 ; tree-sitter-cob highlights (generated from tree-sitter-cob.cob).
 
 (chunk_definition
   name: (chunk_name) @function)
+(def_open) @punctuation.special
 (chunk_definition ">>=" @punctuation.special)
 
 (chunk_use
   name: (use_name) @function)
+(use_open) @punctuation.special
 (chunk_use ">>" @punctuation.special)
 
 (escape) @string.escape
 
+(at) @keyword
 (index_line "%def" @keyword)
 @ ## The injections query
 
@@ -251,6 +258,53 @@ pattern with a new extension.
   (#match? @_n "\\.(sh|bash)$") (#set! injection.language "bash"))
 ((code_chunk (chunk_definition name: (chunk_name) @_n) (code_body) @injection.content)
   (#match? @_n "\\.css$") (#set! injection.language "css"))
+@ ## The verbatim `\lang{}` override
+
+A `verbatim \lang{name}` fence (§6.1, the `markdown.rs.cob` fenced-float rules)
+keeps a language class at weave time, but an editor's own markdown grammar does
+not know that convention: it reads a fence's info line as one bare language
+name, so `verbatim \lang{rust}` makes it look for a language called
+"verbatim" and gives up — the body goes uncolored. The fix is a query, not a
+grammar change, but it is a query on **markdown**, not on cob, so it cannot
+live next to `highlights.scm`/`injections.scm` above: those are the `cob`
+language's own queries, and `pkgs.neovimUtils.grammarToPlugin` (the tool that
+turns a raw grammar into something an editor's plugin manager loads) always
+installs a grammar's queries under its own language's name. It has no path for
+one grammar to carry a second language's override. So this one query ships as
+its own small package (`cobMarkdownInjections` in the flake, §6.3), added to an
+editor's runtime path beside the cob grammar, not wrapped inside it.
+
+A markdown query file that starts with the magic comment `;; extends` is read
+alongside the editor's own base markdown queries, not instead of them — so
+this rule adds the one case it knows about and leaves every other fence to
+the editor's stock behavior.
+
+The peg grammar's own `modifiers()` rule (`markdown.rs.cob` §6.1) allows any
+run of whitespace, and any order, between a fence's modifiers — so `\lang{}`
+may sit after another modifier, or after two spaces, or not appear at all (a
+bare `verbatim` fence is valid and common). A tree-sitter query cannot see
+that far: `#offset!`'s four numbers are byte counts fixed when the query is
+written, never counted at match time from what a capture actually holds, so
+there is no way to skip a *variable*-length prefix. The query below only
+recognizes the single canonical shape — `verbatim`, one space, `\lang{name}`,
+nothing after — and checks it with one `#match?` over the whole info line
+before trusting the fixed-width skip. Anything else (no `\lang{}`, extra
+whitespace, a second modifier, `\lang{}` not last) fails that check and falls
+through to no injection: an uncolored body, same as today, never a wrong one.
+
+<<tree-sitter-cob/markdown-ext/injections.scm>>=
+;; extends
+
+; The one shape this rule knows: `verbatim \lang{name}`, one space, nothing
+; else on the line. `#offset!`'s 15 is `len("verbatim \lang{")`, fixed only
+; because the `#match?` above it pins the exact bytes before "name" — any
+; other spacing, order, or missing `\lang{}` fails the match and falls
+; through to no injection, not a wrong one.
+((fenced_code_block
+  (info_string) @injection.language
+  (code_fence_content) @injection.content)
+  (#match? @injection.language "\\m^verbatim \\\\lang{[^}]\\+}$")
+  (#offset! @injection.language 0 15 0 -1))
 @ ## The package manifest
 
 `tree-sitter.json` is the package metadata the tree-sitter CLI reads. The scope and

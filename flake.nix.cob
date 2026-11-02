@@ -169,6 +169,13 @@ the whole point of a release snapshot: proof that these committed bytes build.
           cp -r ${treeSitterCob}/queries $out/queries
           cp ${treeSitterCob}/tree-sitter.json $out/tree-sitter.json
         '';
+        # A one-rule addendum to an editor's own markdown queries (§5.5): see
+        # the main flake's own copy of this package for why it is separate
+        # from treeSitterCobLib above.
+        cobMarkdownInjections = pkgs.runCommand "cob-markdown-injections" { } ''
+          mkdir -p $out/queries/markdown
+          cp ${treeSitterCob}/markdown-ext/injections.scm $out/queries/markdown/injections.scm
+        '';
         default = cob;
       });
 
@@ -391,6 +398,17 @@ treeSitterCobLib = pkgs.runCommand "tree-sitter-cob-lib"
     -o $out/parser
   cp -r ${treeSitterCob}/queries $out/queries
   cp ${treeSitterCob}/tree-sitter.json $out/tree-sitter.json
+'';
+# A one-rule addendum to an editor's own markdown queries (§5.5): it colors a
+# `verbatim \lang{name}` fence body, which `grammarToPlugin` cannot carry
+# inside `treeSitterCobLib` above — that tool always installs a grammar's
+# queries under its own language's name, with no path for a second
+# language's override. This package is markdown's extension, so it has its
+# own `queries/markdown/`, added to an editor's runtime path beside the cob
+# grammar, not wrapped inside it.
+cobMarkdownInjections = pkgs.runCommand "cob-markdown-injections" { } ''
+  mkdir -p $out/queries/markdown
+  cp ${treeSitterCob}/markdown-ext/injections.scm $out/queries/markdown/injections.scm
 '';
 # The development output: cob with the grammars cobito needs to weave its own
 # documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks

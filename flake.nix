@@ -164,6 +164,17 @@
           cp -r ${treeSitterCob}/queries $out/queries
           cp ${treeSitterCob}/tree-sitter.json $out/tree-sitter.json
         '';
+        # A one-rule addendum to an editor's own markdown queries (§5.5): it colors a
+        # `verbatim \lang{name}` fence body, which `grammarToPlugin` cannot carry
+        # inside `treeSitterCobLib` above — that tool always installs a grammar's
+        # queries under its own language's name, with no path for a second
+        # language's override. This package is markdown's extension, so it has its
+        # own `queries/markdown/`, added to an editor's runtime path beside the cob
+        # grammar, not wrapped inside it.
+        cobMarkdownInjections = pkgs.runCommand "cob-markdown-injections" { } ''
+          mkdir -p $out/queries/markdown
+          cp ${treeSitterCob}/markdown-ext/injections.scm $out/queries/markdown/injections.scm
+        '';
         # The development output: cob with the grammars cobito needs to weave its own
         # documents — Rust, Nix, Bash, CSS, and cob itself (§5.5). The flake's checks
         # weave and highlight cob's own sources, so they use this build; it also runs the
