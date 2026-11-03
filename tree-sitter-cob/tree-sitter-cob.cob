@@ -22,20 +22,33 @@ file may open with bare prose, because noweb starts an implicit documentation
 chunk. Inside code, a `<<name>>` is a chunk use (a hole), and `@<<` or `@>>` is a
 literal `<<` or `>>`.
 
-Three facts need lookahead, so the grammar keeps them in an external scanner
+A code chunk has a second spelling (`markup.rs.cob` §sec:fence-chunks, cobito.cob
+M17): a fence of four or more backticks, the word `chunk`, and a name opens it;
+a fence of backticks at least that long, alone on its line, closes it. Three
+backticks stay free for an ordinary illustrative fence inside prose, so this
+grammar never confuses the two. Both spellings work in the same file, even for
+the same chunk reopened — a milestone, not a permanent fork, because the plan is
+to retire the first one once every `.cob` file has moved off it.
+
+Four facts need lookahead, so the grammar keeps them in an external scanner
 (`src/scanner.c`): a def and a use both start with `<<`, so the scanner tells them
 apart by the trailing `>>=` (def) or `>>` (use); a lone `<<` with no `>>` on the
-line (a bash heredoc, `<<'DOC'`) is literal; and `@` opens a control line only at
+line (a bash heredoc, `<<'DOC'`) is literal; `@` opens a control line only at
 column 0 and only before a space, a tab, or the end of the line, so `@article` in
-a string stays code.
+a string stays code; and a fence open or close needs to count backticks and, for
+a close, remember how many the matching open used — the one piece of state this
+scanner carries across lines.
 
 @ ## The grammar
 
-`grammar.js` lists the rules. The external tokens are the three the scanner owns.
+`grammar.js` lists the rules. The external tokens are the five the scanner owns.
 The one conflict is after a chunk definition, where an `@` can be an index line
 (the chunk continues) or the chunk's end; the `%def` after the `@` tells them
 apart, so GLR explores both. The escape rule is the one place the code needs the
 `@<<` / `@>>` form in its own text, so it reads `@@<<` / `@@>>` in this source.
+`fence_chunk` carries no `index_line`: `%def` is noweb-only bookkeeping, dead in
+every real `.cob` file already (`markup.rs.cob` confirms it), so the fence
+spelling never grew it.
 
 <<tree-sitter-cob/grammar.js>>=
 // tree-sitter-cob — the .cob surface syntax (generated from tree-sitter-cob.cob).
@@ -49,9 +62,11 @@ module.exports = grammar({
   // markers directly — a hidden external token leaves no node for a
   // highlight query to bind to.
   externals: $ => [
-    $.at,        // "@" at column 0 before whitespace — a control/index line
-    $.def_open,  // the def open, at column 0 when the line ends with ">>="
-    $.use_open,  // the use open, when a ">>" follows on the line
+    $.at,          // "@" at column 0 before whitespace — a control/index line
+    $.def_open,    // the def open, at column 0 when the line ends with ">>="
+    $.use_open,    // the use open, when a ">>" follows on the line
+    $.fence_open,  // four-or-more backticks, "chunk", a space — the fence's open
+    $.fence_close, // a long-enough backtick run alone on its line — the fence's close
   ],
 
   // After a chunk definition, "@" is an index line or the chunk ending; "%def"
@@ -63,13 +78,26 @@ module.exports = grammar({
     // prose before any marker.
     source_file: $ => seq(repeat($.doc_line), repeat($._chunk)),
 
-    _chunk: $ => choice($.code_chunk, $.doc_chunk),
+    _chunk: $ => choice($.code_chunk, $.fence_chunk, $.doc_chunk),
 
     code_chunk: $ => seq(
       $.chunk_definition,
       optional($.code_body),
       repeat($.index_line),
     ),
+
+    // The second spelling of a code chunk (§sec:fence-chunks): same body, same
+    // chunk-use holes inside it, a fence instead of @<<name@>>=...@.
+    fence_chunk: $ => seq(
+      $.fence_open,
+      field('name', $.fence_chunk_name),
+      '\n',
+      optional($.code_body),
+      $.fence_close,
+      '\n',
+    ),
+
+    fence_chunk_name: $ => /[^\n]+/,
 
     // The body as one node, so an injection can hand it to a language grammar.
     code_body: $ => repeat1($._body_line),
@@ -114,26 +142,48 @@ module.exports = grammar({
 });
 @ ## The external scanner
 
-The scanner owns the three lookahead decisions. It acts only at column 0 for the
-`@` and def markers; the use marker may come anywhere on a line. For `<<` it
-consumes the two characters, marks the token end, then scans the rest of the line
-for `>>`: with a following `=` at column 0 it is a def, otherwise a use; with no
-`>>` it emits nothing and the grammar takes a lone `<`.
+The scanner owns the four lookahead decisions. It acts only at column 0 for the
+`@`, def, and fence markers; the use marker may come anywhere on a line. For `<<`
+it consumes the two characters, marks the token end, then scans the rest of the
+line for `>>`: with a following `=` at column 0 it is a def, otherwise a use;
+with no `>>` it emits nothing and the grammar takes a lone `<`.
+
+A fence open or close both start the same way, a run of backticks at column 0, so
+the scanner counts them once and then branches: four or more, followed by
+`chunk` and a space, is an open; three or more, alone on the rest of the line,
+is a candidate close. Whether a candidate close really closes anything depends
+on the open's own count — state with no token of its own to live in, so the
+scanner is the one piece of this grammar that carries state across lines. It
+clamps to a `u8` and serializes that one byte; no real `.cob` file opens a fence
+with 255 backticks, and a byte is enough even if an adversarial one tried.
 
 <<tree-sitter-cob/src/scanner.c>>=
 #include "tree_sitter/parser.h"
+#include <stdlib.h>
 
-enum TokenType { AT_MARKER, DEF_OPEN, USE_OPEN };
+enum TokenType { AT_MARKER, DEF_OPEN, USE_OPEN, FENCE_OPEN, FENCE_CLOSE };
 
-void *tree_sitter_cob_external_scanner_create(void) { return 0; }
-void tree_sitter_cob_external_scanner_destroy(void *p) { (void)p; }
-unsigned tree_sitter_cob_external_scanner_serialize(void *p, char *b) { (void)p; (void)b; return 0; }
-void tree_sitter_cob_external_scanner_deserialize(void *p, const char *b, unsigned n) { (void)p; (void)b; (void)n; }
+// The one piece of state this scanner needs: the backtick count the open
+// fence used, or 0 when no fence is open. Everything else a chunk needs lives
+// in the parse tree already.
+void *tree_sitter_cob_external_scanner_create(void) {
+  uint8_t *state = malloc(sizeof(uint8_t));
+  *state = 0;
+  return state;
+}
+void tree_sitter_cob_external_scanner_destroy(void *p) { free(p); }
+unsigned tree_sitter_cob_external_scanner_serialize(void *p, char *b) {
+  b[0] = *(uint8_t *)p;
+  return 1;
+}
+void tree_sitter_cob_external_scanner_deserialize(void *p, const char *b, unsigned n) {
+  *(uint8_t *)p = (n >= 1) ? (uint8_t)b[0] : 0;
+}
 
 static void advance(TSLexer *lexer) { lexer->advance(lexer, false); }
 
 bool tree_sitter_cob_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid_symbols) {
-  (void)payload;
+  uint8_t *fence_len = (uint8_t *)payload;
   uint32_t col = lexer->get_column(lexer);
 
   // "@" opens a control or index line at column 0, only before whitespace or the
@@ -184,6 +234,46 @@ bool tree_sitter_cob_external_scanner_scan(void *payload, TSLexer *lexer, const 
     return false;
   }
 
+  // A fence line (§sec:fence-chunks): a run of backticks at column 0. Four or
+  // more, then "chunk" and a space, opens one and remembers its count. Three
+  // or more alone on the rest of the line is a candidate close; it only
+  // counts when a fence is open and this run reaches that open's count.
+  if (col == 0 && (valid_symbols[FENCE_OPEN] || valid_symbols[FENCE_CLOSE]) && lexer->lookahead == '`') {
+    uint32_t n = 0;
+    while (lexer->lookahead == '`') { advance(lexer); n++; }
+
+    if (n >= 4 && valid_symbols[FENCE_OPEN]) {
+      while (lexer->lookahead == ' ' || lexer->lookahead == '\t') advance(lexer);
+      static const char want[] = "chunk";
+      bool ok = true;
+      for (int i = 0; want[i] != 0; i++) {
+        if (lexer->lookahead != (uint32_t)want[i]) { ok = false; break; }
+        advance(lexer);
+      }
+      if (ok && (lexer->lookahead == ' ' || lexer->lookahead == '\t')) {
+        advance(lexer);
+        lexer->mark_end(lexer);
+        *fence_len = (n > 255) ? 255 : (uint8_t)n;
+        lexer->result_symbol = FENCE_OPEN;
+        return true;
+      }
+      return false;
+    }
+
+    if (n >= 3 && valid_symbols[FENCE_CLOSE] && *fence_len > 0 && n >= *fence_len) {
+      while (lexer->lookahead == ' ' || lexer->lookahead == '\t') advance(lexer);
+      if (lexer->lookahead == '\n' || lexer->lookahead == '\r' || lexer->lookahead == 0) {
+        lexer->mark_end(lexer);
+        *fence_len = 0;
+        lexer->result_symbol = FENCE_CLOSE;
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  }
+
   return false;
 }
 @ ## The highlights query
@@ -192,8 +282,10 @@ This query colors the literate scaffolding. The chunk name is a `@function`
 (definition or reference), the `<<`/`>>`/`>>=` openers and closers are
 `@punctuation.special`, an escape is `@string.escape`, and `%def` and `@` are
 `@keyword` — the noweb markers that make a line a chunk boundary or a
-control line, not prose or code. Code and prose get their color from the
-injected grammars.
+control line, not prose or code. The fence spelling's name gets the same
+`@function`, and its open/close fences the same `@punctuation.special` as the
+noweb markers they stand in for — one meaning, two spellings, one color. Code
+and prose get their color from the injected grammars.
 
 <<tree-sitter-cob/queries/highlights.scm>>=
 ; tree-sitter-cob highlights (generated from tree-sitter-cob.cob).
@@ -207,6 +299,11 @@ injected grammars.
   name: (use_name) @function)
 (use_open) @punctuation.special
 (chunk_use ">>" @punctuation.special)
+
+(fence_chunk
+  name: (fence_chunk_name) @function)
+(fence_open) @punctuation.special
+(fence_close) @punctuation.special
 
 (escape) @string.escape
 
@@ -257,6 +354,16 @@ pattern with a new extension.
 ((code_chunk (chunk_definition name: (chunk_name) @_n) (code_body) @injection.content)
   (#match? @_n "\\.(sh|bash)$") (#set! injection.language "bash"))
 ((code_chunk (chunk_definition name: (chunk_name) @_n) (code_body) @injection.content)
+  (#match? @_n "\\.css$") (#set! injection.language "css"))
+
+; The same, for the fence spelling's code body.
+((fence_chunk name: (fence_chunk_name) @_n (code_body) @injection.content)
+  (#match? @_n "\\.rs$") (#set! injection.language "rust"))
+((fence_chunk name: (fence_chunk_name) @_n (code_body) @injection.content)
+  (#match? @_n "\\.nix$") (#set! injection.language "nix"))
+((fence_chunk name: (fence_chunk_name) @_n (code_body) @injection.content)
+  (#match? @_n "\\.(sh|bash)$") (#set! injection.language "bash"))
+((fence_chunk name: (fence_chunk_name) @_n (code_body) @injection.content)
   (#match? @_n "\\.css$") (#set! injection.language "css"))
 @ ## The verbatim `\lang{}` override
 

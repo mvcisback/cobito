@@ -66,6 +66,10 @@
         "id": "av7Q",
         "kind": "section"
       },
+      "sec:fence-milestone": {
+        "id": "OOTD",
+        "kind": "section"
+      },
       "sec:forest": {
         "id": "umoy",
         "kind": "section"
@@ -504,6 +508,10 @@
       }
     },
     "src/markup.rs.cob": {
+      "sec:fence-chunks": {
+        "id": "PGle",
+        "kind": "section"
+      },
       "sec:read-code": {
         "id": "ZzPB",
         "kind": "section"

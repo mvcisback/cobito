@@ -19,8 +19,14 @@ cob has six goals.
 
 1. Web-first. The primary woven artifact is a multi-page website, not a PDF. Print
    is not a v1 concern.
-2. noweb-compatible. A \code{.cob} file uses noweb's chunk syntax, so noweb's
-   \code{notangle} can read it unchanged. cob is language-agnostic because the format is.
+2. Language-agnostic chunks. A \code{.cob} file's chunk syntax carries no language of
+   its own, so a chunk can hold any language the project needs. This goal used to
+   read "noweb-compatible" — \code{<<name>>=} and bare \code{@} are noweb's own chunk
+   syntax, kept so \code{notangle} could once read a \code{.cob} file unchanged. M17 adds a
+   second, cob-only fence syntax for the same two jobs and begins retiring the
+   noweb spelling (§sec:fence-chunks in \code{markup.rs.cob}); once that retirement is
+   done, no external tool reads \code{.cob} syntax at all, and this goal is about the
+   chunk model staying language-agnostic, not about noweb compatibility.
 3. Static generator only. cob is the weaver and the tangler. It ships no server.
    Margin commenting is a separate tool with its own spec, \code{ANNOTATIONS.md}; cob's
    sole obligation to it is annotation-ready HTML (\code{rewrite.rs}).
@@ -329,6 +335,34 @@ parser at compile time (\code{markup.rs.cob}). A native tangler (§11) replaced
 oracle: frozen \code{markup} and \code{notangle} goldens prove the native reader and
 tangler right (§15). The \code{reader} and \code{tangle} flake checks diff cob against
 those goldens.
+
+## Retiring the noweb chunk syntax (M17) {#sec:fence-milestone}
+
+M15 removed noweb as a running tool. M17 removes its chunk syntax from \code{.cob}
+files too — \code{<<name>>=} and bare \code{@} are the two remaining pieces noweb left
+behind, and nothing left depends on an external tool being able to read them.
+
+- **A fence-based chunk syntax — done.** \code{markup.rs.cob} §sec:fence-chunks adds a
+  second spelling for the two jobs noweb's syntax did: a code chunk opens with
+  four or more backticks, the word \code{chunk}, and a name, and closes with a
+  backtick run at least that long. A chunk use (\code{<<name>>}) and its escape
+  (\code{@@<<}/\code{@@>>}) are unchanged either way; only the open/close delimiter moved.
+  Both spellings work side by side, even continuing the same chunk, so every
+  existing \code{.cob} file keeps reading.
+- **Migrate every \code{.cob} file — in progress.** This project's own corpus, written
+  before the fence syntax existed, still uses the noweb spelling throughout. A
+  converter rewrites it mechanically, chunk by chunk, with no change to a
+  section's content.
+- **Remove the noweb spelling — in progress.** Once the corpus reads clean, the
+  reader stops accepting \code{<<name>>=} and bare \code{@}. noweb's \code{markup} cannot read
+  the fence syntax, so \code{fixtures/*.markup} (the noweb-verified oracle, §15) is
+  frozen as a historical record rather than a live gate: the reader check that
+  diffs cob against it is retired, and a native equivalence test (the fence
+  syntax reading the same as the noweb syntax once did) takes its place.
+
+This is a breaking release: a \code{.cob} file written before M17 finished needs the
+converter run on it once. \code{tree-sitter-cob} keeps both spellings indefinitely, so
+an editor can still open an unconverted file.
 
 ## Open questions {#sec:QznE}
 
