@@ -5,6 +5,7 @@
 //! emphasis flanking rule. Raw HTML has one door: the ```` ```html-escape ````
 //! fence.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::prose::{self, Math};
@@ -49,28 +50,66 @@ fn kind_err(message: impl Into<String>) -> MarkdownError {
 pub fn render(
     input: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
 ) -> Result<String, MarkdownError> {
-    render_ctx(input, math, preamble, false)
+    render_ctx(input, math, defs, false, None)
 }
 
 /// The block loop. `macros` is true only while rendering a `macros` fence body,
 /// where a `\def`/`\let` line is a macro definition (§6.4), not prose. A `macros`
-/// body appends its `\def`/`\let`s to `preamble`; every other block ignores it.
+/// body records its definitions in `defs` (name → expansion); every other block
+/// ignores it. `node` is `Some(t)` inside a `node` fence, where `t` is the fence's
+/// own level below the enclosing heading (§10): an inner heading is then a heading
+/// of the fence, `t` plus its extra `#`s deep. It is `None` at the top level.
 fn render_ctx(
     input: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
     macros: bool,
+    node: Option<u8>,
 ) -> Result<String, MarkdownError> {
     let mut out: Vec<String> = Vec::new();
+    // The level of the latest heading in this context, so a fence nested under it
+    // sits one level deeper (§10).
+    let mut cur = node.unwrap_or(0);
+    // A `\taxon{name}` directive applies to the heading that immediately follows it.
+    let mut pending_taxon: Option<String> = None;
     for block in split_blocks(input, macros) {
         let html = match block {
-            RawBlock::Fence { info, body } => render_fence(&info, &body, math, preamble)?,
-            RawBlock::Heading { level, text } => render_heading(level, &text, math)?,
-            RawBlock::List { ordered, items } => render_list(ordered, &items, math)?,
-            RawBlock::Paragraph(text) => render_paragraph(&text, math)?,
-            RawBlock::MacroDef(src) => render_macro_def(&src, preamble)?,
+            // Hold the taxon for the next heading; a non-heading block drops it.
+            RawBlock::Taxon(name) => {
+                pending_taxon = Some(name);
+                continue;
+            }
+            RawBlock::Heading { level, text } if node.is_some() => {
+                let (html, rel) =
+                    render_node_heading(level, &text, math, pending_taxon.take().as_deref(), node.unwrap_or(0))?;
+                cur = rel;
+                html
+            }
+            RawBlock::Heading { level, text } => {
+                render_heading(level, &text, math, pending_taxon.take().as_deref())?
+            }
+            RawBlock::Fence { info, body } => {
+                pending_taxon = None;
+                render_fence(&info, &body, math, defs, cur)?
+            }
+            RawBlock::List { ordered, items } => {
+                pending_taxon = None;
+                render_list(ordered, &items, math)?
+            }
+            RawBlock::Paragraph(text) => {
+                pending_taxon = None;
+                render_paragraph(&text, math)?
+            }
+            RawBlock::MacroDef(src) => {
+                pending_taxon = None;
+                render_macro_def(&src, defs)?
+            }
+            RawBlock::Quote(raw) => {
+                pending_taxon = None;
+                render_quote(&raw, math, defs, macros, node)?
+            }
         };
         if !html.is_empty() {
             out.push(html);
@@ -86,6 +125,11 @@ enum RawBlock {
     Paragraph(String),
     /// A `\def`/`\let` line inside a `macros` fence body (§6.4).
     MacroDef(String),
+    /// A `\taxon{name}` directive on its own line: the taxon of the next heading's
+    /// node (§10).
+    Taxon(String),
+    /// A run of `>`-prefixed lines: a blockquote. The raw lines keep their markers.
+    Quote(String),
 }
 
 fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
@@ -123,9 +167,26 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
             i = if j < lines.len() { j + 1 } else { j };
             continue;
         }
+        if let Some(name) = taxon_line(lines[i]) {
+            blocks.push(RawBlock::Taxon(name));
+            i += 1;
+            continue;
+        }
         if let Some((level, text)) = heading_line(lines[i]) {
             blocks.push(RawBlock::Heading { level, text });
             i += 1;
+            continue;
+        }
+        if lines[i].starts_with('>') {
+            let mut quote = String::new();
+            while i < lines.len() && lines[i].starts_with('>') {
+                if !quote.is_empty() {
+                    quote.push('\n');
+                }
+                quote.push_str(lines[i]);
+                i += 1;
+            }
+            blocks.push(RawBlock::Quote(quote));
             continue;
         }
         if list_item(lines[i]).is_some() {
@@ -141,6 +202,15 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
                     Some(content) => {
                         items.push(content);
                         i += 1;
+                        // An indented line under an item continues that item, so
+                        // inline math or a long sentence can wrap across lines.
+                        while i < lines.len() && is_item_continuation(lines[i]) {
+                            if let Some(last) = items.last_mut() {
+                                last.push('\n');
+                                last.push_str(lines[i].trim());
+                            }
+                            i += 1;
+                        }
                     }
                     None => break,
                 }
@@ -154,6 +224,8 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
             if l.trim().is_empty()
                 || fence_open(l).is_some()
                 || heading_line(l).is_some()
+                || taxon_line(l).is_some()
+                || l.starts_with('>')
                 || list_item(l).is_some()
                 || (macros && is_macro_def_line(l))
             {
@@ -168,6 +240,16 @@ fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
         blocks.push(RawBlock::Paragraph(para));
     }
     blocks
+}
+
+/// A line that continues the list item above it: indented, not blank, and not
+/// itself a list item, fence, or taxon line.
+fn is_item_continuation(line: &str) -> bool {
+    line.starts_with([' ', '\t'])
+        && !line.trim().is_empty()
+        && list_item(line.trim_start()).is_none()
+        && fence_open(line).is_none()
+        && taxon_line(line).is_none()
 }
 
 /// A `macros` body line that begins a `\def` or `\let` definition. The keyword
@@ -210,6 +292,16 @@ fn heading_line(line: &str) -> Option<(usize, String)> {
     }
 }
 
+/// A line that is exactly `\taxon{name}` → the taxon name. The name holds no
+/// braces, so a `\taxon` with a malformed body falls through to prose.
+fn taxon_line(line: &str) -> Option<String> {
+    let inner = line.trim().strip_prefix("\\taxon{")?.strip_suffix('}')?;
+    if inner.is_empty() || inner.contains(['{', '}']) {
+        return None;
+    }
+    Some(inner.trim().to_string())
+}
+
 fn bullet_item(line: &str) -> Option<String> {
     line.strip_prefix("- ").map(|s| s.to_string())
 }
@@ -227,18 +319,77 @@ fn list_item(line: &str) -> Option<String> {
     bullet_item(line).or_else(|| ordered_item(line))
 }
 
+/// A blockquote renders its `>`-stripped body through the same block renderer, so
+/// a quote holds paragraphs, emphasis, and an attribution line (§6.4).
+fn render_quote(
+    raw: &str,
+    math: &mut Vec<Math>,
+    defs: &mut BTreeMap<String, String>,
+    macros: bool,
+    node: Option<u8>,
+) -> Result<String, MarkdownError> {
+    let inner: Vec<String> = raw
+        .lines()
+        .map(|l| {
+            let l = l.strip_prefix('>').unwrap_or(l);
+            l.strip_prefix(' ').unwrap_or(l).to_string()
+        })
+        .collect();
+    let body = render_ctx(&inner.join("\n"), math, defs, macros, node)?;
+    Ok(format!("<blockquote>{body}</blockquote>"))
+}
+
 fn render_heading(
     level: usize,
     text: &str,
     math: &mut Vec<Math>,
+    taxon: Option<&str>,
 ) -> Result<String, MarkdownError> {
     let (inline_src, id) = split_heading_attr(text.trim());
     let inner = render_inline(inline_src.trim(), math)?;
-    let attr = match id {
+    let mut attr = match id {
         Some(id) => format!(" id=\"{}\"", prose::escape(id)),
         None => String::new(),
     };
+    // The taxon rides on the heading as `data-taxon`, the API the stylesheet and
+    // other tools read (§10). `rewrite::apply` keeps it when it stamps the id.
+    if let Some(name) = taxon {
+        attr.push_str(&format!(" data-taxon=\"{}\"", prose::escape(name)));
+    }
     Ok(format!("<h{level}{attr}>{inner}</h{level}>"))
+}
+
+/// A heading inside a `node` fence (§10), and its level below the enclosing
+/// heading. The fence's own title sits at `title`; a `##` is one deeper, a `###`
+/// two deeper. It is a real heading: the weaver gives it an anchor, a table-of-
+/// contents entry, and a node of its own, which ends at the fence's end.
+fn render_node_heading(
+    level: usize,
+    text: &str,
+    math: &mut Vec<Math>,
+    taxon: Option<&str>,
+    title: u8,
+) -> Result<(String, u8), MarkdownError> {
+    if level == 1 {
+        return Err(fence_err(
+            "a `node` fence has one title line, its first; a heading inside it starts at `##`",
+        ));
+    }
+    if taxon.is_some() {
+        return Err(fence_err(
+            "a heading inside a `node` fence cannot be a taxon node; \
+             nest a `node` fence for a node of its own",
+        ));
+    }
+    let rel = title.saturating_add((level - 1) as u8);
+    let (inline_src, id) = split_heading_attr(text.trim());
+    let inner = render_inline(inline_src.trim(), math)?;
+    let id = match id {
+        Some(id) => format!(" id=\"{}\"", prose::escape(id)),
+        None => String::new(),
+    };
+    let tag = (rel as usize + 1).min(6);
+    Ok((format!("<h{tag} data-rel=\"{rel}\"{id}>{inner}</h{tag}>"), rel))
 }
 
 fn split_heading_attr(text: &str) -> (&str, Option<&str>) {
@@ -283,12 +434,28 @@ fn render_fence(
     info: &str,
     body: &str,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
+    cur: u8,
 ) -> Result<String, MarkdownError> {
     match parse_fence_info(info)? {
         Fence::Math(label) => Ok(render_math(label.as_deref(), body, math)),
         Fence::Figure(label) => render_figure(label.as_deref(), body, math),
         Fence::Table(label) => render_table(label.as_deref(), body, math),
+        Fence::Algorithm(label) => render_algorithm(label.as_deref(), body, math),
+        Fence::Node => render_node(body, math, defs, cur),
+        Fence::Custom { name, label } => {
+            // The weaver runs the handler (§6.6); here we only carry the handler,
+            // label, and the peeled caption and body across to it, escaped so the
+            // body's `<`/`&`/`"` survive as the placeholder's text and attribute.
+            let (caption, rest) = take_caption(body)?;
+            Ok(format!(
+                "<cob-custom data-handler=\"{}\" data-label=\"{}\" data-caption=\"{}\">{}</cob-custom>",
+                prose::escape(&name),
+                prose::escape(label.as_deref().unwrap_or("")),
+                prose::escape(caption.as_deref().unwrap_or("")),
+                prose::escape(rest.trim()),
+            ))
+        }
         Fence::HtmlEscape => Ok(body.to_string()),
         Fence::Verbatim(lang) => {
             let class = match lang {
@@ -297,11 +464,19 @@ fn render_fence(
             };
             Ok(format!("<pre><code{class}>{}</code></pre>", prose::escape(body)))
         }
+        Fence::Imports => {
+            // An import is a declaration, not content (§13): it renders nothing in
+            // the reading flow. The weaver scans the `\import … as …` lines to
+            // resolve the macros and to list the document's imports in the page
+            // chrome (like references), and records the edge in `site.json`.
+            Ok(String::new())
+        }
         Fence::Macros(label) => {
             // The body is normal prose with `\def`/`\let` lines; render it macro-
-            // aware. The `\def`/`\let`s append to `preamble` so KaTeX expands them
-            // everywhere (§6.4). Rendered inline here; slice C makes it a node.
-            let inner = render_ctx(body, math, preamble, true)?;
+            // aware. Each definition is recorded in `defs` (name → expansion) and
+            // passed to KaTeX's `macros` option, so it expands everywhere without
+            // leaking into any formula's source (§6.4).
+            let inner = render_ctx(body, math, defs, true, None)?;
             Ok(format!(
                 "<div class=\"macros\" id=\"{}\">{inner}</div>",
                 prose::escape(&label)
@@ -325,7 +500,10 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
     )
 }
 
-fn render_macro_def(src: &str, preamble: &mut String) -> Result<String, MarkdownError> {
+fn render_macro_def(
+    src: &str,
+    defs: &mut BTreeMap<String, String>,
+) -> Result<String, MarkdownError> {
     for line in src.lines() {
         match dialect::macrodef(line).map_err(|e| MarkdownError::Syntax(e.to_string()))? {
             MacroDef::Def {
@@ -333,17 +511,18 @@ fn render_macro_def(src: &str, preamble: &mut String) -> Result<String, Markdown
                 params,
                 body,
             } => {
-                let mut hashes = String::new();
+                // Map each forester parameter to a KaTeX `#n` in the expansion;
+                // KaTeX infers the arity from the highest `#n`, so no arity marker
+                // is needed on the name.
                 let mut body = body;
                 for (i, p) in params.iter().enumerate() {
-                    let n = i + 1;
-                    hashes.push_str(&format!("#{n}"));
-                    body = replace_control_word(&body, p, &format!("#{n}"));
+                    body = replace_control_word(&body, p, &format!("#{}", i + 1));
                 }
-                preamble.push_str(&format!("\\def{name}{hashes}{{{body}}}\n"));
+                defs.insert(name, body);
             }
             MacroDef::Let { name, target } => {
-                preamble.push_str(&format!("\\let{name}={target}\n"));
+                // `\let\R=\RR` is an alias; KaTeX resolves the target macro in turn.
+                defs.insert(name, target);
             }
         }
     }
@@ -433,6 +612,121 @@ fn split_row(line: &str) -> Vec<String> {
         .collect()
 }
 
+fn render_algorithm(
+    label: Option<&str>,
+    body: &str,
+    math: &mut Vec<Math>,
+) -> Result<String, MarkdownError> {
+    let (caption, rest) = take_caption(body)?;
+    let cap_html = match caption {
+        Some(c) => format!("\n<figcaption>{}</figcaption>", render_inline(&c, math)?),
+        None => String::new(),
+    };
+    let mut inline = |s: &str| render_inline(s, math).map_err(|e| e.to_string());
+    let listing = crate::pseudocode::render(rest.trim(), &mut inline).map_err(fence_err)?;
+    Ok(format!(
+        "<figure class=\"algorithm\"{}>{cap_html}\n{listing}\n</figure>",
+        id_attr(label)
+    ))
+}
+
+/// What a node's title line carries (§10): the title text, and the optional taxon
+/// and label that were taken out of it.
+struct NodeHead {
+    title: String,
+    taxon: Option<String>,
+    label: Option<String>,
+}
+
+fn render_node(
+    body: &str,
+    math: &mut Vec<Math>,
+    defs: &mut BTreeMap<String, String>,
+    cur: u8,
+) -> Result<String, MarkdownError> {
+    let (head, rest) = split_node_head(body)?;
+    let tax = match &head.taxon {
+        Some(t) => format!(" data-taxon=\"{}\"", prose::escape(t)),
+        None => String::new(),
+    };
+    // A titled node is a heading one level below the one it sits under; an untitled
+    // node holds a place for no heading, so it takes no level of its own.
+    let titled = !head.title.is_empty();
+    let rel = if titled { cur.saturating_add(1) } else { cur };
+    let inner = render_ctx(rest.trim(), math, defs, false, Some(rel))?;
+    if !titled {
+        return Ok(format!(
+            "<section class=\"taxon-node\"{}{tax}>\n<p class=\"node-title\"{tax}></p>\n{inner}\n</section>",
+            id_attr(head.label.as_deref())
+        ));
+    }
+    let title_html = render_inline(&head.title, math)?;
+    // The tag is a placeholder: the weaver reads `data-rel`, adds the enclosing
+    // heading's level, and sets the real tag (`rewrite::apply`).
+    let tag = (rel as usize + 1).min(6);
+    Ok(format!(
+        "<section class=\"taxon-node\"{tax}>\n<h{tag} class=\"node-head\" data-rel=\"{rel}\"{}{tax}>{title_html}</h{tag}>\n{inner}\n</section>",
+        id_attr(head.label.as_deref())
+    ))
+}
+
+/// Split a node fence body into its title line and its content. The first
+/// non-blank line must be a single-`#` title line. The `\taxon{…}` and `\label{…}`
+/// on it are taken out, and what is left is the title text.
+fn split_node_head(body: &str) -> Result<(NodeHead, &str), MarkdownError> {
+    let start = body.len() - body.trim_start().len();
+    let line_end = body[start..].find('\n').map_or(body.len(), |i| start + i);
+    let line = body[start..line_end].trim_end();
+    let text = match line.strip_prefix('#') {
+        Some(t) if t.is_empty() || t.starts_with(char::is_whitespace) => t,
+        _ => {
+            return Err(fence_err(
+                "a `node` fence starts with its title line: `# Title \\taxon{name} \\label{ns:name}`",
+            ))
+        }
+    };
+    let (taxon, text) = take_node_command(text, "taxon")?;
+    let (label, text) = take_node_command(&text, "label")?;
+    if let Some(t) = &taxon {
+        if t.is_empty() || !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            return Err(fence_err(
+                "a node's `\\taxon{…}` is a name of letters, digits, and `-`, such as `\\taxon{definition}`",
+            ));
+        }
+    }
+    if let Some(l) = &label {
+        if !crate::rewrite::Kind::label_is_heading_node(l) {
+            return Err(fence_err(format!(
+                "label `{l}` on a `node` fence must use a node namespace such as `def:` or `thm:`"
+            )));
+        }
+    }
+    let head = NodeHead { title: text.trim().to_string(), taxon, label };
+    Ok((head, &body[line_end..]))
+}
+
+/// Take `\name{value}` out of a node's title line: the trimmed value, and the line
+/// without the command. A second `\name{` on the line is an error.
+fn take_node_command(text: &str, name: &str) -> Result<(Option<String>, String), MarkdownError> {
+    let pat = format!("\\{name}{{");
+    let Some(at) = text.find(&pat) else {
+        return Ok((None, text.to_string()));
+    };
+    let from = at + pat.len();
+    let close = text[from..]
+        .find('}')
+        .map(|i| from + i)
+        .ok_or_else(|| fence_err(format!("`\\{name}{{` is not closed on a node's title line")))?;
+    let value = text[from..close].trim().to_string();
+    let rest = format!("{}{}", &text[..at], &text[close + 1..]);
+    if rest.contains(&pat) {
+        return Err(fence_err(format!(
+            "a node's title line has more than one `\\{name}{{…}}`"
+        )));
+    }
+    Ok((Some(value), rest))
+}
+
 fn take_caption(body: &str) -> Result<(Option<String>, String), MarkdownError> {
     if !body.trim_start().starts_with("\\caption") {
         return Ok((None, body.to_string()));
@@ -445,12 +739,31 @@ enum Fence {
     Math(Option<String>),
     Figure(Option<String>),
     Table(Option<String>),
+    /// An `alg:`-labelled pseudocode listing (§6.5), a float like a figure. The
+    /// body is `algorithmic` control words, rendered to static HTML by the
+    /// `pseudocode` module with inline math through the usual path.
+    Algorithm(Option<String>),
+    /// A `custom[NAME]` fence (§6.6): a `cob.toml`-registered CLI renders the
+    /// body. The Markdown pass only emits a `<cob-custom>` placeholder; the
+    /// weaver runs the handler, because it holds the config and the macros.
+    Custom { name: String, label: Option<String> },
+    /// A `node` fence (§10): its body is a small document, the same as a separate
+    /// file that is transcluded right here. The first line is its title,
+    /// `# Title \taxon{name} \label{ns:name}`, and the lines under it are its
+    /// content. The node's extent is exactly the fence, not the heading-to-heading
+    /// run a `\taxon` heading node has. It is a block element, so it has a node
+    /// page, a typed `\ref`, and transclusion like a float, but its body is prose.
+    Node,
     HtmlEscape,
     Verbatim(Option<String>),
     /// A `def:`-labelled exposition of macros (§6.4). Its body is normal prose
     /// with `\def`/`\let` definition lines; the label is required, because the
     /// fence is a node.
     Macros(String),
+    /// A declaration of imports (§13): `\import <name> as <alias>` lines. The
+    /// weaver scans the body to resolve `@alias` addresses; here it just renders
+    /// the lines verbatim so the reader sees what the document imports.
+    Imports,
 }
 
 /// One header modifier: a float `\label` or a `verbatim` `\lang`.
@@ -458,7 +771,7 @@ enum Modifier {
     Label(String),
     Lang(String),
 }
-const KINDS: &str = "math, figure, table, macros, html-escape, or verbatim";
+const KINDS: &str = "math, figure, table, algorithm, node, custom[name], macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
     let info = info.trim();
@@ -467,16 +780,37 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
         .unwrap_or(info.len());
     let kind = &info[..end];
     let rest = info[end..].trim();
+    // A `custom[NAME]` fence names its handler in brackets before any modifier.
+    if kind == "custom" {
+        return parse_custom(rest);
+    }
+    // A `node` fence carries everything on its first body line, so the info line
+    // is the bare word.
+    if kind == "node" {
+        return if rest.is_empty() {
+            Ok(Fence::Node)
+        } else {
+            Err(fence_err(
+                "a `node` fence takes nothing on its info line; its first line is \
+                 `# Title \\taxon{name} \\label{ns:name}`",
+            ))
+        };
+    }
     let mods = dialect::modifiers(rest)
         .map_err(|_| fence_err(format!("malformed modifier after `{kind}` fence; use {KINDS}")))?;
     match kind {
         "math" => Ok(Fence::Math(label_of(&mods, kind, "eq:")?)),
         "figure" => Ok(Fence::Figure(label_of(&mods, kind, "fig:")?)),
         "table" => Ok(Fence::Table(label_of(&mods, kind, "tbl:")?)),
+        "algorithm" => Ok(Fence::Algorithm(label_of(&mods, kind, "alg:")?)),
         "macros" => match label_of(&mods, kind, "def:")? {
             Some(l) => Ok(Fence::Macros(l)),
             None => Err(fence_err("a `macros` fence needs a `\\label{def:…}`")),
         },
+        "imports" => {
+            reject_modifiers(&mods, kind)?;
+            Ok(Fence::Imports)
+        }
         "html-escape" => {
             reject_modifiers(&mods, kind)?;
             Ok(Fence::HtmlEscape)
@@ -505,6 +839,32 @@ fn label_of(mods: &[Modifier], kind: &str, prefix: &str) -> Result<Option<String
         }
     }
     Ok(label)
+}
+
+/// Parse a `custom[NAME]` info line's remainder: the bracketed handler name,
+/// then an optional `\label{…}`. The label may use any namespace — the handler
+/// decides what element it emits — so the weaver passes it through untouched.
+fn parse_custom(rest: &str) -> Result<Fence, MarkdownError> {
+    let rest = rest
+        .strip_prefix('[')
+        .ok_or_else(|| kind_err("a `custom` fence names its handler: `custom[name]`"))?;
+    let close = rest
+        .find(']')
+        .ok_or_else(|| kind_err("a `custom` fence handler name is not closed: `custom[name]`"))?;
+    let name = rest[..close].trim();
+    if name.is_empty() {
+        return Err(kind_err("a `custom` fence names its handler: `custom[name]`"));
+    }
+    let mods = dialect::modifiers(rest[close + 1..].trim())
+        .map_err(|_| fence_err("malformed modifier after a `custom` fence"))?;
+    let mut label = None;
+    for m in &mods {
+        match m {
+            Modifier::Label(l) => label = Some(l.trim().to_string()),
+            Modifier::Lang(_) => return Err(fence_err("`\\lang` is not allowed on a `custom` fence")),
+        }
+    }
+    Ok(Fence::Custom { name: name.to_string(), label })
 }
 
 fn lang_of(mods: &[Modifier]) -> Result<Option<String>, MarkdownError> {
@@ -539,7 +899,7 @@ peg::parser! {
         pub rule nodes() -> Vec<Inline> = node()*
 
         rule node() -> Inline
-            = strong() / emph() / code() / refc() / transclude() / dmath() / imath() / text()
+            = strong() / emph() / code() / codespan() / refc() / citec() / transclude() / taxonc() / sidenote() / dmath() / imath() / text() / lonetick()
 
         rule strong() -> Inline = "\\strong{" ns:nodes() "}" { Inline::Strong(ns) }
         rule emph() -> Inline = "\\emph{" ns:nodes() "}" { Inline::Emph(ns) }
@@ -548,9 +908,31 @@ peg::parser! {
         rule cb_atom() = "\\{" {} / "\\}" {} / braces() / (!['{' | '}'] [_] {})
         rule braces() = "{" cb_atom()* "}"
 
-        rule refc() -> Inline = "\\ref{" s:$((!"}" [_])*) "}" { Inline::Ref(s.to_string()) }
+        // A backtick code span is literal, like `\code{}`: its body is captured whole
+        // and never read for commands, so `` `\cite{x}` `` is text, not a citation.
+        // An unmatched backtick is a literal character (`lonetick`), so a stray
+        // backtick never fails the parse.
+        rule codespan() -> Inline = "`" v:$((!"`" [_])*) "`" { Inline::Code(v.to_string()) }
+        rule lonetick() -> Inline = "`" { Inline::Text("`".to_string()) }
+
+        // `\ref{label}` reads as the target's kind and id. A second group,
+        // `\ref{label}{link text}`, keeps the author's text and still resolves the
+        // link — a table of contents names a chapter by its title.
+        rule refc() -> Inline
+            = "\\ref{" s:$((!"}" [_])*) "}" t:reftext()? { Inline::Ref(s.to_string(), t) }
+        rule reftext() -> Vec<Inline> = "{" ns:nodes() "}" { ns }
+        rule citec() -> Inline = "\\cite{" s:$((!"}" [_])*) "}" { Inline::Cite(s.to_string()) }
         rule transclude() -> Inline
             = "\\transclude{" s:$((!"}" [_])*) "}" { Inline::Transclude(s.to_string()) }
+        // A `\taxon{name}` declares the taxon (type) of the node it precedes (§10).
+        // It is a block directive, caught in `split_blocks`; inline it is inert, so a
+        // stray one never renders as text and never fails the parse.
+        rule taxonc() -> Inline = "\\taxon{" s:$((!"}" [_])*) "}" { Inline::Taxon(s.to_string()) }
+        // `\sidenote{…}` is an inline taxon (§10): the body is a typed note. It
+        // lowers to an `<aside class="sidenote">`; the site hoist then turns that
+        // into an inline marker plus a footnote at the foot of the page. The body
+        // recurses the grammar, so a sidenote can hold emphasis, a citation, or math.
+        rule sidenote() -> Inline = "\\sidenote{" ns:nodes() "}" { Inline::Sidenote(ns) }
 
         rule dmath() -> Inline
             = "$$" s:$((!"$$" [_])*) "$$" { Inline::Math { src: s.to_string(), display: true } }
@@ -560,7 +942,7 @@ peg::parser! {
 
         rule text() -> Inline = s:$(t_atom()+) { Inline::Text(unescape_text(s)) }
         rule t_atom() = "\\$" {} / "\\{" {} / "\\}" {} / "\\\\" {} / (!marker() [_] {})
-        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\transclude{" / "$" / "{" / "}"
+        rule marker() = "\\strong{" / "\\emph{" / "\\code{" / "\\ref{" / "\\cite{" / "\\transclude{" / "\\taxon{" / "\\sidenote{" / "$" / "{" / "}" / "`"
 
         rule ws() = [' ' | '\t' | '\n' | '\r']*
         pub rule modifiers() -> Vec<Modifier> = ws() m:(x:modifier() ws() { x })* { m }
@@ -591,8 +973,15 @@ enum Inline {
     Strong(Vec<Inline>),
     Code(String),
     Math { src: String, display: bool },
-    Ref(String),
+    /// `\ref{label}` with optional author link text (`\ref{label}{text}`).
+    Ref(String, Option<Vec<Inline>>),
+    Cite(String),
     Transclude(String),
+    /// A `\taxon{name}` directive. It is block-level (handled in `split_blocks`);
+    /// inline it is inert, lowering to nothing.
+    Taxon(String),
+    /// A `\sidenote{…}` inline taxon: a typed note rendered as a page footnote.
+    Sidenote(Vec<Inline>),
 }
 
 /// A parsed `\def`/`\let` line from a `macros` body (§6.4). `name` and `target`
@@ -630,13 +1019,38 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
                 out.push_str(&prose::escape(v));
                 out.push_str("</code>");
             }
-            Inline::Ref(id) => {
-                out.push_str(&format!("<a data-ref=\"{}\"></a>", prose::escape(id.trim())))
+            Inline::Ref(id, text) => {
+                out.push_str(&format!("<a data-ref=\"{}\">", prose::escape(id.trim())));
+                if let Some(ns) = text {
+                    lower(ns, math, out);
+                }
+                out.push_str("</a>");
+            }
+            Inline::Cite(keys) => {
+                // `\cite{k1, k2}` lowers to one inert marker per key; the weaver
+                // mints each a node id and draws the `[id]` marker (§14).
+                for key in keys.split(',') {
+                    let key = key.trim();
+                    if !key.is_empty() {
+                        out.push_str(&format!("<a data-cite=\"{}\"></a>", prose::escape(key)));
+                    }
+                }
             }
             Inline::Transclude(id) => out.push_str(&format!(
                 "<div class=\"transclusion\" data-transclude=\"{}\"></div>",
                 prose::escape(id.trim())
             )),
+            // A taxon is block-level (split_blocks attaches it to the next heading);
+            // an inline one is a no-op.
+            Inline::Taxon(_) => {}
+            Inline::Sidenote(ns) => {
+                // A typed note: the `.sidenote` class marks it for the site hoist,
+                // which lifts it to a page footnote, and data-taxon is the taxon
+                // API (§10). No html-escape.
+                out.push_str("<aside class=\"sidenote\" data-taxon=\"sidenote\">");
+                lower(ns, math, out);
+                out.push_str("</aside>");
+            }
             Inline::Math { src, display } => {
                 let idx = math.len();
                 math.push(Math {
@@ -685,7 +1099,7 @@ mod tests {
 
     fn run(input: &str) -> (String, Vec<Math>) {
         let mut math = Vec::new();
-        let html = render(input, &mut math, &mut String::new()).expect("renders");
+        let html = render(input, &mut math, &mut BTreeMap::new()).expect("renders");
         (html, math)
     }
 
@@ -704,6 +1118,15 @@ mod tests {
         let (html, _) = run("# Title {#sec:top}\n\n- one\n- two\n");
         assert!(html.contains("<h1 id=\"sec:top\">Title</h1>"));
         assert!(html.contains("<ul><li>one</li><li>two</li></ul>"));
+    }
+
+    #[test]
+    fn an_indented_line_continues_a_list_item() {
+        let (html, _) = run("1. first $a,\n   b$ done\n2. second\n   goes on\n3. third\n");
+        // One list of three items, not three lists with paragraphs between.
+        assert_eq!(html.matches("<ol>").count(), 1, "{html}");
+        assert_eq!(html.matches("<li>").count(), 3, "{html}");
+        assert!(html.contains("second goes on") || html.contains("second\ngoes on"), "{html}");
     }
 
     #[test]
@@ -802,6 +1225,40 @@ mod tests {
         let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
         assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
         assert!(html.contains("<a data-ref=\"eq:wrap\"></a>"));
+        let (titled, _) = run("\\ref{ch:x}{The \\emph{Title}}");
+        assert!(titled.contains("<a data-ref=\"ch:x\">The <em>Title</em></a>"));
+    }
+
+    #[test]
+    fn cite_lowers_to_one_data_cite_per_key() {
+        // One key makes one marker; a comma list makes one per key (§14).
+        let (one, _) = run("as \\cite{smith2020} shows");
+        assert!(one.contains("<a data-cite=\"smith2020\"></a>"));
+        let (many, _) = run("see \\cite{smith2020, knuth1984}");
+        assert!(many.contains("<a data-cite=\"smith2020\"></a>"));
+        assert!(many.contains("<a data-cite=\"knuth1984\"></a>"));
+        // A `\cite` inside `\code` is literal.
+        let (code, _) = run("write \\code{\\cite{x}} here");
+        assert!(code.contains("<code>\\cite{x}</code>"));
+        assert!(!code.contains("data-cite=\"x\""));
+    }
+
+    #[test]
+    fn a_backtick_span_is_literal_inline_code() {
+        // Commands inside a backtick span are text, like inside `\code{}`.
+        let (html, _) = run("use `\\cite{x}` and `\\ref{fig:p}` and `$x$` literally");
+        assert!(html.contains("<code>\\cite{x}</code>"));
+        assert!(html.contains("<code>\\ref{fig:p}</code>"));
+        assert!(html.contains("<code>$x$</code>"));
+        assert!(!html.contains("data-cite"));
+        assert!(!html.contains("data-ref"));
+        // A real command outside the span still lowers.
+        let (live, _) = run("code `\\ref{fig:p}` but real \\ref{fig:q}");
+        assert!(live.contains("<code>\\ref{fig:p}</code>"));
+        assert!(live.contains("<a data-ref=\"fig:q\"></a>"));
+        // An unmatched backtick is a literal backtick, not a parse error.
+        let (lone, _) = run("a lone ` backtick");
+        assert!(lone.contains("lone ` backtick") || lone.contains("lone `"));
     }
 
     #[test]
@@ -825,9 +1282,115 @@ mod tests {
     fn mismatched_label_namespace_is_e030() {
         let mut math = Vec::new();
         let err =
-            render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut String::new()).unwrap_err();
+            render("```figure \\label{tbl:x}\n\\caption{c}\n<img>\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
         assert!(matches!(err, MarkdownError::Fence { code: "E030", .. }));
         assert!(err.to_string().contains("fig:"));
+    }
+
+    #[test]
+    fn a_node_fence_is_one_typed_node() {
+        let (html, math) = run(
+            "```node\n# A \\emph{thing} \\taxon{definition} \\label{def:x}\nA body $x$.\n\n\
+             $$y = 1$$\n\nSecond paragraph.\n```\n\nAfter the node.",
+        );
+        // A titled node opens with a real heading, one level below its context, that
+        // carries the label as its id and the taxon. The weaver sets the real tag.
+        assert!(html.contains("<section class=\"taxon-node\" data-taxon=\"definition\">"));
+        assert!(html.contains(
+            "<h2 class=\"node-head\" data-rel=\"1\" id=\"def:x\" data-taxon=\"definition\">A <em>thing</em></h2>"
+        ));
+        assert_eq!(math.len(), 2, "inline and display math inside the node");
+        // The node ends where the fence ends: the prose after it is outside.
+        let end = html.find("</section>").expect("the node closes");
+        assert!(html[..end].contains("Second paragraph."));
+        assert!(html[end..].contains("<p>After the node.</p>"));
+        assert!(!html[..end].contains("After the node."));
+
+        // The label may come first, and a title may be empty: `# \taxon{…}` alone. An
+        // untitled node holds a place for no heading, so the label stays on the section.
+        let (swapped, _) = run("```node\n# \\label{thm:t} \\taxon{theorem}\nEvery thing is a thing.\n```");
+        assert!(swapped.contains("<section class=\"taxon-node\" id=\"thm:t\" data-taxon=\"theorem\">"));
+        assert!(swapped.contains("<p class=\"node-title\" data-taxon=\"theorem\"></p>"));
+
+        // No label: still a node element, with no id. No taxon: an untyped node.
+        let (bare, _) = run("```node\n# \\taxon{remark}\nJust a remark.\n```");
+        assert!(bare.contains("<section class=\"taxon-node\" data-taxon=\"remark\">"));
+        assert!(!bare.contains(" id="));
+        let (untyped, _) = run("```node\n# Just a title\nBody.\n```");
+        assert!(untyped.contains("<section class=\"taxon-node\">"));
+        assert!(untyped.contains("data-rel=\"1\">Just a title</h2>"));
+
+        // A longer outer fence holds a nested fence.
+        let (nested, _) = run(
+            "````node\n# \\taxon{example} \\label{ex:n}\nSee below.\n\n```figure \\label{fig:inner}\n\\caption{c}\n<img>\n```\n````",
+        );
+        assert!(nested.contains("id=\"ex:n\""));
+        assert!(nested.contains("<figure id=\"fig:inner\">"));
+    }
+
+    #[test]
+    fn a_node_fence_errors() {
+        let mut math = Vec::new();
+        let mut err = |src: &str| render(src, &mut math, &mut BTreeMap::new()).unwrap_err();
+        let is_e030 = |e: &MarkdownError| matches!(e, MarkdownError::Fence { code: "E030", .. });
+        // A float namespace on a node.
+        assert!(is_e030(&err("```node\n# \\taxon{definition} \\label{fig:x}\nbody\n```")));
+        // A second title line, and a taxon on an inner heading.
+        let e = err("```node\n# \\taxon{theorem}\n# Again\nbody\n```");
+        assert!(is_e030(&e));
+        assert!(e.to_string().contains("one title line"));
+        let e = err("```node\n# T\n\\taxon{lemma}\n## Inner\nbody\n```");
+        assert!(is_e030(&e));
+        assert!(e.to_string().contains("cannot be a taxon node"));
+        // No title line, a `##` title line, or a body that starts with prose.
+        for bad in ["```node\nbody only\n```", "```node\n## Two hashes \\taxon{x}\nbody\n```"] {
+            let e = err(bad);
+            assert!(is_e030(&e), "{bad}");
+            assert!(e.to_string().contains("title line"), "{bad}");
+        }
+        // Text on the info line, including the old `node[taxon]` form, says where it goes.
+        for bad in ["```node[definition]\n# T\nbody\n```", "```node \\label{def:x}\n# T\nbody\n```"] {
+            let e = err(bad);
+            assert!(is_e030(&e), "{bad}");
+            assert!(e.to_string().contains("info line"), "{bad}");
+        }
+        // A bad taxon, an unclosed command, and a repeated command.
+        for bad in [
+            "```node\n# \\taxon{a b}\nbody\n```",
+            "```node\n# \\taxon{}\nbody\n```",
+            "```node\n# \\taxon{theorem\nbody\n```",
+            "```node\n# \\taxon{a} \\taxon{b}\nbody\n```",
+        ] {
+            assert!(is_e030(&err(bad)), "{bad}");
+        }
+    }
+    #[test]
+    fn a_node_fence_holds_headings() {
+        let mut math = Vec::new();
+        let html = render(
+            "```node\n# T \\taxon{theorem} \\label{thm:t}\nIntro.\n\n## Step one {#step}\n\nText.\n\n### Detail\n\nMore.\n```",
+            &mut math,
+            &mut BTreeMap::new(),
+        )
+        .unwrap();
+        // Each heading is one level deeper than the one above, counted from the
+        // enclosing heading: the title is 1, `##` is 2, `###` is 3. They are real
+        // headings, so the weaver tracks them like any other.
+        assert!(html.contains("data-rel=\"1\" id=\"thm:t\""));
+        assert!(html.contains("<h3 data-rel=\"2\" id=\"step\">Step one</h3>"));
+        assert!(html.contains("<h4 data-rel=\"3\">Detail</h4>"));
+        // A nested titled fence sits one level under the heading it follows.
+        let nested = render(
+            "````node\n# Outer \\taxon{theorem} \\label{thm:o}\n## Part\n\n```node\n# Inner \\taxon{lemma} \\label{lem:i}\nBody.\n```\n````",
+            &mut math,
+            &mut BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(nested.matches("<section class=\"taxon-node\"").count(), 2);
+        assert!(nested.contains("data-rel=\"3\" id=\"lem:i\""));
+        // An untitled node takes no level: its `##` is one below its context.
+        let bare = render("```node\n# \\taxon{remark}\n## Aside\n\nx\n```", &mut math, &mut BTreeMap::new()).unwrap();
+        assert!(bare.contains("<h2 data-rel=\"1\">Aside</h2>"));
     }
 
     #[test]
@@ -839,19 +1402,19 @@ mod tests {
     #[test]
     fn a_bare_or_unknown_fence_is_e034() {
         let mut math = Vec::new();
-        let bare = render("```\nx\n```", &mut math, &mut String::new()).unwrap_err();
+        let bare = render("```\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
         assert!(matches!(bare, MarkdownError::Fence { code: "E034", .. }));
-        let unknown = render("```rust\nx\n```", &mut math, &mut String::new()).unwrap_err();
+        let unknown = render("```rust\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
         assert!(matches!(unknown, MarkdownError::Fence { code: "E034", .. }));
         // A `\lang{}` on any kind but verbatim is a bad modifier (E030).
-        let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut String::new()).unwrap_err();
+        let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
         assert!(matches!(misplaced, MarkdownError::Fence { code: "E030", .. }));
     }
 
     #[test]
     fn round_trips_through_math_substitution() {
         let mut math = Vec::new();
-        let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math, &mut String::new()).unwrap();
+        let html = render("$x$\n\n```math \\label{eq:y}\ny\n```", &mut math, &mut BTreeMap::new()).unwrap();
         // Document order: inline `$x$` is index 0, the fenced display is index 1.
         assert_eq!((math[0].source.as_str(), math[0].display), ("x", false));
         assert_eq!((math[1].source.as_str(), math[1].display), ("y", true));
@@ -866,19 +1429,19 @@ mod tests {
     #[test]
     fn macros_fence_registers_and_shows_source() {
         let mut math = Vec::new();
-        let mut preamble = String::new();
+        let mut defs = BTreeMap::new();
         let html = render(
             "```macros \\label{def:basics}\n\\def\\RR{\\mathbb{R}}\nThe reals.\n\
              \\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR\n```",
             &mut math,
-            &mut preamble,
+            &mut defs,
         )
         .expect("a macros fence renders");
-        // Definitions accumulate into the preamble for KaTeX; a param macro is
-        // translated to KaTeX #1, replacing the whole control word only.
-        assert!(preamble.contains("\\def\\RR{\\mathbb{R}}"));
-        assert!(preamble.contains("\\def\\abs#1{\\lvert #1 \\rvert}"));
-        assert!(preamble.contains("\\let\\R=\\RR"));
+        // Each definition is recorded in the macro table (name → expansion) for KaTeX;
+        // a param macro is translated to `#1`, replacing the whole control word only.
+        assert_eq!(defs.get("\\RR").map(String::as_str), Some("\\mathbb{R}"));
+        assert_eq!(defs.get("\\abs").map(String::as_str), Some("\\lvert #1 \\rvert"));
+        assert_eq!(defs.get("\\R").map(String::as_str), Some("\\RR"));
         // The exposition is a node div with the label id; the prose renders.
         assert!(html.contains("<div class=\"macros\" id=\"def:basics\">"));
         assert!(html.contains("<p>The reals.</p>"));
@@ -886,21 +1449,52 @@ mod tests {
         // as a code block, but are not typeset. A run of them is one block.
         assert!(html.contains("<pre class=\"macro-src\"><code>\\def\\RR{\\mathbb{R}}</code></pre>"));
         assert!(html.contains("\\def\\abs[x]{\\lvert \\x \\rvert}\n\\let\\R=\\RR"));
-        assert!(!html.contains("\\def\\abs#1")); // #1 goes only to the preamble
+        // The translated `#1` form is table-only — it must never leak into the HTML.
+        assert!(!html.contains("#1"));
         assert!(math.is_empty());
 
         // The label is required.
-        let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut String::new())
+        let err = render("```macros\n\\def\\RR{x}\n```", &mut Vec::new(), &mut BTreeMap::new())
             .unwrap_err();
         assert!(matches!(err, MarkdownError::Fence { .. }));
     }
 
     #[test]
+    fn taxon_rides_on_the_next_heading() {
+        let mut math = Vec::new();
+        let mut defs = BTreeMap::new();
+        // `\taxon{name}` stamps the next heading with `data-taxon` and emits nothing of
+        // its own.
+        let html = render("\\taxon{theorem}\n## Pumping Lemma\n", &mut math, &mut defs).unwrap();
+        assert!(html.contains("<h2 data-taxon=\"theorem\">"));
+        assert!(!html.contains("\\taxon"));
+        // It applies only to the heading immediately after it: an intervening paragraph
+        // drops the pending taxon.
+        let later = render("\\taxon{lemma}\n\nnot a heading\n\n## Later\n", &mut math, &mut defs).unwrap();
+        assert!(!later.contains("data-taxon"));
+    }
+
+    #[test]
+    fn sidenote_and_blockquote_render() {
+        let mut math = Vec::new();
+        let mut defs = BTreeMap::new();
+        // An inline sidenote is a typed margin aside; its body recurses the grammar.
+        let note = render("A claim.\\sidenote{see \\emph{later}}\n", &mut math, &mut defs).unwrap();
+        assert!(note.contains("<aside class=\"sidenote\" data-taxon=\"sidenote\">"));
+        assert!(note.contains("<em>later</em>"));
+        // A run of `>` lines is a blockquote, body rendered through the block renderer.
+        let quote = render("> a quote\n>\n> — someone\n", &mut math, &mut defs).unwrap();
+        assert!(quote.starts_with("<blockquote>"));
+        assert!(quote.contains("a quote"));
+        assert!(quote.contains("someone"));
+    }
+
+    #[test]
     fn def_line_is_inert_in_prose() {
         let mut math = Vec::new();
-        let mut preamble = String::new();
-        let html = render("\\let\\R=\\RR here", &mut math, &mut preamble).expect("prose renders");
-        assert!(preamble.is_empty());
+        let mut defs = BTreeMap::new();
+        let html = render("\\let\\R=\\RR here", &mut math, &mut defs).expect("prose renders");
+        assert!(defs.is_empty());
         assert!(html.contains("\\let\\R=\\RR here"));
     }
 }

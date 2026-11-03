@@ -11,6 +11,11 @@ files in order. A \code{[tangle]} table sets the default output directory, and a
 \code{[[tangle.root]]} table per root sets that root's line-pragma format. A \code{[weave]}
 table holds the highlight language keys (§5.5).
 
+The \code{files} of a \code{[[document]]} are the book. Their order is the reading order, and
+it is the only place that order is written down. \code{cob weave} and \code{cob lock} read
+it when the command line names no files, so a build, a review loop, and a CI check all
+share one book. A file named on the command line wins over the manifest.
+
 ```verbatim \lang{toml}
 [[document]]
 id = "cob"
@@ -42,11 +47,13 @@ and it is why the default is off.
 ## One prose dialect {#sec:ZZAp}
 
 A docs chunk is authored in one dialect (§6.4): the command Markdown. Paragraphs,
-emphasis, lists, links, and headings become HTML; a \code{\code{…}}/\code{\emph{…}}/\code{\strong{…}}
-command marks an inline span; and a fenced block is a grammar-owned kind — \code{math},
-\code{figure}, \code{table}, \code{verbatim}, or \code{html-escape}. The escape hatch is per fence, not
-per document: an \code{html-escape} fence is the one door for raw HTML — a sidenote aside,
-for example, is an \code{html-escape} fence. So the manifest needs no dialect key.
+lists, links, headings, and blockquotes become HTML. Inline formatting is explicit
+commands, never CommonMark \code{*}-style flanking: \code{\emph{…}} makes \code{<em>},
+\code{\strong{…}} makes \code{<strong>}, \code{\code{…}} an inline code span, and \code{\sidenote{…}}
+a margin note (§10). A fenced block is a grammar-owned kind — \code{math}, \code{figure},
+\code{table}, \code{verbatim}, or \code{html-escape}. The escape hatch is per fence, not per
+document: an \code{html-escape} fence is the one door for raw HTML. So the manifest needs
+no dialect key.
 
 The dialect is a post-\code{markup} transform (§6.2) on the already-reassembled prose.
 Everything downstream — the numbering, the refs, the math render, the sidenote hoist,
@@ -74,6 +81,12 @@ then the tests.
 <<a declared document>>
 
 <<an import>>
+
+<<the cite table>>
+
+<<the forest table>>
+
+<<a fence handler>>
 
 <<the tangle table>>
 
@@ -152,22 +165,91 @@ pub struct Config {
     /// order deterministic.
     #[serde(rename = "import", default)]
     pub imports: BTreeMap<String, Import>,
+    #[serde(default)]
+    pub cite: Cite,
+    #[serde(default)]
+    pub forest: Forest,
+    /// The `[fence.<name>]` tables (§6.6): each registers a CLI handler for a
+    /// `custom[<name>]` fence. `BTreeMap` keeps the order deterministic.
+    #[serde(rename = "fence", default)]
+    pub fences: BTreeMap<String, FenceHandler>,
+}
+@
+A \code{[fence.<name>]} table registers a handler for a \code{custom[<name>]} fence (§6.6).
+\code{cmd} is the argv of a program cob runs at weave time, from the project root; cob
+sends it the fence body and context as JSON and reads back the HTML. Declaring the
+handler in \code{cob.toml} — the project's own trusted config — is the consent to run
+it; an undeclared handler is the E042 error.
+<<a fence handler>>=
+/// One `[fence.<name>]` table (§6.6): the CLI that renders a `custom[<name>]`
+/// fence. `cmd` is the argv — the first element is the program, run from the
+/// project root — so a handler can be `["tools/fig"]` or `["python3", "x.py"]`.
+#[derive(Deserialize, Default, Clone)]
+pub struct FenceHandler {
+    pub cmd: Vec<String>,
+}
+@
+The \code{[forest]} table declares this forest's own identity (§16). \code{url} is where its
+pages are deployed; it is the join key for reverse backlinks — a consumer's
+outgoing edge names the target forest by the same url, so the aggregator matches an
+edge to the forest it points at. A forest with no \code{url} does not take part in
+cross-forest backlinks.
+<<the forest table>>=
+/// The `[forest]` table (§16): this forest's own identity. `url` is its deployed
+/// base — the join key that lets the backlink aggregator match a consumer's
+/// outgoing edge to the forest it targets.
+#[derive(Deserialize, Default)]
+pub struct Forest {
+    #[serde(default)]
+    pub url: Option<String>,
+}
+@
+The \code{[cite]} table points at the bibliography (§14). \code{bib} is the path to a BibTeX
+file; \code{\cite{key}} resolves against its entries. Absent means the document has no
+bibliography, so a \code{\cite} is then the E040 unknown-citation error.
+<<the cite table>>=
+/// The `[cite]` table (§14): where the bibliography comes from. `bib` is the path
+/// to a BibTeX file; a `\cite{key}` resolves against its entries. Absent means no
+/// bibliography.
+#[derive(Deserialize, Default)]
+pub struct Cite {
+    #[serde(default)]
+    pub bib: Option<String>,
 }
 @
 An \code{[import.<alias>]} table binds another forest to the alias, so \code{label@alias}
 addresses resolve against it (§13). \code{path} names a local forest to read now; \code{git}
 plus \code{rev} name a remote one that \code{cob fetch} pins into the import cache before a
-weave reads it offline.
+weave reads it offline. \code{url} is where that forest's pages are deployed, so a
+cross-document \code{\ref} or \code{\transclude} makes a link that lands on the real site.
 <<an import>>=
 /// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
-/// local `path`, or a `git` URL pinned by `rev`. `cob fetch` turns a git import
-/// into a cached path; a weave only ever reads a path, so it stays offline.
+/// local `path`, or a `git` URL resolved by a semver `version` requirement (the
+/// release model) or a raw `rev` (the escape hatch). `cob fetch` turns a git import
+/// into a cached index keyed by commit; a weave only ever reads the cache, so it
+/// stays offline. `url` is the deployed base a cross-document `\ref`/`\transclude`
+/// links into.
 #[derive(Deserialize, Default, Clone)]
 pub struct Import {
     #[serde(default)]
     pub path: Option<String>,
+    /// The deployed base URL of the imported forest (§13); a cross-document
+    /// reference lands on `<url>/<page>.html#<anchor>`. Empty when unset, which
+    /// makes a site-root-relative link.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// A `git` URL. `cob fetch` resolves it (by `version` or `rev`) into a cached
+    /// index keyed by commit; a weave then reads the cache offline and never
+    /// touches git itself.
     #[serde(default)]
     pub git: Option<String>,
+    /// A semver requirement (e.g. `^1.2`) resolved against the forest's semver
+    /// tags to the highest matching release — the primary version model (§13).
+    #[serde(default)]
+    pub version: Option<String>,
+    /// An exact git ref (tag, branch, or sha) used as-is, with no semver
+    /// resolution — the escape hatch for importing an unreleased branch. Exactly
+    /// one of `version`/`rev` is given for a `git` import.
     #[serde(default)]
     pub rev: Option<String>,
 }

@@ -41,9 +41,11 @@ pub enum Kind {
     Figure,
     Table,
     Equation,
+    Algorithm,
     Section,
     Chunk,
     Macro,
+    Citation,
 }
 
 impl Kind {
@@ -52,9 +54,11 @@ impl Kind {
             Kind::Figure => "Figure",
             Kind::Table => "Table",
             Kind::Equation => "Equation",
+            Kind::Algorithm => "Algorithm",
             Kind::Section => "Section",
             Kind::Chunk => "Chunk",
             Kind::Macro => "Notation",
+            Kind::Citation => "Citation",
         }
     }
 
@@ -64,9 +68,11 @@ impl Kind {
             Kind::Figure => "figure",
             Kind::Table => "table",
             Kind::Equation => "equation",
+            Kind::Algorithm => "algorithm",
             Kind::Section => "section",
             Kind::Chunk => "chunk",
             Kind::Macro => "macro",
+            Kind::Citation => "citation",
         }
     }
 
@@ -76,11 +82,34 @@ impl Kind {
             "fig" => Some(Kind::Figure),
             "tbl" => Some(Kind::Table),
             "eq" => Some(Kind::Equation),
+            "alg" => Some(Kind::Algorithm),
             "sec" => Some(Kind::Section),
             "chunk" => Some(Kind::Chunk),
             "def" => Some(Kind::Macro),
+            "cite" => Some(Kind::Citation),
             _ => None,
         }
+    }
+
+    /// Is a heading with this id a referenceable node (§10)? Every namespaced
+    /// heading is — `sec:`, `def:`, `thm:`, `ex:`, `prob:`, and any other — so
+    /// a typed node is reachable by its own page and `\ref`. A float, chunk, or
+    /// citation namespace is not a heading, so it is excluded. The taxon, not the
+    /// namespace, names the kind (the `def:` prefix also tags a notation fence).
+    /// Is a label one a page heading (an h1) may carry (§7)? Only `ch:` and
+    /// `part:`. An h1 is a page, not a node, so these labels make it a `\ref`
+    /// target and nothing more. Any other label on an h1 (a `sec:` one, say) means
+    /// nothing, as it always did, so an existing document is not changed by this.
+    pub fn label_is_page_heading(id: &str) -> bool {
+        matches!(id.split_once(':').map(|(ns, _)| ns), Some("ch" | "part"))
+    }
+
+    pub fn label_is_heading_node(id: &str) -> bool {
+        id.contains(':')
+            && !matches!(
+                Kind::from_label(id),
+                Some(Kind::Figure | Kind::Table | Kind::Equation | Kind::Algorithm | Kind::Chunk | Kind::Citation)
+            )
     }
 }
 
@@ -123,6 +152,12 @@ pub struct Heading {
     pub text: String,
     /// Author-supplied `id`, if any; otherwise assigned from the text later.
     pub given_id: Option<String>,
+    /// The `data-taxon` the heading carries (§10), if any. It names the typed
+    /// node — "definition", "theorem" — and so the word a `\ref` to it reads.
+    pub taxon: Option<String>,
+    /// The heading sits inside a `node` fence (§10), so its node ends where the
+    /// fence ends, not at the next heading of the same level.
+    pub in_fence: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +166,9 @@ pub struct LabelDef {
     pub id: String,
     pub kind: Kind,
     pub section: usize,
+    /// The taxon of a `node` fence (§10), which names the word a `\ref` to it reads
+    /// ("Definition"). `None` for a float or a `macros` node.
+    pub taxon: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +188,15 @@ pub struct Scan {
     pub first_tag: Vec<Option<String>>,
     /// Figures and tables that never got a caption (§7 requires one).
     pub uncaptioned: Vec<usize>,
+    /// The level of the latest heading outside any `node` fence: the base that a
+    /// fence's relative levels add to (§10).
+    pub base: u8,
+}
+
+/// The document level of a heading in a `node` fence: the enclosing heading's
+/// level plus the fence-relative depth, never an `h1` (a page) and never past `h6`.
+pub fn fence_level(base: u8, rel: u8) -> u8 {
+    base.saturating_add(rel).clamp(2, 6)
 }
 
 #[derive(Default)]
@@ -159,20 +206,24 @@ struct ScanState {
     labels: Vec<LabelDef>,
     refs: Vec<RefSite>,
     uncaptioned: usize,
-    /// Heading being accumulated: (level, given id, text so far).
-    heading: Option<(u8, Option<String>, String)>,
+    /// Heading being accumulated: (level, given id, taxon, text so far, in a fence).
+    heading: Option<(u8, Option<String>, Option<String>, String, bool)>,
+    /// See `Scan::base`.
+    base: u8,
     /// Ref site being accumulated: (target, saw text).
     reference: Option<(String, bool)>,
 }
 
 impl ScanState {
     fn flush_heading(&mut self, section: usize) {
-        if let Some((level, given_id, text)) = self.heading.take() {
+        if let Some((level, given_id, taxon, text, in_fence)) = self.heading.take() {
             self.headings.push(Heading {
                 section,
                 level,
                 text: text.trim().to_string(),
                 given_id,
+                taxon,
+                in_fence,
             });
         }
     }
@@ -204,7 +255,7 @@ fn run(html: &str, handlers: Vec<Handler>) -> Result<String, RewriteError> {
 /// figure/table/equation so weave can mint/resolve its opaque id (§7.1); the id
 /// itself is assigned later, so this pass keeps no counter.
 pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteError> {
-    let st = Rc::new(RefCell::new(ScanState::default()));
+    let st = Rc::new(RefCell::new(ScanState { base: out.base, ..ScanState::default() }));
     // Headings and refs are flushed lazily — when the next one starts, or at
     // the end of the section — which keeps us off lol_html's end-tag handlers.
     {
@@ -219,21 +270,37 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         Ok(())
                     }
                 }),
-                element!("h1,h2,h3", {
+                element!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", {
                     let st = st.clone();
                     move |el| {
                         let mut st = st.borrow_mut();
                         st.flush_heading(section);
-                        let level = el.tag_name().as_bytes()[1] - b'0';
-                        st.heading = Some((level, el.get_attribute("id"), String::new()));
+                        let tag = el.tag_name().as_bytes()[1] - b'0';
+                        // A heading in a `node` fence carries its depth below the
+                        // enclosing heading (§10); any other heading is its tag.
+                        let rel = el.get_attribute("data-rel").and_then(|r| r.parse::<u8>().ok());
+                        let level = match rel {
+                            Some(r) => fence_level(st.base, r),
+                            None => {
+                                st.base = tag;
+                                tag
+                            }
+                        };
+                        st.heading = Some((
+                            level,
+                            el.get_attribute("id"),
+                            el.get_attribute("data-taxon"),
+                            String::new(),
+                            rel.is_some(),
+                        ));
                         Ok(())
                     }
                 }),
-                text!("h1,h2,h3", {
+                text!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", {
                     let st = st.clone();
                     move |t| {
                         if let Some(h) = st.borrow_mut().heading.as_mut() {
-                            h.2.push_str(t.as_str());
+                            h.3.push_str(t.as_str());
                         }
                         Ok(())
                     }
@@ -242,7 +309,13 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                     let st = st.clone();
                     move |el| {
                         let kind = if el.tag_name() == "figure" {
-                            Kind::Figure
+                            // An `algorithm` fence is a `<figure class="algorithm">`
+                            // (§6.5), a distinct float kind from an ordinary figure.
+                            if el.get_attribute("class").as_deref() == Some("algorithm") {
+                                Kind::Algorithm
+                            } else {
+                                Kind::Figure
+                            }
                         } else {
                             Kind::Table
                         };
@@ -250,7 +323,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                         st.uncaptioned += 1;
                         if let Some(id) = el.get_attribute("id") {
                             if Kind::from_label(&id) == Some(kind) {
-                                st.labels.push(LabelDef { id, kind, section });
+                                st.labels.push(LabelDef { id, kind, section, taxon: None });
                             }
                         }
                         Ok(())
@@ -275,6 +348,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                                     id,
                                     kind: Kind::Equation,
                                     section,
+                                    taxon: None,
                                 });
                             }
                         }
@@ -292,7 +366,44 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
                                     id,
                                     kind: Kind::Macro,
                                     section,
+                                    taxon: None,
                                 });
+                            }
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("section.taxon-node", {
+                    let st = st.clone();
+                    move |el| {
+                        // A `node` fence (§10) is a labelled typed node. Record it
+                        // like a float so weave mints its opaque id, with its taxon
+                        // so a `\ref` to it reads "Definition <id>". Its kind is
+                        // Section whatever its namespace: `def:` also tags a
+                        // notation fence, but this element is a normal in-flow node.
+                        // An unlabelled node has no id and so no identity.
+                        if let Some(id) = el.get_attribute("id") {
+                            st.borrow_mut().labels.push(LabelDef {
+                                id,
+                                kind: Kind::Section,
+                                section,
+                                taxon: el.get_attribute("data-taxon"),
+                            });
+                        }
+                        Ok(())
+                    }
+                }),
+                element!("cob-custom", {
+                    let st = st.clone();
+                    move |el| {
+                        // §6.6 In the mint pass a `custom` fence is still a
+                        // `<cob-custom>` placeholder (the handler has not run). If
+                        // its `data-label` is a float namespace, record it so `cob
+                        // lock` mints the id without the tool; at weave the handler
+                        // emits the real element and the id is already frozen.
+                        if let Some(id) = el.get_attribute("data-label") {
+                            if let Some(kind) = Kind::from_label(&id) {
+                                st.borrow_mut().labels.push(LabelDef { id, kind, section, taxon: None });
                             }
                         }
                         Ok(())
@@ -325,6 +436,7 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
     let mut st = st.borrow_mut();
     st.flush_heading(section);
     st.flush_ref(section);
+    out.base = st.base;
     out.first_tag.push(st.first_tag.take());
     if st.uncaptioned > 0 {
         out.uncaptioned.push(section);
@@ -354,6 +466,8 @@ pub struct Plan<'a> {
     pub label_ids: &'a BTreeMap<String, String>,
     heading: usize,
     reference: usize,
+    /// See `Scan::base`; the apply pass tracks it the same way the scan does.
+    base: u8,
 }
 
 impl<'a> Plan<'a> {
@@ -370,6 +484,7 @@ impl<'a> Plan<'a> {
             label_ids,
             heading: 0,
             reference: 0,
+            base: 0,
         }
     }
 }
@@ -377,6 +492,7 @@ impl<'a> Plan<'a> {
 /// Pass 2.
 pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     let heading_idx = RefCell::new(plan.heading);
+    let base = RefCell::new(plan.base);
     let ref_idx = RefCell::new(plan.reference);
     let heading_anchors = plan.heading_anchors;
     let heading_uids = plan.heading_uids;
@@ -387,6 +503,8 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     // rendered "Figure <id>" label has to live on the caption, not the container.
     let pending_fig: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let pending_tbl: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    // The (opaque id, anchor) a `node` fence just took, for its title paragraph.
+    let pending_node: Rc<RefCell<Option<(String, String)>>> = Rc::new(RefCell::new(None));
 
     // The opaque id for a float, keyed by its human label, when one was minted.
     let id_of = |el: &lol_html::html_content::Element| -> Option<String> {
@@ -397,7 +515,16 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     };
 
     let handlers: Vec<Handler> = vec![
-            element!("h1,h2,h3", |el| {
+            element!("h1,h2,h3,h4[data-rel],h5[data-rel],h6[data-rel]", |el| {
+                // Track the base level the same way the scan did (§10), and give a
+                // heading in a `node` fence its real tag from its depth.
+                match el.get_attribute("data-rel").and_then(|r| r.parse::<u8>().ok()) {
+                    Some(r) => {
+                        let level = fence_level(*base.borrow(), r);
+                        el.set_tag_name(&format!("h{level}")).ok();
+                    }
+                    None => *base.borrow_mut() = el.tag_name().as_bytes()[1] - b'0',
+                }
                 let mut i = heading_idx.borrow_mut();
                 if let Some(anchor) = heading_anchors.get(*i) {
                     el.set_attribute("id", anchor).ok();
@@ -489,6 +616,38 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
                 }
                 Ok(())
             }),
+            element!("section.taxon-node", {
+                let pending_node = pending_node.clone();
+                move |el| {
+                    // A `node` fence (§10). A labelled one takes its opaque id and its
+                    // colon-free anchor, like a float. The id and anchor wait in a
+                    // one-slot cell for the title paragraph, its first child, which
+                    // carries the permalink and node link: CSS `attr()` reads only an
+                    // element's own attributes, the same wrinkle as a figure caption.
+                    if let Some(label) = el.get_attribute("id") {
+                        let anchor = anchor_of(&label);
+                        if let Some(opaque) = label_ids.get(&label) {
+                            el.set_attribute("data-id", opaque).ok();
+                            *pending_node.borrow_mut() = Some((opaque.clone(), anchor.clone()));
+                        }
+                        el.set_attribute("id", &anchor).ok();
+                    }
+                    Ok(())
+                }
+            }),
+            element!("p.node-title", {
+                let pending_node = pending_node.clone();
+                move |el| {
+                    if let Some((opaque, anchor)) = pending_node.borrow_mut().take() {
+                        let tag = format!(
+                            "<a class=\"sec-uid\" href=\"#{anchor}\" data-id=\"{opaque}\"></a>{}",
+                            node_link(&opaque)
+                        );
+                        el.prepend(&tag, ContentType::Html);
+                    }
+                    Ok(())
+                }
+            }),
             element!("a[data-ref]", |el| {
                 let mut i = ref_idx.borrow_mut();
                 if let Some(r) = refs.get(*i) {
@@ -503,6 +662,7 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     ];
     let out = run(html, handlers)?;
     plan.heading = heading_idx.into_inner();
+    plan.base = base.into_inner();
     plan.reference = ref_idx.into_inner();
     Ok(out)
 }
@@ -540,6 +700,24 @@ mod tests {
         // Text from nested elements is part of the heading.
         assert_eq!((s.headings[1].level, s.headings[1].text.as_str()), (2, "Lexing"));
         assert_eq!(s.headings[1].given_id.as_deref(), Some("sec:lex"));
+    }
+
+    #[test]
+    fn a_fence_heading_takes_its_level_from_the_enclosing_heading() {
+        // The levels run on from the heading the fence sits under, and the base
+        // returns to the next ordinary heading after the fence.
+        let s = scan_one(
+            "<h1>A</h1><h2>S</h2><section class=\"taxon-node\">\
+             <h3 class=\"node-head\" data-rel=\"1\" id=\"def:x\">T</h3>\
+             <h4 data-rel=\"2\">I</h4></section><h2>N</h2><h3>M</h3>",
+        );
+        let levels: Vec<u8> = s.headings.iter().map(|h| h.level).collect();
+        assert_eq!(levels, vec![1, 2, 3, 4, 2, 3]);
+        let fenced: Vec<bool> = s.headings.iter().map(|h| h.in_fence).collect();
+        assert_eq!(fenced, vec![false, false, true, true, false, false]);
+        // Depth is capped at h6 and never makes a page: no heading is an h1.
+        assert_eq!(fence_level(5, 4), 6);
+        assert_eq!(fence_level(0, 1), 2);
     }
 
     #[test]

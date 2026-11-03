@@ -28,6 +28,8 @@ enum Seg {
 }
 
 enum Line {
+    ChunkOpen(usize, String),
+    Fence(usize),
     Def(String),
     Control(String),
     Plain(String),
@@ -36,9 +38,23 @@ enum Line {
 peg::parser! {
     grammar nw() for str {
         pub rule classify() -> Line
-            = d:def_line() { Line::Def(d) }
+            = o:chunk_open_line() { o }
+            / f:fence_line() { f }
+            / d:def_line() { Line::Def(d) }
             / c:control_line() { c }
             / p:$([_]*) { Line::Plain(p.to_string()) }
+
+        // §sec:fence-chunks: four or more backticks, "chunk", the name.
+        rule chunk_open_line() -> Line
+            = n:$("`" "`" "`" "`" "`"*) [' ' | '\t']* "chunk" [' ' | '\t']+
+              name:$([_]*) ![_] {
+                Line::ChunkOpen(n.len(), name.trim_end().to_string())
+            }
+
+        // A candidate close: three or more backticks, nothing else. Whether it
+        // actually closes depends on the open chunk's own length (§sec:read-code).
+        rule fence_line() -> Line
+            = n:$("`" "`" "`" "`"*) [' ' | '\t']* ![_] { Line::Fence(n.len()) }
 
         rule def_line() -> String
             = "<<" n:$((!">>=" [_])*) ">>=" [' ' | '\t']* ![_] { n.to_string() }
@@ -101,6 +117,15 @@ pub fn read<S: AsRef<Path>>(files: &[S]) -> Result<Vec<Event>, ReadError> {
     Ok(reader.out)
 }
 
+/// Read one in-memory buffer into events, naming it `name` so `@file` events match
+/// (§5.5, #2): the path an editor would save to. The LSP path — it has the unsaved
+/// buffer text, so it never touches disk — where `read` reads files.
+pub fn read_str(name: &str, text: &str) -> Vec<Event> {
+    let mut reader = Reader::default();
+    reader.file(name, text);
+    reader.out
+}
+
 #[derive(Default)]
 struct Reader {
     out: Vec<Event>,
@@ -108,6 +133,7 @@ struct Reader {
     open: Option<bool>,
     cur: u32,
     defs_pending: bool,
+    fence_len: Option<usize>,
 }
 
 impl Reader {
@@ -129,6 +155,7 @@ impl Reader {
 
     fn close_current(&mut self) {
         self.defs_pending = false;
+        self.fence_len = None;
         if let Some(code) = self.open.take() {
             let n = self.cur;
             self.out.push(if code {
@@ -188,6 +215,25 @@ impl Reader {
 
     fn line(&mut self, l: &str) {
         match nw::classify(l).expect("every line classifies") {
+            Line::ChunkOpen(len, name) => {
+                self.close_current();
+                self.open_code();
+                self.fence_len = Some(len);
+                self.out.push(Event::Defn(name));
+                self.out.push(Event::Nl);
+            }
+            Line::Fence(len) => {
+                let closes = matches!(self.fence_len, Some(req) if len >= req);
+                if closes {
+                    self.close_current();
+                    self.open_docs();
+                    // The closing fence line itself still counts as one line, the
+                    // same as a bare `@` does via its own `docs_emit("")` (§sec:read-rules).
+                    self.docs_emit("");
+                } else {
+                    self.plain(l);
+                }
+            }
             Line::Def(name) => {
                 self.close_current();
                 self.open_code();
@@ -205,19 +251,21 @@ impl Reader {
                     self.docs_emit(&content);
                 }
             }
-            Line::Plain(l) => {
-                if self.defs_pending {
-                    self.close_current();
-                }
-                if self.open.is_none() {
-                    self.open_docs();
-                }
-                if self.open == Some(true) {
-                    self.code_emit(&l);
-                } else {
-                    self.docs_emit(&l);
-                }
-            }
+            Line::Plain(l) => self.plain(&l),
+        }
+    }
+
+    fn plain(&mut self, l: &str) {
+        if self.defs_pending {
+            self.close_current();
+        }
+        if self.open.is_none() {
+            self.open_docs();
+        }
+        if self.open == Some(true) {
+            self.code_emit(l);
+        } else {
+            self.docs_emit(l);
         }
     }
 
@@ -288,5 +336,48 @@ mod tests {
     #[test]
     fn matches_markup_for_txf() {
         same_as_oracle("fixtures/txf.cob", include_str!("../fixtures/txf.markup"));
+    }
+
+    #[test]
+    fn fence_chunk_matches_noweb_spelling() {
+        let old = read_str("f", "<<a>>=\nx\n@\nmore\n");
+        let new = read_str("f", "````chunk a\nx\n````\nmore\n");
+        assert_eq!(old, new, "a fence chunk should make the same events as <<a>>=…@");
+    }
+
+    #[test]
+    fn fence_close_must_reach_the_opening_length() {
+        // Opened with five backticks: a run of only four does not close it, and
+        // stays in the chunk as a line of code; a run of five does.
+        let got = read_str("f", "`````chunk a\nx\n````\ny\n`````\n");
+        let want = read_str("f", "<<a>>=\nx\n````\ny\n@\n");
+        assert_eq!(
+            got, want,
+            "a short closing run should stay in the chunk, not end it"
+        );
+    }
+
+    #[test]
+    fn three_backtick_fence_in_docs_is_plain_text() {
+        // No chunk is open, so a plain illustrative ``` fence is just docs text —
+        // the same events with or without it, give or take the text itself.
+        let got = read_str("f", "prose\n```\nmore\n```\nend\n");
+        let want = read_str("f", "prose\n```\nmore\n```\nend\n");
+        assert_eq!(got, want);
+        // In particular, it never opens or closes a code chunk.
+        assert!(!got.iter().any(|e| matches!(e, Event::BeginCode(_))));
+    }
+
+    #[test]
+    fn fence_and_noweb_opens_continue_the_same_chunk_name() {
+        let evs = read_str("f", "<<a>>=\nx\n@\n`````chunk a\ny\n`````\n");
+        let defs: Vec<&str> = evs
+            .iter()
+            .filter_map(|e| match e {
+                Event::Defn(n) => Some(n.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(defs, vec!["a", "a"], "both opens name the same chunk");
     }
 }

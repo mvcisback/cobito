@@ -19,6 +19,7 @@ nix develop                              # devShell: rust toolchain (no noweb); 
 cargo test                               # hermetic unit tests
 cargo run -- dump-ir fixtures/hello.cob   # native reader events (--from-markup <f>: parse a frozen .markup)
 cargo run -- weave fixtures/hello.cob     # writes _site/ (needs COB_KATEX_ASSETS)
+cargo run -- weave                        # no files: the book named by [[document]] files in cob.toml (§5.2)
 cargo run -- weave --archive book.cob     # also emit site.json + per-page JSON (§8)
 cargo run -- weave --locked book.cob      # never mint; error on a label absent from cob.lock (§7.1)
 cargo run -- lock fixtures/book.cob       # mint ids; auto-anchor every unlabelled h2/h3 into the .cob source (§7.1)
@@ -91,6 +92,25 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   W105, an unknown target W106 — both inert markers, never an error. The node body
   is cut from the final section bodies by the `id` `apply` stamps on every heading;
   deferred slices (floats as nodes, per-node pages, cross-document) are in §10.
+  A heading node swallows the prose after it up to the next heading, which is wrong
+  for a definition or theorem. A **`node` fence** is a node with an *explicit extent*:
+  exactly the fence. Its body is a small document, logically a separate file
+  transcluded in place, so it opens with its own title line,
+  `` # Title \taxon{definition} \label{def:x} `` (both commands optional, any order),
+  and the lines under it are its content. It differs from a real file in one way: it
+  inherits the macros in scope. It lowers to
+  `<section class="taxon-node" data-taxon>` holding a real heading (the title, one
+  level below the heading the fence sits under, carrying the label and taxon), so it is a
+  heading node with a table-of-contents entry, an opaque id, a node page, a typed `\ref`
+  ("Definition k3f9"), and transclusion. Think of every heading as a fence whose closing
+  delimiter is left out; the fence only makes the end explicit, so its node ends at the
+  fence. An untitled fence has no heading: it keeps an empty `<p class="node-title">`, the
+  label on the section, and is cut by balancing its tag like a float. The label is any
+  node namespace; a float namespace is E030, a second `#` line is E030, a taxon on an inner
+  heading is E030, text on the info line is E030, a missing title line is E030. A
+  node holds headings: `##` and deeper are real headings, one level deeper each (counted
+  from the enclosing heading, up to `h6`), with their own table-of-contents entries and
+  nodes that end at the fence; a nested titled fence continues from the heading it follows.
 - `flake.nix` is **generated** from `flake.nix.cob` — cob's own build file told as a
   literate program (the first self-host dogfood, `cobito.cob` §13). Edit the `.cob` and
   re-tangle (`cob tangle flake.nix.cob --out .`), never hand-edit `flake.nix`. The
@@ -147,6 +167,7 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   fenced-float directives. There is no `dialect` key; the old raw-HTML dialect is
   retired, and the one raw-HTML door is the `html-escape` fence. A fence's info
   line is grammar-owned: a **kind** from a closed set (`math`, `figure`, `table`,
+  `algorithm`, `node`, `custom[handler]`, `macros`, `imports`,
   `html-escape`, `verbatim`) then optional modifiers the peg grammar parses. A
   bare fence (no kind) or an unknown kind is **E034** — a typo is an error, not a
   wrong render.

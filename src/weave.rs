@@ -6,10 +6,14 @@
 //! placeholder split is already in place so M2 can insert a real parse between
 //! them without reordering anything.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::cite::{self, Bib};
+use crate::custom;
 use crate::highlight::{self, Lang, LangConfig};
+use crate::import;
 use crate::lock::{LockError, LockFile, LockMode, Minter};
 use crate::markdown;
 use crate::math::{MathError, Renderer};
@@ -18,6 +22,7 @@ use crate::prose::{self, Math};
 use crate::resolve::{self, LabelIds, NavNode, PageMeta, ResolveError};
 use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
+use crate::tangle;
 use crate::transclude;
 
 #[derive(Debug)]
@@ -31,7 +36,19 @@ pub enum WeaveError {
     Rewrite(RewriteError),
     Resolve(ResolveError),
     Lock(LockError),
+    Import(crate::import::ImportError),
+    /// E040 — a `\cite{key}` whose key is in no configured bibliography (§14).
+    UnknownCite {
+        key: String,
+    },
     Assets(String),
+    /// E042 — a `custom[NAME]` fence fault (§6.6): a missing handler, a non-zero
+    /// exit, a `<script>` in the output, or a malformed envelope.
+    Custom {
+        file: String,
+        line: u32,
+        err: crate::custom::CustomError,
+    },
     Io(std::io::Error),
     Template(String),
 }
@@ -46,7 +63,16 @@ impl fmt::Display for WeaveError {
             WeaveError::Rewrite(e) => write!(f, "{e}"),
             WeaveError::Resolve(e) => write!(f, "{e}"),
             WeaveError::Lock(e) => write!(f, "{e}"),
+            WeaveError::Import(e) => write!(f, "{e}"),
+            WeaveError::UnknownCite { key } => write!(
+                f,
+                "error[E040]: \\cite{{{key}}} names no entry in the bibliography; \
+                 check the key, or set `[cite] bib` in cob.toml"
+            ),
             WeaveError::Assets(m) => write!(f, "error[E023]: {m}"),
+            WeaveError::Custom { file, line, err } => {
+                write!(f, "error[E042]: {}\n  --> {file}:{line}", err.message)
+            }
             WeaveError::Io(e) => write!(f, "error[E024]: writing site: {e}"),
             WeaveError::Template(m) => write!(f, "error[E025]: template: {m}"),
         }
@@ -71,6 +97,7 @@ fn render_code(
     first_line: u32,
     doc: &DocModel,
     lang: Option<Lang>,
+    tangle_runs: Option<&[(usize, usize, usize)]>,
 ) -> String {
     let marker = if continues { "+=" } else { "=" };
 
@@ -93,13 +120,17 @@ fn render_code(
     }
 
     let hole_refs: Vec<(usize, &str)> = holes.iter().map(|(o, s)| (*o, s.as_str())).collect();
-    let lines = match lang {
-        // Highlighting is best-effort: a grammar error falls back to the same
-        // escaped plain text the no-language path emits (§5.5 — plain text is
-        // the floor, never an error).
-        Some(l) => highlight::highlight(&source, &hole_refs, l)
-            .unwrap_or_else(|_| plain_lines(&source, &holes)),
-        None => plain_lines(&source, &holes),
+    let lines = match tangle_runs {
+        // Proper highlighting (§5.5, #1): the tokens were computed on the whole
+        // tangled file, in context, then mapped back onto this chunk's bytes.
+        Some(runs) => highlight::render_runs(&source, &hole_refs, runs),
+        // Fallback for a chunk no root tangles (an illustrative snippet): tokenize
+        // the fragment alone, best-effort, else the plain-text floor (§5.5).
+        None => match lang {
+            Some(l) => highlight::highlight(&source, &hole_refs, l)
+                .unwrap_or_else(|_| plain_lines(&source, &holes)),
+            None => plain_lines(&source, &holes),
+        },
     };
 
     let mut out = format!(
@@ -206,6 +237,19 @@ pub struct Site {
     /// The §8 document model, always assembled but only written under
     /// `--archive`. `meta` is a placeholder here; `write_site` fills it in.
     pub json: SiteJson,
+    /// This document's macro table (name → expansion) from its `macros` fences
+    /// (§6.4). Written to `cob-exports.json` under `--archive` so another forest can
+    /// `\import` it (§13).
+    pub macros: BTreeMap<String, String>,
+    /// This document's cited works (key → {id, html}). Written to
+    /// `cob-exports.json` so another forest can `\cite{key@alias}` them (§14).
+    pub citations: BTreeMap<String, site::ForestCite>,
+    /// This document's outgoing cross-forest edges (§16). Written to
+    /// `cob-exports.json` for the backlink aggregator to invert.
+    pub edges: Vec<site::ForestEdge>,
+    /// Assets a `custom[NAME]` handler produced (§6.6): published path → bytes,
+    /// written into the site by `write_site`.
+    pub custom_assets: Vec<custom::Asset>,
 }
 
 impl Site {
@@ -232,19 +276,86 @@ enum Frag {
 /// Markdown dialect (which also extracts math), and render each code body straight.
 /// Shared by `render` and the mint-only `cob lock` path so both see labels the same
 /// way.
+/// Precompute each code section's highlight runs from the tangled files (§5.5, #1).
+/// Tangle every root with provenance, tree-sitter each root's text in its resolved
+/// language, and map the token runs back onto each section's source bytes — the
+/// first root that reaches a section owns its highlighting. A section no root
+/// reaches, or whose own language differs from the root it lands in, is absent, so
+/// the weave falls back to per-chunk tokenizing. A tangle cycle yields an empty map.
+pub(crate) fn tangle_section_runs(
+    doc: &DocModel,
+    lang_cfg: &LangConfig,
+) -> BTreeMap<usize, Vec<(usize, usize, usize)>> {
+    let mut map: BTreeMap<usize, Vec<(usize, usize, usize)>> = BTreeMap::new();
+    let roots = match tangle::highlight_prov(doc) {
+        Ok(r) => r,
+        Err(_) => return map,
+    };
+    let mut first_root: BTreeMap<usize, usize> = BTreeMap::new();
+    for (ri, r) in roots.iter().enumerate() {
+        for seg in &r.segs {
+            first_root.entry(seg.section).or_insert(ri);
+        }
+    }
+    for (ri, r) in roots.iter().enumerate() {
+        let Some(root_lang) = highlight::resolve(doc, &r.root, lang_cfg) else {
+            continue;
+        };
+        let Ok(runs) = highlight::runs(&r.text, root_lang) else {
+            continue;
+        };
+        for seg in &r.segs {
+            if first_root.get(&seg.section) != Some(&ri) {
+                continue;
+            }
+            // A section whose own language differs from this root's grammar must
+            // not borrow its tokens — fall back instead.
+            if section_lang(doc, seg.section, lang_cfg) != Some(root_lang) {
+                continue;
+            }
+            let seg_end = seg.tangled_off + seg.len;
+            for &(s, e, name) in &runs {
+                if e <= seg.tangled_off || s >= seg_end {
+                    continue;
+                }
+                let cs = s.max(seg.tangled_off);
+                let ce = e.min(seg_end);
+                map.entry(seg.section).or_default().push((
+                    seg.src_off + (cs - seg.tangled_off),
+                    seg.src_off + (ce - seg.tangled_off),
+                    name,
+                ));
+            }
+        }
+    }
+    for v in map.values_mut() {
+        v.sort_by_key(|r| r.0);
+    }
+    map
+}
+
+/// The resolved highlight language of a code section, or `None` for a docs section.
+fn section_lang(doc: &DocModel, section: usize, lang_cfg: &LangConfig) -> Option<Lang> {
+    match &doc.sections[section].kind {
+        SectionKind::Code { name, .. } => highlight::resolve(doc, name, lang_cfg),
+        _ => None,
+    }
+}
+
 fn render_frags(
     doc: &DocModel,
     lang_cfg: &LangConfig,
     math: &mut Vec<Math>,
-    preamble: &mut String,
+    defs: &mut BTreeMap<String, String>,
     lints: &mut Vec<Lint>,
+    section_runs: Option<&BTreeMap<usize, Vec<(usize, usize, usize)>>>,
 ) -> Result<Vec<Frag>, WeaveError> {
     let mut frags: Vec<Frag> = Vec::with_capacity(doc.sections.len());
-    for section in &doc.sections {
+    for (i, section) in doc.sections.iter().enumerate() {
         match &section.kind {
             SectionKind::Docs { spans } => {
                 let reassembled = prose::reassemble(spans);
-                let body = markdown::render(&reassembled, math, preamble).map_err(|err| {
+                let body = markdown::render(&reassembled, math, defs).map_err(|err| {
                     WeaveError::Markdown {
                         file: section.file.clone(),
                         line: section.line,
@@ -277,12 +388,108 @@ fn render_frags(
                     });
                 }
                 // The `<<name>>=` line is `section.line`; the body opens after it.
-                let body = render_code(name, *continues, spans, section.line + 1, doc, lang);
+                let runs = section_runs.and_then(|m| m.get(&i)).map(Vec::as_slice);
+                let body = render_code(name, *continues, spans, section.line + 1, doc, lang, runs);
                 frags.push(Frag::Code(body));
             }
         }
     }
     Ok(frags)
+}
+
+/// Scan every docs chunk for `imports` fences and collect each
+/// `\import <name> as <alias>` line (§13). It is a plain line scan, not a full
+/// markdown parse, because an import declaration is one fixed shape.
+fn collect_import_decls(doc: &DocModel) -> Vec<(String, String)> {
+    let mut decls = Vec::new();
+    for section in &doc.sections {
+        let SectionKind::Docs { spans } = &section.kind else {
+            continue;
+        };
+        let prose = prose::reassemble(spans);
+        let mut in_imports = false;
+        for line in prose.lines() {
+            let t = line.trim();
+            if in_imports {
+                if t.starts_with("```") {
+                    in_imports = false;
+                } else if let Some(rest) = t.strip_prefix("\\import ") {
+                    if let Some((name, alias)) = rest.split_once(" as ") {
+                        decls.push((name.trim().to_string(), alias.trim().to_string()));
+                    }
+                }
+            } else if t.starts_with("```") && t.trim_start_matches('`').trim() == "imports" {
+                in_imports = true;
+            }
+        }
+    }
+    decls
+}
+
+/// Every cited key in first-appearance order, deduplicated — scanned from the
+/// `data-cite` markers the Markdown lowering left in the rendered docs (§14).
+fn collect_cite_keys(frags: &[Frag]) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut order = Vec::new();
+    for frag in frags {
+        let Frag::Docs(html) = frag else { continue };
+        let mut i = 0;
+        while let Some(rel) = html[i..].find(" data-cite=\"") {
+            let s = i + rel + " data-cite=\"".len();
+            let Some(q) = html[s..].find('"') else { break };
+            let key = html[s..s + q].to_string();
+            if seen.insert(key.clone()) {
+                order.push(key);
+            }
+            i = s + q;
+        }
+    }
+    order
+}
+
+/// Lower each inert `<a data-cite="key"></a>` marker to its citation link (§14):
+/// `<a class="cite" data-id="<id>" href="#cite-<id>">`. CSS draws the bracketed id,
+/// so no citation text enters a text node. A key with no id (never minted) is left
+/// as written — the collect/mint pass already errored on an unknown key.
+fn rewrite_cites(html: &str, ids: &BTreeMap<String, String>) -> String {
+    rewrite_cites_with(html, ids, |id| format!("#cite-{id}"))
+}
+
+/// `rewrite_cites` with the link target chosen by the caller. A page links into its
+/// own References list (`#cite-<id>`). A node page has no such list, so it links each
+/// cite to the cited work's own node page instead.
+fn rewrite_cites_with(
+    html: &str,
+    ids: &BTreeMap<String, String>,
+    href: impl Fn(&str) -> String,
+) -> String {
+    let pat = "<a data-cite=\"";
+    if !html.contains(pat) {
+        return html.to_string();
+    }
+    let tail = "\"></a>";
+    let mut out = String::new();
+    let mut i = 0;
+    while let Some(rel) = html[i..].find(pat) {
+        let p = i + rel;
+        out.push_str(&html[i..p]);
+        let s = p + pat.len();
+        let Some(q) = html[s..].find(tail) else {
+            out.push_str(&html[p..]);
+            return out;
+        };
+        let key = &html[s..s + q];
+        match ids.get(key) {
+            Some(id) => out.push_str(&format!(
+                "<a class=\"cite\" data-id=\"{id}\" href=\"{}\"></a>",
+                href(id)
+            )),
+            None => out.push_str(&html[p..s + q + tail.len()]),
+        }
+        i = s + q + tail.len();
+    }
+    out.push_str(&html[i..]);
+    out
 }
 
 /// Step 4a: scan every docs body once, in order, so every labelled float is seen
@@ -313,31 +520,45 @@ pub fn mint_lock(
     minter: &mut Minter,
 ) -> Result<(), WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let mut preamble = String::new();
+    let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut lints: Vec<Lint> = Vec::new();
     // Minting only needs labels/floats, not colors, so the language config is empty.
     let lang_cfg = LangConfig::default();
-    let frags = render_frags(doc, &lang_cfg, &mut math, &mut preamble, &mut lints)?;
+    let frags = render_frags(doc, &lang_cfg, &mut math, &mut defs, &mut lints, None)?;
     let (scan, _first_tags) = scan_frags(&frags)?;
     for (label, kind, section) in mintable(&scan) {
         let file = &doc.sections[section].file;
         lock.mint(file, label, kind, minter);
     }
+    // §14 citations are nodes too: mint each cited key a `cite:<key>` id, keyed by
+    // the document's first file exactly as `render` does, so a later `--locked`
+    // weave finds it. `cob lock` thus covers citations like any other label.
+    let cite_file = doc.files.first().cloned().unwrap_or_default();
+    for key in collect_cite_keys(&frags) {
+        lock.mint(&cite_file, &format!("cite:{key}"), Kind::Citation, minter);
+    }
     Ok(())
 }
 
 /// Every label that earns a frozen opaque id (§7.1), in document order: each
-/// labelled float, then each deeper heading the author pinned with a `sec:` id.
-/// An h1 is its own page and is addressed by the page id, so it needs no
-/// section id and is skipped. Yields `(label, kind, section)`.
+/// labelled float, then each heading the author pinned with a node-namespace id
+/// — `sec:`, `def:`, `thm:`, and any other that is not a float, chunk, or
+/// citation (§10). An h1 is its own page, addressed by the page id, so it counts
+/// only when the author gives it a page label (`ch:`, `part:`); that makes it a
+/// target for `\ref`, which needs a frozen id like any other. Yields
+/// `(label, kind, section)`.
 fn mintable(scan: &Scan) -> impl Iterator<Item = (&str, Kind, usize)> {
     scan.labels
         .iter()
         .map(|l| (l.id.as_str(), l.kind, l.section))
         .chain(scan.headings.iter().filter_map(|h| {
             let given = h.given_id.as_deref()?;
-            (h.level != 1 && Kind::from_label(given) == Some(Kind::Section))
-                .then_some((given, Kind::Section, h.section))
+            let earns = if h.level == 1 {
+                Kind::label_is_page_heading(given)
+            } else {
+                Kind::label_is_heading_node(given)
+            };
+            earns.then_some((given, Kind::Section, h.section))
         }))
 }
 
@@ -350,15 +571,81 @@ pub fn render(
     doc: &DocModel,
     cache_root: &Path,
     lang_cfg: &LangConfig,
+    loaded: &BTreeMap<String, site::ForestRef>,
+    bib: &Bib,
+    fences: &BTreeMap<String, crate::config::FenceHandler>,
     embed: &str,
     lock: &mut LockFile,
     mode: LockMode,
     minter: &mut Minter,
 ) -> Result<Site, WeaveError> {
     let mut math: Vec<Math> = Vec::new();
-    let mut preamble = String::new();
+    let mut defs: BTreeMap<String, String> = BTreeMap::new();
     let mut hl_lints: Vec<Lint> = Vec::new();
-    let mut frags = render_frags(doc, lang_cfg, &mut math, &mut preamble, &mut hl_lints)?;
+    // §5.5 #1: tokens come from the whole tangled file, mapped back onto each chunk.
+    let section_runs = tangle_section_runs(doc, lang_cfg);
+    let mut frags =
+        render_frags(doc, lang_cfg, &mut math, &mut defs, &mut hl_lints, Some(&section_runs))?;
+
+    // §13 imports: resolve each `\import … as …` against the loaded forest tables
+    // (main reads the files), then merge the content-id macros into the table. A
+    // content id colliding with a local macro of different content is E036.
+    let decls = collect_import_decls(doc);
+    // `import::resolve` reads only the exported macro tables; peel them off the
+    // loaded forests, keyed by the `[import.<name>]` name.
+    let sources: BTreeMap<String, BTreeMap<String, String>> = loaded
+        .iter()
+        .map(|(name, fr)| (name.clone(), fr.index.macros.clone()))
+        .collect();
+    let imp = import::resolve(&sources, &decls).map_err(WeaveError::Import)?;
+    // Cross-document `\ref`/`\transclude` resolve against the forest behind an
+    // alias, so re-key the loaded forests by the document's alias (from the
+    // `imports` fence), not the config name.
+    let by_alias: BTreeMap<String, site::ForestRef> = decls
+        .iter()
+        .filter_map(|(name, alias)| loaded.get(name).map(|fr| (alias.clone(), fr.clone())))
+        .collect();
+    // The import edges for the page chrome's "Imports" list and for `site.json`.
+    let import_links: Vec<site::ImportLink> = decls
+        .iter()
+        .map(|(name, alias)| site::ImportLink {
+            name: name.clone(),
+            alias: alias.clone(),
+        })
+        .collect();
+    for (name, expansion) in &imp.macros {
+        match defs.get(name) {
+            Some(existing) if existing != expansion => {
+                return Err(WeaveError::Import(import::ImportError::Collision(name.clone())));
+            }
+            _ => {
+                defs.insert(name.clone(), expansion.clone());
+            }
+        }
+    }
+
+    // §6.6 custom fences: run each registered handler now, before the scan, so a
+    // handler that returns a `<figure id="fig:…">` is numbered like any other
+    // float. The handler sees the final macro table (`defs`) as context, so a
+    // figure typesets in the document's own notation. In the mint pass the
+    // handlers do not run; the scan reads the `<cob-custom>` placeholder's label
+    // instead, so an id is minted without the tool.
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut custom_assets: Vec<custom::Asset> = Vec::new();
+    for (frag, section) in frags.iter_mut().zip(&doc.sections) {
+        if let Frag::Docs(html) = frag {
+            let (expanded, mut a) =
+                custom::expand(html, &defs, fences, &root, Some(cache_root), &section.file, section.line)
+                    .map_err(|err| WeaveError::Custom {
+                        file: section.file.clone(),
+                        line: section.line,
+                        err,
+                    })?;
+            *html = expanded;
+            custom_assets.append(&mut a);
+        }
+    }
+
     let (scan, first_tags) = scan_frags(&frags)?;
 
     // Assign each labelled float its frozen opaque id (§7.1): mint on miss (and
@@ -382,7 +669,74 @@ pub fn render(
         label_ids.insert(label.to_string(), id);
     }
 
-    let res = resolve::plan(doc, &scan, &first_tags, &label_ids).map_err(WeaveError::Resolve)?;
+    // §14 citations: collect each cited key in first-appearance order, mint its
+    // node id like a float, and format its reference. A cited key with no
+    // bibliography entry is E040. The inline `[id]` marker is rewritten after
+    // wrapping (below); the formatted references become the References chrome.
+    let cite_file = doc.files.first().cloned().unwrap_or_default();
+    let mut cite_ids: BTreeMap<String, String> = BTreeMap::new();
+    // One References entry: (id, formatted html, node-page href the entry links to).
+    let mut references: Vec<(String, String, String)> = Vec::new();
+    let mut ref_nodes: Vec<transclude::RefNode> = Vec::new();
+    // The cited works this forest exports, so another forest may `\cite{key@alias}`.
+    let mut exported_citations: BTreeMap<String, site::ForestCite> = BTreeMap::new();
+    for key in collect_cite_keys(&frags) {
+        if let Some((bare, alias)) = key.split_once('@') {
+            // §14 cross-forest: resolve against the imported forest's exported
+            // citations; the entry links out to that forest's node page. A work the
+            // other forest did not cite has no node page, so it is E040.
+            let fr = by_alias
+                .get(alias)
+                .ok_or_else(|| WeaveError::UnknownCite { key: key.clone() })?;
+            let fc = fr
+                .index
+                .citations
+                .get(bare)
+                .ok_or_else(|| WeaveError::UnknownCite { key: key.clone() })?;
+            let base = fr.url.trim_end_matches('/');
+            references.push((fc.id.clone(), fc.html.clone(), format!("{base}/n/{}.html", fc.id)));
+            cite_ids.insert(key, fc.id.clone());
+            continue;
+        }
+        let Some(reference) = bib.get(&key) else {
+            return Err(WeaveError::UnknownCite { key });
+        };
+        let label = format!("cite:{key}");
+        let id = match mode {
+            LockMode::Mint => lock.mint(&cite_file, &label, Kind::Citation, minter),
+            LockMode::Locked => match lock.get(&cite_file, &label) {
+                Some(e) => e.id.clone(),
+                None => {
+                    return Err(WeaveError::Lock(LockError::Missing {
+                        file: cite_file.clone(),
+                        label,
+                    }))
+                }
+            },
+        };
+        let html = cite::format_html(reference);
+        references.push((id.clone(), html.clone(), format!("n/{id}.html")));
+        // The cited work is a node (§14): its page shows the formatted reference,
+        // with the nodes that cite it as "Cited by" backlinks. It is also exported,
+        // so another forest may cite it.
+        ref_nodes.push(transclude::RefNode {
+            key: key.clone(),
+            id: id.clone(),
+            title: cite::short_title(reference),
+            body: format!("<div class=\"reference\">{html}</div>"),
+        });
+        exported_citations.insert(
+            key.clone(),
+            site::ForestCite {
+                id: id.clone(),
+                html,
+            },
+        );
+        cite_ids.insert(key, id);
+    }
+
+    let res = resolve::plan(doc, &scan, &first_tags, &label_ids, &by_alias)
+        .map_err(WeaveError::Resolve)?;
 
     // Step 4b: rewrite each docs body against the resolved plan.
     let mut plan = Plan::new(&res.heading_anchors, &res.heading_uids, &res.refs, &label_ids);
@@ -394,7 +748,7 @@ pub fn render(
 
     // Steps 5–6: serialize is implicit in the rewriter; now render math and
     // wrap each section in its provenance envelope.
-    let rendered = Renderer::new(cache_root, &preamble)
+    let rendered = Renderer::new(cache_root, &defs, &imp.rewrites)
         .render_all(&math)
         .map_err(WeaveError::Math)?;
     let mut wrapped: Vec<String> = Vec::with_capacity(frags.len());
@@ -438,13 +792,20 @@ pub fn render(
         };
         raws.push(raw);
         bodies.push(page_body.clone());
+        // §10 box each taxon node in a wrapper the CSS can border. This runs only
+        // on the page render, so `bodies` (transclusion + archival) stays clean.
+        let for_page = if is_docs {
+            site::wrap_taxa(&page_body)
+        } else {
+            page_body.clone()
+        };
         wrapped.push(wrap_section(
             &section.id,
             class,
             &section.file,
             section.line,
             chunk,
-            &page_body,
+            &for_page,
         ));
     }
 
@@ -455,7 +816,10 @@ pub fn render(
     // it carries a directive, and the archival JSON (built above from
     // pre-expansion bodies) is untouched. The scope counter is document-wide, so
     // every copy's scoped ids are unique and the output stays deterministic (§8).
-    let mut tx = transclude::Context::build(&scan, &res, &bodies);
+    // §16 the outgoing cross-forest edges, collected from the bodies before `res`
+    // is partially consumed below; the backlink aggregator inverts them.
+    let edges = transclude::outgoing_edges(&scan, &res, &bodies, &by_alias);
+    let mut tx = transclude::Context::build(&scan, &res, &bodies, &by_alias, &ref_nodes);
     // §10 a `def:` (macros) node is homeless: the table has just captured it, so
     // drop the canonical island from the reading flow and the archival JSON before
     // transclusion runs. No transcluded copy exists yet, so every island is
@@ -467,22 +831,32 @@ pub fn render(
     for raw in raws.iter_mut() {
         raw.html = rewrite::strip_macros(&raw.html).map_err(WeaveError::Rewrite)?;
     }
+    // §14: lower each inert `data-cite` marker to its `[id]` citation link, now
+    // that every cited key has an id. The link points at the References entry on
+    // the same page; CSS draws the bracketed id, so no number enters a text node.
+    // A sidenote body is hoisted into `margins` (§8) before this pass, so lower
+    // its cites there too — a `\cite` inside a `\sidenote` resolves like any other.
+    if !cite_ids.is_empty() {
+        for w in wrapped.iter_mut() {
+            *w = rewrite_cites(w, &cite_ids);
+        }
+        for raw in raws.iter_mut() {
+            raw.html = rewrite_cites(&raw.html, &cite_ids);
+            for m in raw.margins.iter_mut() {
+                m.html = rewrite_cites(&m.html, &cite_ids);
+            }
+        }
+    }
     let mut tx_lints: Vec<Lint> = Vec::new();
-    let mut tx_scope = 0usize;
     for (k, w) in wrapped.iter_mut().enumerate() {
         let sec = &doc.sections[k];
-        *w = tx.expand(
-            w,
-            res.section_page[k],
-            &mut tx_scope,
-            &mut tx_lints,
-            &sec.file,
-            sec.line,
-        );
+        // A document page reaches a node page under `n/`, so the transclusion `src`
+        // takes the `n/` prefix. The body is not spliced; the client fetches it.
+        *w = tx.expand(w, "n/", &mut tx_lints, &sec.file, sec.line);
     }
-    // §10 node pages: expand and rebase each node's body once, after the host
-    // pass, reusing the same document-wide scope counter so ids stay unique.
-    tx.finish_node_pages(&mut tx_scope);
+    // §10 node pages: turn their islands into `<cob-transclude>` too and rebase
+    // their links for the `n/` directory.
+    tx.finish_node_pages();
 
     // §5.3 page split: group wrapped sections by their assigned page.
     let mut env = minijinja::Environment::new();
@@ -492,9 +866,36 @@ pub fn render(
         .map_err(|e| WeaveError::Template(e.to_string()))?;
     env.add_template("node", include_str!("../templates/node.html"))
         .map_err(|e| WeaveError::Template(e.to_string()))?;
+    // The shared progressive-enhancement scripts (nav-spy + cob-transclude), so a
+    // page and a node page carry the same, single copy (§5.3, §10).
+    env.add_template("scripts", include_str!("../templates/scripts.html"))
+        .map_err(|e| WeaveError::Template(e.to_string()))?;
     let tmpl = env
         .get_template("page")
         .map_err(|e| WeaveError::Template(e.to_string()))?;
+
+    // §14 the References chrome: every cited work, formatted, with its `[id]`
+    // anchor — document-global, shown on each page like the Imports list. Each
+    // entry is anchored `cite-<id>` so an inline marker's `#cite-<id>` lands here.
+    let ref_ctx: Vec<minijinja::Value> = references
+        .iter()
+        .map(|(id, html, href)| minijinja::context! { id => id, html => html, href => href })
+        .collect();
+
+    // §10 footnotes: a document-global id → rendered-note map, built from every
+    // section's hoisted margins. Each page (and each node page) lists the notes
+    // its own markers point at, in marker order.
+    let note_map: std::collections::BTreeMap<String, String> = raws
+        .iter()
+        .flat_map(|r| r.margins.iter())
+        .map(|m| (m.id.clone(), m.html.clone()))
+        .collect();
+    let footnote_ctx = |body: &str| -> Vec<minijinja::Value> {
+        site::footnotes_in(body, &note_map)
+            .into_iter()
+            .map(|f| minijinja::context! { id => f.id, refid => f.refid, html => f.html })
+            .collect()
+    };
 
     let mut pages = Vec::with_capacity(res.pages.len());
     for (pi, meta) in res.pages.iter().enumerate() {
@@ -504,6 +905,8 @@ pub fn render(
             .filter(|(_, p)| **p == pi)
             .map(|(html, _)| html.as_str())
             .collect();
+        // The page's footnotes, gathered from the markers its sections carry.
+        let footnotes = footnote_ctx(&sections.concat());
         // The nav marks this page's own landing entry current, so each page ships
         // its own "you are here" (§5.3) — static, no script, every browser.
         let nav = nav_context(&res.nav, &meta.filename);
@@ -517,6 +920,9 @@ pub fn render(
                 nav,
                 prev,
                 next,
+                imports => &import_links,
+                references => &ref_ctx,
+                footnotes => &footnotes,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         pages.push(RenderedPage {
@@ -545,22 +951,44 @@ pub fn render(
     let based_nav = rebased_nav(&res.nav, "../");
     let mut node_pages = Vec::with_capacity(tx.node_pages().len());
     for np in tx.node_pages() {
+        // The node page lists only the notes its own body marks (§10).
+        let footnotes = footnote_ctx(&np.body);
+        // A node body is cut before the §14 cite pass, so its cites are still inert
+        // markers. A node page has no References list to land in, so each cite links
+        // to the cited work's own page: a sibling in `n/`, or the imported forest's.
+        let lowered = if cite_ids.is_empty() {
+            np.body.clone()
+        } else {
+            rewrite_cites_with(&np.body, &cite_ids, |id| {
+                references
+                    .iter()
+                    .find(|(rid, _, _)| rid == id)
+                    .map(|(_, _, href)| href.strip_prefix("n/").unwrap_or(href).to_string())
+                    .unwrap_or_else(|| format!("{id}.html"))
+            })
+        };
+        // Box the node's own taxon too, so an `n/` page frames it like the page.
+        let node_body = site::wrap_taxa(&lowered);
         let html = node_tmpl
             .render(minijinja::context! {
+                id => np.id,
                 title => np.title,
-                body => np.body,
+                body => node_body,
                 context => np.context,
                 crumbs => links_context(&np.crumbs),
                 transcluded_by => links_context(&np.transcluded_by),
                 referenced_by => links_context(&np.referenced_by),
+                cited_by => links_context(&np.cited_by),
                 embed,
                 nav => based_nav,
+                footnotes => &footnotes,
             })
             .map_err(|e| WeaveError::Template(e.to_string()))?;
         node_pages.push((format!("n/{}.html", np.id), html));
     }
 
-    let json = site::build(doc, &res, &raws, site::Meta::default());
+    let mut json = site::build(doc, &res, &raws, site::Meta::default());
+    json.imports = import_links;
 
     let mut lints = res.lints;
     lints.extend(hl_lints);
@@ -573,6 +1001,10 @@ pub fn render(
         math_count: math.len(),
         lints,
         json,
+        macros: defs,
+        citations: exported_citations,
+        edges,
+        custom_assets,
     })
 }
 
@@ -728,6 +1160,69 @@ fn write_embedded_katex(_dst: &Path) -> Result<(), WeaveError> {
     ))
 }
 
+/// Every `src="…"` in the HTML that names a local, in-project relative file.
+fn referenced_assets(html: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(rel) = html[i..].find("src=\"") {
+        let s = i + rel + 5;
+        let Some(q) = html[s..].find('"') else { break };
+        let v = &html[s..s + q];
+        let external = v.is_empty()
+            || v.starts_with("http://")
+            || v.starts_with("https://")
+            || v.starts_with("//")
+            || v.starts_with('/')
+            || v.starts_with('#')
+            || v.starts_with("data:")
+            || v.starts_with("mailto:");
+        if !external {
+            out.push(v.to_string());
+        }
+        i = s + q + 1;
+    }
+    out
+}
+
+/// Copy every referenced local asset into `out` at its relative path. Returns a
+/// W107 lint per asset that could not be read, so the weave reports a broken link
+/// without failing.
+fn copy_assets(out: &Path, site: &Site) -> Vec<Lint> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut lints = Vec::new();
+    // A `custom` handler (§6.6) writes its own assets into the site; those are
+    // not project files, so skip them here — looking for them under the project
+    // would be a spurious W107.
+    let custom: std::collections::BTreeSet<&str> =
+        site.custom_assets.iter().map(|a| a.path.as_str()).collect();
+    let page_html = site.pages.iter().map(|p| p.html.as_str());
+    let node_html = site.node_pages.iter().map(|(_, h)| h.as_str());
+    for html in page_html.chain(node_html) {
+        for rel in referenced_assets(html) {
+            if custom.contains(rel.as_str()) || !seen.insert(rel.clone()) {
+                continue;
+            }
+            // Never copy from outside the project.
+            if Path::new(&rel).is_absolute() || rel.split('/').any(|c| c == "..") {
+                continue;
+            }
+            let dst = out.join(&rel);
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if std::fs::copy(&rel, &dst).is_err() {
+                lints.push(Lint {
+                    code: "W107",
+                    message: format!("referenced asset `{rel}` was not found; its link will be broken"),
+                    file: rel.clone(),
+                    line: 0,
+                });
+            }
+        }
+    }
+    lints
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn write_site(
     doc: &DocModel,
@@ -736,12 +1231,16 @@ pub fn write_site(
     lock_path: &Path,
     meta: site::Meta,
     lang_cfg: &LangConfig,
+    loaded: &BTreeMap<String, site::ForestRef>,
+    bib: &Bib,
+    fences: &BTreeMap<String, crate::config::FenceHandler>,
+    forest_url: &str,
     archive: bool,
     mode: LockMode,
 ) -> Result<Site, WeaveError> {
     let mut lock = LockFile::load(lock_path).map_err(WeaveError::Lock)?;
     let mut minter = Minter::from_entropy();
-    let mut site = render(doc, cache_root, lang_cfg, "", &mut lock, mode, &mut minter)?;
+    let mut site = render(doc, cache_root, lang_cfg, loaded, bib, fences, "", &mut lock, mode, &mut minter)?;
     // A dev-time weave writes any newly minted ids back so they freeze (§7.1);
     // `--locked` never mints, so it never touches the committed lock.
     if mode == LockMode::Mint {
@@ -767,6 +1266,18 @@ pub fn write_site(
     std::fs::write(out.join("cob-syntax.css"), include_str!("../templates/cob-syntax.css"))
         .map_err(WeaveError::Io)?;
     copy_katex_assets(out)?;
+    // §6.6 write each asset a `custom` handler produced, at its published path.
+    for asset in &site.custom_assets {
+        let dest = out.join(&asset.path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(WeaveError::Io)?;
+        }
+        std::fs::write(&dest, &asset.bytes).map_err(WeaveError::Io)?;
+    }
+    // Copy every local asset a page references (a figure image, §6.4), so the
+    // site is self-contained; a missing one is a W107 lint, not a failure.
+    let asset_lints = copy_assets(out, &site);
+    site.lints.extend(asset_lints);
     // The archival JSON (§8) is opt-in: plain `weave` stays an HTML-only
     // artifact. Per-page files sit beside their HTML for the annotation layer.
     if archive {
@@ -776,6 +1287,20 @@ pub fn write_site(
                 site::page_json(&site.json, &id).expect("page id came from site.json.pages");
             std::fs::write(out.join(format!("{id}.json")), json).map_err(WeaveError::Io)?;
         }
+        // The forest index (§13): the importable macro table and label index, so
+        // another forest can `\import`/`\ref`/`\transclude` this one without
+        // re-rendering it.
+        std::fs::write(
+            out.join("cob-exports.json"),
+            site::to_exports_json(
+                forest_url,
+                &site.macros,
+                &site.json.labels,
+                &site.citations,
+                &site.edges,
+            ),
+        )
+        .map_err(WeaveError::Io)?;
     }
     Ok(site)
 }
@@ -784,6 +1309,17 @@ pub fn write_site(
 mod tests {
     use super::*;
     use crate::lock::ID_LEN;
+
+    #[test]
+    fn referenced_assets_are_local_relative_only() {
+        let html = concat!(
+            "<img src=\"imgs/f.svg\">",
+            "<img src=\"https://x/y.png\">",
+            "<img src=\"/abs.png\">",
+            "<img src=\"data:,z\">",
+        );
+        assert_eq!(referenced_assets(html), vec!["imgs/f.svg".to_string()]);
+    }
 
     fn model_of(markup: &str) -> DocModel {
         crate::model::build(&crate::noweb::parse(markup).unwrap()).unwrap()
@@ -828,6 +1364,9 @@ mod tests {
             doc,
             &cache(),
             &lang_cfg,
+            &BTreeMap::new(),
+            &Bib::default(),
+            &BTreeMap::new(),
             embed,
             &mut lock,
             LockMode::Mint,
@@ -847,6 +1386,9 @@ mod tests {
             &book(),
             &cache(),
             &lang_cfg,
+            &BTreeMap::new(),
+            &Bib::default(),
+            &BTreeMap::new(),
             "",
             &mut lock,
             LockMode::Locked,
@@ -939,6 +1481,18 @@ mod tests {
         assert!(html.contains("katex"));
         // The angle-bracket case must survive as an entity, never a tag.
         assert!(!html.contains("<span>a < b</span>"));
+    }
+
+    #[test]
+    fn a_page_carries_only_the_enhancement_scripts() {
+        let html = &dev_render(&fixture(), "").pages[0].html;
+        let total = html.matches("<script").count();
+        let named = html.matches("<script id=\"nav-spy\">").count()
+            + html.matches("<script id=\"cob-transclude\">").count()
+            + html.matches("<script id=\"cob-backlinks\">").count();
+        assert_eq!(total, named, "a page carried a script that is not an enhancement aid");
+        assert!(html.contains("<script id=\"nav-spy\">"));
+        assert!(html.contains("<script id=\"cob-transclude\">"));
     }
 
     #[test]
@@ -1189,14 +1743,34 @@ mod tests {
             assert!(site::page_json(json, id).is_some());
         }
         // book.cob carries one sidenote on the Parsing page; it lands in a
-        // margin[] entry and is stripped from that section's JSON prose, while
-        // the woven HTML keeps it inline with the matching sn- id.
+        // margin[] entry and is stripped from that section's JSON prose.
         let whole = site::to_json(json);
         assert!(whole.contains("\"sn-1\""));
         assert!(whole.contains("\"kind\": \"sidenote\""));
         // No aside survives in the JSON prose bodies.
         assert!(!whole.contains("<aside"));
-        assert!(site.pages[1].html.contains("<aside id=\"sn-1\""));
+        // The woven page carries an inline marker at the note's point and the note
+        // itself in a footnotes list at the foot of the page, both keyed by sn-1.
+        let parsing = &site.pages[1].html;
+        assert!(parsing.contains("<sup class=\"fn-ref\" id=\"fnref-1\"><a href=\"#sn-1\">"));
+        assert!(parsing.contains("<section class=\"footnotes\""));
+        assert!(parsing.contains("<li id=\"sn-1\">"));
+        assert!(parsing.contains("href=\"#fnref-1\""));
+    }
+
+    #[test]
+    fn a_cite_lowers_to_the_href_its_page_wants() {
+        let mut ids = BTreeMap::new();
+        ids.insert("key".to_string(), "ab12".to_string());
+        let html = "<p>x <a data-cite=\"key\"></a> y <a data-cite=\"nokey\"></a></p>";
+        assert_eq!(
+            rewrite_cites(html, &ids),
+            "<p>x <a class=\"cite\" data-id=\"ab12\" href=\"#cite-ab12\"></a> y <a data-cite=\"nokey\"></a></p>"
+        );
+        assert_eq!(
+            rewrite_cites_with(html, &ids, |id| format!("{id}.html")),
+            "<p>x <a class=\"cite\" data-id=\"ab12\" href=\"ab12.html\"></a> y <a data-cite=\"nokey\"></a></p>"
+        );
     }
 
     #[test]
@@ -1250,22 +1824,23 @@ mod tests {
     }
 
     #[test]
-    fn transclusion_cuts_a_heading_node_and_scopes_the_copy() {
+    fn transclusion_lowers_to_a_lazy_element() {
         let site = dev_render(&tx(), "");
         let html = site.all_html();
-        // The node is spliced as a `transclusion` section whose chrome links back to
-        // the canonical anchor with the heading text (§10).
-        assert!(html.contains("<section class=\"transclusion\" data-transclude=\"sec:source\">"));
-        assert!(html.contains("<a href=\"#sec-source\">The source</a>"));
-        // Node extent is the heading, not the chunk: the `h1` that shares the source's
-        // chunk is NOT pulled into the copy, so the whole page still has one `h1`.
+        // The node lowers to a lazy element that fetches its own n/ page, with a link
+        // fallback naming the heading — reachable with no JavaScript (§10).
+        assert!(html.contains("<cob-transclude src=\"n/"));
+        assert!(html.contains("data-transclude=\"sec:source\">"));
+        assert!(html.contains(">The source &rarr;</a></cob-transclude>"));
+        // No server-side copy: no spliced section (the `data-transclude` form the old
+        // splice used; the enhancement script's own literal has no such attribute) and
+        // no scoped ids.
+        assert!(!html.contains("<section class=\"transclusion\" data-transclude="));
+        assert!(!html.contains("tx1-"));
+        // The body is not duplicated: one h1, one canonical id, one chunk body.
         assert_eq!(html.matches("<h1").count(), 1);
-        // The copy scopes its ids; the canonical heading keeps the bare id.
-        assert!(html.contains("id=\"tx1-sec-source\""));
-        assert!(html.contains("id=\"sec-source\""));
-        // The node runs across the following code chunk, so the copy reproduces it —
-        // one canonical chunk body, one in the copy.
-        assert_eq!(html.matches("chunk-body").count(), 2);
+        assert_eq!(html.matches("id=\"sec-source\"").count(), 1);
+        assert_eq!(html.matches("chunk-body").count(), 1);
         // The target resolves, so no transclusion lint fires.
         assert!(site.lints.iter().all(|l| l.code != "W105" && l.code != "W106"));
     }
@@ -1277,8 +1852,19 @@ mod tests {
         assert_eq!(site.node_pages.len(), 2);
         for (path, html) in &site.node_pages {
             assert!(path.starts_with("n/") && path.ends_with(".html"));
-            // A node page is archival too: no script.
-            assert!(!html.contains("<script"));
+            // A node page is archival too: only the nav-spy, cob-transclude, and
+            // cob-backlinks aids, so a transclusion or backlinks list lazy-loads and
+            // nothing else runs.
+            for tag in html.match_indices("<script id=") {
+                let id = &html[tag.0 + 11..];
+                assert!(
+                    id.starts_with("\"nav-spy\"")
+                        || id.starts_with("\"cob-transclude\"")
+                        || id.starts_with("\"cob-backlinks\""),
+                    "node page has an unexpected script"
+                );
+            }
+            assert_eq!(html.matches("<script").count(), html.matches("<script id=").count());
         }
         // The source node page: found by its "read in context" link to the canonical
         // anchor, which sits one directory up (`../`).
@@ -1309,17 +1895,20 @@ mod tests {
     fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
         let site = dev_render(&txf(), "");
         let idx = &site.pages[0].html;
-        // \transclude{fig:demo} lifts the one figure out and inlines it with a
-        // scoped id, its chrome naming the caption text.
-        assert!(idx.contains("<section class=\"transclusion\" data-transclude=\"fig:demo\">"));
-        assert!(idx.contains(">A tiny schematic.</a>"));
-        assert!(idx.contains("id=\"tx1-fig-demo\""));
+        let figid = id_at(idx, "fig-demo");
+        // \transclude{fig:demo} lowers to a lazy element pointing at the figure's page,
+        // with a link fallback naming the caption — no server-side copy.
+        assert!(idx.contains(&format!(
+            "<cob-transclude src=\"n/{figid}.html\" data-transclude=\"fig:demo\">"
+        )));
+        assert!(idx.contains(">A tiny schematic. &rarr;</a></cob-transclude>"));
+        assert!(!idx.contains("<section class=\"transclusion\" data-transclude="));
+        assert!(!idx.contains("tx1-"));
         // The canonical figure still carries its bare id, once.
         assert_eq!(idx.matches("id=\"fig-demo\"").count(), 1);
         // Two headings and two floats each earn a node page.
         assert_eq!(site.node_pages.len(), 4);
         // The figure leads with a node-page link in context (drawn by CSS, no text).
-        let figid = id_at(idx, "fig-demo");
         assert!(idx.contains(&format!("href=\"n/{figid}.html\"")));
         // The figure's node page carries the figure, a breadcrumb to the heading it
         // sits in, a context link, and a backlink to the node that transcludes it.

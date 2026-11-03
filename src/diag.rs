@@ -67,6 +67,32 @@ pub fn explain(code: &str) -> Option<&'static str> {
                    carries the underlying I/O or TOML error. The lock is generated \
                    TOML (§7.1); edit it only to retire a label, and never by hand in \
                    a way that corrupts its structure.",
+        "E036" => "An `\\import … as …` failed. Either it names an import with no \
+                   `[import.<name>]` in cob.toml, or an imported macro expands into \
+                   itself, or an imported macro's content id collided with a local \
+                   macro. Imports are content-addressed (§13); a collision is \
+                   improbable, so it usually means a missing or misnamed import.",
+        "E037" => "`cob fetch`/`cob update` could not pin a remote import, or a weave met \
+                   a `git` import that was never fetched. Causes: a git clone/fetch \
+                   failed, no released tag satisfies the `version` requirement, a `git` \
+                   import gave neither or both of `version`/`rev`, a released version's \
+                   tag moved (it must be immutable), the ref has no cob-exports.json at \
+                   its root, the cache could not be written, or you need to run \
+                   `cob fetch` before weaving (§13).",
+        "E038" => "A format file has a newer major schema than this cob understands — a \
+                   `cob.lock` or an imported forest's `cob-exports.json` written by a \
+                   newer cob. Schemas are semver: the same major is compatible (a newer \
+                   minor only adds fields cob ignores), a newer major is not. Upgrade cob \
+                   (§7.1, §13).",
+        "E039" => "The bibliography file named in `[cite] bib` could not be read or \
+                   parsed. The message carries the path and the BibTeX parser's reason; \
+                   fix the file, or correct the path in cob.toml (§14).",
+        "E040" => "A `\\cite{key}` names a key that is in no configured bibliography. \
+                   Check the key's spelling, add the entry to the `.bib`, or set \
+                   `[cite] bib` in cob.toml if no bibliography is configured yet (§14).",
+        "E041" => "`cob backlinks` could not write a reverse-backlink fragment — usually \
+                   a permissions or disk problem writing into a site's `n/` directory. \
+                   The path and OS error are included (§16).",
         _ => return None,
     };
     Some(text)

@@ -19,8 +19,14 @@ cob has six goals.
 
 1. Web-first. The primary woven artifact is a multi-page website, not a PDF. Print
    is not a v1 concern.
-2. noweb-compatible. A \code{.cob} file uses noweb's chunk syntax, so noweb's
-   \code{notangle} can read it unchanged. cob is language-agnostic because the format is.
+2. Language-agnostic chunks. A \code{.cob} file's chunk syntax carries no language of
+   its own, so a chunk can hold any language the project needs. This goal used to
+   read "noweb-compatible" — \code{<<name>>=} and bare \code{@} are noweb's own chunk
+   syntax, kept so \code{notangle} could once read a \code{.cob} file unchanged. M17 adds a
+   second, cob-only fence syntax for the same two jobs and begins retiring the
+   noweb spelling (§sec:fence-chunks in \code{markup.rs.cob}); once that retirement is
+   done, no external tool reads \code{.cob} syntax at all, and this goal is about the
+   chunk model staying language-agnostic, not about noweb compatibility.
 3. Static generator only. cob is the weaver and the tangler. It ships no server.
    Margin commenting is a separate tool with its own spec, \code{ANNOTATIONS.md}; cob's
    sole obligation to it is annotation-ready HTML (\code{rewrite.rs}).
@@ -117,6 +123,8 @@ Each module carries the specification for its own job. This is the reading order
 | The project manifest, the prose dialect, config keys | \code{src/config.rs.cob} |
 | The prose pipeline: reassembly, math substitution, ordering | \code{src/prose.rs.cob} |
 | The Markdown dialect and fenced-float directives | \code{src/markdown.rs.cob} |
+| The \code{algorithm} fence: a native pseudocode renderer | \code{src/pseudocode.rs.cob} |
+| The \code{custom} fence: a registered CLI renders the body | \code{src/custom.rs.cob} |
 | Math rendering: KaTeX at weave time, the cache | \code{src/math.rs.cob} |
 | Labels, numbering, cross-references, the resolver | \code{src/resolve.rs.cob} |
 | Stable ids and the lock file | \code{src/lock.rs.cob} |
@@ -126,11 +134,44 @@ Each module carries the specification for its own job. This is the reading order
 | The weaver: rendering a code chunk | \code{src/weave.rs.cob} |
 | Syntax highlighting | \code{src/highlight.rs.cob} |
 | The node model and transclusion | \code{src/transclude.rs.cob} |
+| Importing macros from another forest | \code{src/import.rs.cob} |
+| Fetching a remote forest import | \code{src/fetch.rs.cob} |
+| Citations and the bibliography | \code{src/cite.rs.cob} |
+| Reverse backlinks across the forest | \code{src/backlinks.rs.cob} |
 | Tangling | \code{src/tangle.rs.cob} |
 | Long-form diagnostics | \code{src/diag.rs.cob} |
 | The CLI | \code{src/main.rs.cob} |
 | The build, told as a literate program | \code{flake.nix.cob} |
+| The editor grammar for \code{.cob} files | \code{tree-sitter-cob/tree-sitter-cob.cob} |
 ```
+
+## Grammars {#sec:adding-grammars}
+
+cob is language-agnostic. Only syntax highlighting is language-bound (§5.5). So a
+grammar is a **build input**, not a built-in. The shipped \code{cob} binary has an
+empty grammar set, and it highlights nothing until you add a grammar. This keeps
+cob small. It also lets you highlight any language that has a tree-sitter grammar,
+with no change to cob.
+
+You add a grammar in your own flake. You pin the grammar's tree-sitter repo as an
+input, then pass it to \code{withGrammars} on the \code{cob} or \code{static} package:
+
+```verbatim \lang{nix}
+cobito.packages.${system}.cob.withGrammars [
+  { id = "sql"; exts = [ "sql" ]; src = tree-sitter-sql; }
+]
+```
+
+Each grammar is a record. \code{id} is the language name, \code{exts} are the file
+extensions that select it, and \code{src} is the repo. The \code{symbol} field (the
+\code{tree_sitter_<name>} C entry point) defaults from \code{id}, so a normal grammar needs
+three fields. \code{build.rs} compiles each grammar in the set and makes its registry
+entry (§5.5). The \code{README} gives the full steps.
+
+cobito needs four grammars to weave its own documents: Rust, Nix, Bash, and CSS.
+The flake keeps them in \code{cobGrammars} and builds the \code{cobDoc} output with them.
+The checks use \code{cobDoc}, so they prove cob colors its own source. The shipped
+\code{cob} does not carry these four. They are cobito's need, not a default for you.
 
 ## The review loop {#sec:av7Q}
 
@@ -233,10 +274,58 @@ review} (M6), and a reserved slot for the annotation-layer fallback (M7).
 
 Phase 3 is done in its shipped slices: the Markdown dialect (M8), stable ids and
 the lock file (M11), self-hosting and the flip (M13), syntax highlighting (M14),
-and the node model with same-document transclusion (M12, first slice). Math macros
-(M9) and citations (M10) are the remaining phase-3 work. The deferred transclusion
-slices — floats as nodes, per-node atomic pages, and cross-document transclusion —
-are recorded in \code{transclude.rs.cob}.
+the node model with same-document transclusion (M12, first slice), math macros
+(M9 — the \code{macros} fence, forester \code{\def}/\code{\let}, a homeless \code{def:} node), and
+citations (M10 — \code{\cite{key}} against a BibTeX bibliography, each cited work a node
+with a frozen \code{[id]} marker, a node page, "Cited by" backlinks, and a References
+list, \code{cite.rs}; cross-forest \code{\cite{key@alias}} resolves against a forest's
+exported citations index). Phase 3 is complete.
+
+## The forest (M16) {#sec:forest}
+
+M16 makes cob a forest: one project's documents, and other forests, reachable by a
+local namespace alias (§13). The slices, in order:
+
+- **Lazy transclusion — done.** \code{\transclude} lowers to a \code{<cob-transclude>}
+  element that fetches a node's own \code{n/} page into a shadow root, with a link
+  fallback. The body is stored once; a copy is a reference, so a big forest does not
+  multiply the bytes (§10).
+- **Macro import — done.** An \code{imports} fence binds a source to an alias
+  (\code{\import algebra as alg}); \code{\alg.RR} uses its macros. Each imported macro gets a
+  content id (a merkle hash), so it is clash-free and shared across forests
+  (\code{import.rs.cob}). A forest exports its macro table as \code{cob-exports.json}.
+- **Cross-document \code{\ref}/\code{\transclude} — done.** \code{\ref{sec:x@alg}} and
+  \code{\transclude{def:y@alg}} resolve against the import's \code{cob-exports.json}, which now
+  carries a label index (\code{label} to id, kind, page, and anchor). A reference lands on
+  the forest's deployed page, \code{<url>/<page>.html#<anchor>}, with the kind-qualified
+  opaque id as its text; the \code{url} comes from the \code{[import.<alias>]} table
+  (\code{config.rs.cob}). A cross-document \code{\transclude} is just a \code{<cob-transclude src>}
+  at the other forest's node page (\code{<url>/n/<id>.html}), so the lazy element already
+  handles it. An unknown alias or label is E015 for a \code{\ref}, W106 for a
+  \code{\transclude}, the same as any local miss.
+- **\code{cob fetch} + versioning — done.** A \code{git}-URL import is pinned to a commit
+  and cached by a separate \code{cob fetch} step (\code{fetch.rs.cob}), so a weave reads only
+  the cache and stays offline. A forest publishes releases as **semver git tags**,
+  each tag's root carrying \code{cob-exports.json}; an import names a **semver
+  requirement** (\code{version = "^1.2"}), or a raw \code{rev} as an escape hatch. \code{cob fetch}
+  clones the ref with \code{gix}, picks the highest tag matching the requirement, reads
+  that one file, caches it at \code{.cob-cache/imports/<sha>/}, and records the pin
+  (\code{git}, \code{req}, \code{version}, \code{sha}) in the \code{fetch} section of \code{cob.lock}. \code{cob fetch}
+  **honors the lock** (resolves only what is new or changed); \code{cob update [alias]}
+  re-resolves to the newest matching release; a moved release tag is E037. The
+  \code{cob.lock} and \code{cob-exports.json} schemas are **semver and enforced**: a newer
+  major is E038. A weave resolves a \code{git} import through its pin; an unfetched one
+  is E037. A local \code{path} import needs no fetch and wins when both are set.
+- **Reverse backlinks — done (node-level).** A forest records its outgoing
+  cross-forest edges in \code{cob-exports.json} (schema 1.2.0); \code{cob backlinks
+  <site-dir>...} (\code{backlinks.rs.cob}) inverts them — joining on each forest's own
+  \code{[forest] url} — and writes a \code{n/<id>.backlinks.html} fragment per targeted node.
+  A node page fetches it lazily (the \code{<cob-backlinks>} element), so a forest shows
+  "Referenced by" / "Cited by" / "Transcluded by" from other forests without
+  re-weaving. Forest-level "imported by" is a cheap follow-up on the same inversion.
+
+The deferred node-model slices — floats as nodes and per-node pages — are shipped;
+the remaining transclusion notes are in \code{transclude.rs.cob}.
 
 The native reader is the first slice of M15: cob reads its own \code{.cob} source with a
 Rust reader (\code{markup.rs}), so no \code{markup} process runs at read time and cob can ship
@@ -246,6 +335,34 @@ parser at compile time (\code{markup.rs.cob}). A native tangler (§11) replaced
 oracle: frozen \code{markup} and \code{notangle} goldens prove the native reader and
 tangler right (§15). The \code{reader} and \code{tangle} flake checks diff cob against
 those goldens.
+
+## Retiring the noweb chunk syntax (M17) {#sec:fence-milestone}
+
+M15 removed noweb as a running tool. M17 removes its chunk syntax from \code{.cob}
+files too — \code{<<name>>=} and bare \code{@} are the two remaining pieces noweb left
+behind, and nothing left depends on an external tool being able to read them.
+
+- **A fence-based chunk syntax — done.** \code{markup.rs.cob} §sec:fence-chunks adds a
+  second spelling for the two jobs noweb's syntax did: a code chunk opens with
+  four or more backticks, the word \code{chunk}, and a name, and closes with a
+  backtick run at least that long. A chunk use (\code{<<name>>}) and its escape
+  (\code{@@<<}/\code{@@>>}) are unchanged either way; only the open/close delimiter moved.
+  Both spellings work side by side, even continuing the same chunk, so every
+  existing \code{.cob} file keeps reading.
+- **Migrate every \code{.cob} file — in progress.** This project's own corpus, written
+  before the fence syntax existed, still uses the noweb spelling throughout. A
+  converter rewrites it mechanically, chunk by chunk, with no change to a
+  section's content.
+- **Remove the noweb spelling — in progress.** Once the corpus reads clean, the
+  reader stops accepting \code{<<name>>=} and bare \code{@}. noweb's \code{markup} cannot read
+  the fence syntax, so \code{fixtures/*.markup} (the noweb-verified oracle, §15) is
+  frozen as a historical record rather than a live gate: the reader check that
+  diffs cob against it is retired, and a native equivalence test (the fence
+  syntax reading the same as the noweb syntax once did) takes its place.
+
+This is a breaking release: a \code{.cob} file written before M17 finished needs the
+converter run on it once. \code{tree-sitter-cob} keeps both spellings indefinitely, so
+an editor can still open an unconverted file.
 
 ## Open questions {#sec:QznE}
 
@@ -299,11 +416,19 @@ introduces a code, it claims the next free number in this registry.
 | E033 | a highlight key names an unknown language | \code{main.rs} |
 | E034 | bare or unknown fence kind | \code{markdown.rs} |
 | E035 | recursive chunk expansion (cycle) | \code{tangle.rs} |
+| E036 | a macro import fails (unknown, cycle, or id clash) | \code{import.rs} |
+| E037 | a remote import fetch fails, or a git import is not fetched | \code{fetch.rs} |
+| E038 | a \code{cob.lock} or \code{cob-exports.json} has a newer major schema | \code{lock.rs}, \code{site.rs} |
+| E039 | the bibliography file does not read or parse | \code{cite.rs} |
+| E040 | a \code{\cite} names a key no bibliography has | \code{weave.rs} |
+| E041 | \code{cob backlinks} could not write a fragment | \code{backlinks.rs} |
+| E042 | a \code{custom} fence handler fails (unregistered, non-zero exit, script, bad envelope) | \code{custom.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |
 | W105 | transclusion cycle | \code{transclude.rs} |
 | W106 | transclusion of an unknown target | \code{transclude.rs} |
+| W107 | a referenced local asset was not found | \code{weave.rs} |
 ```
 
 ## Conventions {#sec:zBDS}

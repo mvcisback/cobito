@@ -57,6 +57,7 @@ pub fn explain(code: &str) -> Option<&'static str> {
         <<manifest diagnostics>>
         <<float-directive diagnostics>>
         <<lock diagnostics>>
+        <<import diagnostics>>
         _ => return None,
     };
     Some(text)
@@ -167,6 +168,43 @@ could not be read, parsed, or written.
            carries the underlying I/O or TOML error. The lock is generated \
            TOML (§7.1); edit it only to retire a label, and never by hand in \
            a way that corrupts its structure.",
+@
+These codes come from the forest (§13). E036 is an \code{\import} fault: an import
+with no \code{[import.…]} in \code{cob.toml}, a macro that expands into itself, or the rare
+content-id clash with a local macro. E037 is a fetch fault: a failed git clone, an
+unsatisfiable \code{version} requirement, a moved release tag, a ref with no published
+\code{cob-exports.json}, or a \code{git} import a weave met before \code{cob fetch} pinned it.
+E038 is a format file (a \code{cob.lock} or an imported \code{cob-exports.json}) with a newer
+major schema than this cob understands. E039 and E040 are citations (§14): a
+bibliography that does not read or parse, and a \code{\cite} to a key no bibliography
+has. E041 is a \code{cob backlinks} write failure (§16).
+<<import diagnostics>>=
+"E036" => "An `\\import … as …` failed. Either it names an import with no \
+           `[import.<name>]` in cob.toml, or an imported macro expands into \
+           itself, or an imported macro's content id collided with a local \
+           macro. Imports are content-addressed (§13); a collision is \
+           improbable, so it usually means a missing or misnamed import.",
+"E037" => "`cob fetch`/`cob update` could not pin a remote import, or a weave met \
+           a `git` import that was never fetched. Causes: a git clone/fetch \
+           failed, no released tag satisfies the `version` requirement, a `git` \
+           import gave neither or both of `version`/`rev`, a released version's \
+           tag moved (it must be immutable), the ref has no cob-exports.json at \
+           its root, the cache could not be written, or you need to run \
+           `cob fetch` before weaving (§13).",
+"E038" => "A format file has a newer major schema than this cob understands — a \
+           `cob.lock` or an imported forest's `cob-exports.json` written by a \
+           newer cob. Schemas are semver: the same major is compatible (a newer \
+           minor only adds fields cob ignores), a newer major is not. Upgrade cob \
+           (§7.1, §13).",
+"E039" => "The bibliography file named in `[cite] bib` could not be read or \
+           parsed. The message carries the path and the BibTeX parser's reason; \
+           fix the file, or correct the path in cob.toml (§14).",
+"E040" => "A `\\cite{key}` names a key that is in no configured bibliography. \
+           Check the key's spelling, add the entry to the `.bib`, or set \
+           `[cite] bib` in cob.toml if no bibliography is configured yet (§14).",
+"E041" => "`cob backlinks` could not write a reverse-backlink fragment — usually \
+           a permissions or disk problem writing into a site's `n/` directory. \
+           The path and OS error are included (§16).",
 @
 The tests pin two properties: a few known codes explain and are case-insensitive,
 and an unknown code is \code{None}.

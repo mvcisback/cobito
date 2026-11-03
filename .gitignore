@@ -4,4 +4,17 @@
 /_site
 /.cob-cache
 
-# tangled: buildable release snapshot; generated tree tracked here (§13).
+# Generated from the .cob sources (§13); the .cob files are the only authority
+# on `main`. The devShell seeds these from the pinned `tangled` snapshot on a
+# fresh checkout; then `cob tangle` refreshes them. flake.nix is the one
+# committed generated file — Nix must read it — and the dogfood check guards it.
+/src/*.rs
+/build.rs
+/templates/cob.css
+/templates/cob-syntax.css
+# tree-sitter-cob: everything is tangled from / generated out of the one .cob.
+/tree-sitter-cob/*
+!/tree-sitter-cob/tree-sitter-cob.cob
+# The dist flake is tangled only into the `tangled` snapshot at release, never
+# committed on `main` (flake.nix is the committed one Nix reads here).
+/flake.dist.nix

@@ -6,7 +6,8 @@ every page. Weaving this file back shows cob highlighting its own CSS — the fo
 grammar, and the reason the CSS grammar exists.
 
 The design is Tufte-flavoured: a centred reading column with a wide right margin
-that holds sidenotes and, later, the annotation overlay's margin slots. The page
+that holds the annotation overlay's margin slots. A sidenote reads as a footnote —
+an inline marker in the prose and the note at the foot of the page. The page
 frame is a CSS grid, and the reader gets a light or a dark theme from the operating
 system. Two rules run through the whole sheet. A float's identity — its opaque id, a
 section's permalink, a code line's number — is drawn from a data attribute as
@@ -32,6 +33,8 @@ style rule with a block.
 <<the section box>>
 
 <<the margin column>>
+
+<<the footnotes>>
 
 <<generated numbering>>
 
@@ -138,12 +141,12 @@ two themes stay in one place. \code{color-scheme} tells the browser to match its
 }
 @
 The page is a grid. Named line boundaries mark a \code{content} track — the reading
-column — and, to its right, a \code{margin} track for sidenotes. The two outer \code{1fr}
-tracks centre the whole content-plus-margin group, so the reading column sits a
-little left of centre and the margin has room. Every top-level block — the table of
-contents, the prose, the footer — sits in the \code{content} track. A narrow viewport has
-no room for a margin track, so the grid collapses to one centred column and the
-sidenotes fall inline.
+column — and, to its right, a \code{margin} track for the annotation slots. The two
+outer \code{1fr} tracks centre the whole content-plus-margin group, so the reading
+column sits a little left of centre and the margin has room. Every top-level block —
+the table of contents, the prose, the footer — sits in the \code{content} track. A
+narrow viewport has no room for a margin track, so the grid collapses to one centred
+column.
 
 Headings sit in the normal flow. The sticky navigation bar (below) shows the reader
 where they are, so a heading needs no sticky band of its own — and two sticky
@@ -172,7 +175,7 @@ reserves that much scroll margin at the top.
     padding-inline: 1rem;
   }
 
-  /* No room for a margin track: one centred column; sidenotes go inline. */
+  /* No room for a margin track: collapse to one centred column. */
   @media (max-width: 100rem) {
     body {
       justify-content: center;
@@ -191,7 +194,7 @@ reserves that much scroll margin at the top.
   }
 }
 @
-Every section is a positioning context for its margin slot and sidenotes.
+Every section is a positioning context for its margin slot.
 <<the section box>>=
 @layer layout {
   section {
@@ -200,40 +203,59 @@ Every section is a positioning context for its margin slot and sidenotes.
   }
 }
 @
-The margin column holds the annotation slot and sidenotes. A float — not a grid cell
-— keeps the note beside the point it marks: the note must line up with its anchor in
-the prose, not with a grid row. On a narrow screen there is no margin, so the note
-falls back to an indented aside within the column.
+The margin column holds the annotation slot. A float — not a grid cell — keeps the
+slot beside the point it marks, so an overlay note lines up with its anchor in the
+prose, not with a grid row.
 <<the margin column>>=
 @layer layout {
-  /* --- Margin column: annotation slot + sidenotes ----------------------- */
+  /* --- Margin column: annotation slot ----------------------------------- */
 
   .margin-slot {
     float: right;
     clear: right;
     width: 0;
   }
+}
+@
+A sidenote reads as a footnote: an inline marker at its point, and the note at the
+foot of the page. The marker is a superscript number the CSS draws from a counter,
+so the digit is never a text node and copy, paste, and the annotation layer's quote
+selectors survive (§5.4). The counter resets per page because each page is one HTML
+document. The footnotes list numbers itself with the ordered-list marker, which runs
+in the same order, so the two numbers agree without a second counter. The note links
+back to its marker.
+<<the footnotes>>=
+@layer components {
+  /* --- Footnote markers + the page-foot notes --------------------------- */
 
-  .sidenote {
-    float: right;
-    clear: right;
-    width: var(--margin);
-    margin-right: calc(-1 * (var(--margin) + var(--gap)));
-    font-size: 0.8rem;
-    line-height: 1.4;
+  main { counter-reset: footnote; }
+
+  .fn-ref {
+    counter-increment: footnote;
+  }
+  .fn-ref a {
+    text-decoration: none;
+    font-weight: 600;
+    color: var(--ref);
+  }
+  .fn-ref a::after { content: counter(footnote); }
+
+  .footnotes {
+    max-width: var(--measure);
+    margin: 3rem auto 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
     color: var(--ink);
   }
-
-  @media (max-width: 100rem) {
-    /* No room for a margin: inline the note as an indented aside. */
-    .sidenote {
-      float: none;
-      width: auto;
-      margin: 0.6rem 0 0.6rem 1.5rem;
-      padding-left: 0.8rem;
-      border-left: 2px solid var(--rule);
-    }
+  .footnotes hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    width: 6rem;
+    margin: 0 0 1rem;
   }
+  .footnotes ol { padding-left: 1.5rem; }
+  .footnotes li { margin: 0.4rem 0; }
+  .fn-back { margin-left: 0.3rem; text-decoration: none; }
 }
 @
 A float's number is generated content drawn from its data-id, so it is never
@@ -245,6 +267,17 @@ id sits in the right margin of its centred block.
 
   figure {
     margin: 1.5rem 0;
+  }
+
+  /* A figure image scales to the reading column rather than its intrinsic size,
+     so a wide export (an SVG from the custom LaTeX fence, say) does not overflow
+     the page. It centres under its caption. */
+  figure img,
+  figure svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
   }
 
   figcaption,
@@ -261,6 +294,104 @@ id sits in the right margin of its centred block.
   caption[data-id]::before {
     content: "Table " attr(data-id) ". ";
     font-weight: bold;
+  }
+
+  /* An `algorithm` fence (§6.5) is a `<figure class="algorithm">` float. Its
+     caption reads "Algorithm N", overriding the plain figure prefix. The listing
+     is a nested ordered list; a line number is drawn by a CSS counter from the
+     list position, so no number enters a selection, and nesting shows a block. */
+  figure.algorithm {
+    margin: 1.5rem 0;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 0.4rem 0.9rem 0.7rem;
+    font-size: 0.9rem;
+  }
+  figure.algorithm > figcaption {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+  figure.algorithm > figcaption[data-id]::before {
+    content: "Algorithm " attr(data-id) ". ";
+    font-weight: bold;
+  }
+  .pseudocode,
+  .pseudocode ol {
+    list-style: none;
+    margin: 0;
+  }
+  .pseudocode {
+    counter-reset: pc;
+    padding-left: 0;
+    line-height: 1.7;
+  }
+  .pseudocode ol {
+    padding-left: 1.6rem;
+  }
+  .pseudocode li {
+    counter-increment: pc;
+  }
+  .pseudocode li::before {
+    content: counter(pc) ". ";
+    color: var(--rule);
+    font-variant-numeric: tabular-nums;
+  }
+  .pseudocode .kw {
+    font-weight: bold;
+  }
+  .pseudocode .comment {
+    color: var(--ref);
+    font-style: italic;
+  }
+
+  /* A taxon (§10) labels a typed node — Theorem, Definition, Example. The label is
+     generated from the data-taxon attribute, so no taxon text enters a selection or
+     the annotation layer; a document may override a given taxon by name. */
+  main :is(h1, h2, h3, h4, h5, h6)[data-taxon]::before {
+    content: attr(data-taxon) ". ";
+    text-transform: capitalize;
+    font-weight: bold;
+    color: var(--ref);
+  }
+
+  /* A `node` fence (§10) is a <section class="taxon-node"> from the start, with a
+     title paragraph where a heading node has its heading. The paragraph draws the
+     same generated label, and holds the node's permalink and node link. It is
+     never a heading, so it stays out of the table of contents. */
+  .node-title {
+    margin: 0.3rem 0 0.5rem;
+    font-weight: bold;
+  }
+  .node-title[data-taxon]::before {
+    content: attr(data-taxon) ". ";
+    text-transform: capitalize;
+    color: var(--ref);
+  }
+
+  /* A titled `node` fence opens with a real heading, one level below the heading
+     it sits under. It sits in the fence's box, so it needs no top margin of its own. */
+  .taxon-node > .node-head {
+    margin-top: 0.6rem;
+  }
+
+  /* The weaver wraps a taxon node in <section class="taxon-node"> so a box can
+     enclose the whole node, not only its heading. Only the "claim" taxa are
+     boxed; an example or a remark keeps the label alone. The set is open — a
+     document adds a name to the list to box it. A `node` fence is already that
+     element, so the same rule boxes it, and its box ends where the fence ends. */
+  .taxon-node {
+    margin: 1.5rem 0;
+  }
+  .taxon-node:is(
+    [data-taxon="definition"], [data-taxon="theorem"], [data-taxon="lemma"],
+    [data-taxon="proposition"], [data-taxon="corollary"], [data-taxon="problem"]
+  ) {
+    padding: 0.2rem 1.2rem;
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--ref);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ref) 4%, var(--bg));
   }
 
   /* A wide display equation scrolls sideways rather than widening the page.
@@ -373,6 +504,48 @@ node, so it stays out of selections and quote selectors.
     top: 50%;
     transform: translateY(-50%);
     margin: 0;
+  }
+
+  /* A citation marker (§14) is the cited work's opaque id, drawn bracketed from
+     data-id so no citation text enters a selection or the annotation layer's
+     quote selectors (§9.2); the <a> is the click target, linking to the entry in
+     the References list. It reads as the machine token it is: the warm sans accent
+     of a cross-reference, a hair smaller and raised like a reference call-out. */
+  a.cite {
+    font-family: var(--sans);
+    font-size: 0.75em;
+    color: var(--ref);
+    text-decoration: none;
+    vertical-align: 0.3em;
+
+    &::before {
+      content: "[" attr(data-id) "]";
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
+  /* Each References entry leads with the same bracketed opaque id, so a reader can
+     match an inline marker to its work. Generated from data-id, never a text node. */
+  .cite-uid {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.85em;
+    color: var(--ref);
+    text-decoration: none;
+    margin-right: 0.4em;
+
+    &::before {
+      content: "[" attr(data-id) "]";
+    }
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
   }
 }
 @
@@ -796,7 +969,7 @@ sideways on its own when the viewport is narrow.
 }
 @
 The rules above already adapt to a narrow viewport: the grid collapses to one column,
-the sidenotes fall inline, and a wide code chunk or table scrolls on its own. This
+and a wide code chunk or table scrolls on its own. This
 last block tunes a phone. The reading gutter gets smaller so the column uses more of
 the screen, the block spacing tightens, the scrolling nav gives each link a taller tap
 target, a long previous or next title wraps instead of overlapping its neighbour, and

@@ -29,6 +29,10 @@ it does not.
 
 <<the weave command>>
 
+<<the fetch command>>
+
+<<the backlinks command>>
+
 <<build the document once>>
 
 <<the lock command>>
@@ -39,11 +43,21 @@ it does not.
 
 <<the id command>>
 
+<<the find command>>
+
 <<resolve the highlighting config>>
 
 <<the language command>>
 
+<<the where command>>
+
+<<the tokens command>>
+
+<<the lsp command>>
+
 <<the tangle command>>
+
+<<the untangle command>>
 
 <<dump the model>>
 
@@ -52,29 +66,37 @@ it does not.
 Every module in the crate is declared here, in one alphabetical block, because
 this is the crate root. Adding a module means adding one line.
 <<the module tree>>=
+mod backlinks;
+mod cite;
 mod config;
+mod custom;
 mod diag;
+mod fetch;
 mod highlight;
+mod import;
 mod lock;
+mod lsp;
 mod markdown;
 mod markup;
 mod math;
 mod model;
 mod noweb;
 mod prose;
+mod pseudocode;
 mod resolve;
 mod rewrite;
 mod section;
 mod site;
 mod tangle;
 mod transclude;
+mod untangle;
 mod weave;
 @
 The binary needs only two names from the standard library: a path type for the
 files it reads and writes, and the process exit code it returns.
 <<imports>>=
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 @
 The usage banner is the help text. It prints when the command line makes no sense.
@@ -85,15 +107,25 @@ const USAGE: &str = "\
 cob — web-first literate programming (early scaffold)
 
 USAGE:
-    cob weave <file.cob>...        weave to _site/ (single page; M2 adds splitting)
-    cob lock <file.cob>...         mint frozen ids for every label into cob.lock (§7.1)
+    cob weave [file.cob]...        weave to _site/; with no files, the book named by
+                                  the [[document]] files in cob.toml (§5.2)
+    cob fetch                     pin new/changed git imports, cache their index (§13)
+    cob update [alias]            re-resolve git imports to the newest matching release (§13)
+    cob backlinks <site-dir>...   write reverse-backlink fragments across built forests (§16)
+    cob lock [file.cob]...         mint frozen ids for every label into cob.lock (§7.1);
+                                  with no files, the book named in cob.toml
     cob rename-label <id> <name>  give an auto section id a human sec: name (§7.1)
     cob labels <file.cob>          list the file's label → id map from cob.lock
     cob id <file.cob> <label>      print the frozen id for one label
+    cob find <id-or-label>        find which file defines a label or id, from cob.lock (§7.1)
     cob language <file.cob> <chunk> print the highlighting language for a chunk (§5.5)
+    cob where <file.cob> <root> <line> map a tangled-file line back to its .cob source (§11)
+    cob tokens <file.cob>          print whole-file semantic tokens, one per line (§5.5, #2)
+    cob lsp                       run the editor language server over stdio (§5.5, #2)
     cob dump-ir <file.cob>...       print the parsed IR events (--from-markup <f>: parse a .markup)
     cob dump-model <file.cob>...   fold the IR into the document model, print it
     cob tangle <file.cob>...       tangle every root chunk
+    cob untangle <file.cob>        patch the .cob from edits made to its tangled files (§11)
 
     cob --explain <CODE>         print the long form of a diagnostic (e.g. E014)
 
@@ -125,13 +157,21 @@ fn main() -> ExitCode {
     match args.split_first().map(|(cmd, rest)| (cmd.as_str(), rest)) {
         Some(("dump-ir", files)) if !files.is_empty() => dump_ir(files),
         Some(("dump-model", files)) if !files.is_empty() => dump_model(files),
-        Some(("weave", args)) if !args.is_empty() => weave_cmd(args),
-        Some(("lock", files)) if !files.is_empty() => lock_cmd(files),
+        Some(("weave", args)) => weave_cmd(args),
+        Some(("fetch", rest)) if rest.is_empty() => fetch_cmd(),
+        Some(("update", rest)) if rest.len() <= 1 => update_cmd(rest.first().map(String::as_str)),
+        Some(("backlinks", dirs)) if !dirs.is_empty() => backlinks_cmd(dirs),
+        Some(("lock", files)) => lock_cmd(files),
         Some(("rename-label", rest)) if rest.len() == 2 => rename_label_cmd(&rest[0], &rest[1]),
         Some(("labels", files)) if files.len() == 1 => labels_cmd(&files[0]),
         Some(("id", rest)) if rest.len() == 2 => id_cmd(&rest[0], &rest[1]),
+        Some(("find", rest)) if rest.len() == 1 => find_cmd(&rest[0]),
         Some(("language", rest)) if rest.len() == 2 => language_cmd(&rest[0], &rest[1]),
+        Some(("where", rest)) if rest.len() == 3 => where_cmd(&rest[0], &rest[1], &rest[2]),
+        Some(("tokens", files)) if files.len() == 1 => tokens_cmd(&files[0]),
+        Some(("lsp", rest)) if rest.is_empty() => lsp_cmd(),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
+        Some(("untangle", args)) if !args.is_empty() => untangle_cmd(args),
         Some(("--version" | "-V", _)) => {
             println!("cob {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -172,10 +212,32 @@ builds the model, loads config, resolves the highlighting language, then calls
 counted; \code{--deny-warnings} turns a nonzero count into a nonzero exit after the
 site is written, so CI fails but the artifact stays available.
 
-The option loop walks the argument iterator by hand. \code{--out} consumes the next
-argument as a directory; a missing value is a usage error. Everything the loop
-does not recognise is treated as a file.
+A book has many files, and their order is the reading order. That order belongs in
+one place: the \code{files} list of the \code{[[document]]} table in \code{cob.toml} (§5.2).
+\code{document_files} gives the files named on the command line when there are any.
+With none, it gives that list, so \code{cob weave} and \code{cob lock} need no
+arguments, and the build, the review loop, and the docs all share one book order.
 <<the weave command>>=
+/// The document's source files: those named on the command line, else the
+/// `files` of the `[[document]]` table in `cob.toml`. An error names both ways to
+/// say it.
+fn document_files(named: Vec<String>) -> Result<Vec<String>, String> {
+    if !named.is_empty() {
+        return Ok(named);
+    }
+    let none = "cob: no .cob files given. Name them on the command line, or list them \
+                in the `files` of a [[document]] table in cob.toml"
+        .to_string();
+    match config::Config::load(Path::new(".")) {
+        Ok(Some(cfg)) => match cfg.document() {
+            Some(d) if !d.files.is_empty() => Ok(d.files.clone()),
+            _ => Err(none),
+        },
+        Ok(None) => Err(none),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 fn weave_cmd(args: &[String]) -> ExitCode {
     let mut out = "_site".to_string();
     let mut archive = false;
@@ -198,10 +260,13 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             _ => files.push(a.clone()),
         }
     }
-    if files.is_empty() {
-        eprintln!("cob: weave needs at least one .cob file");
-        return ExitCode::from(2);
-    }
+    let files = match document_files(files) {
+        Ok(f) => f,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(2);
+        }
+    };
 
     let events = match markup::read(&files) {
         Ok(events) => events,
@@ -257,6 +322,56 @@ fn weave_cmd(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // §13 imports: main reads each import's cob-exports.json into a forest ref (its
+    // index plus the deployed url) and hands them to the weave, so the weave
+    // itself reads no files (and stays offline). A local `path` is read directly;
+    // a `git` import resolves through its `cob.lock` pin to the fetch cache
+    // (`cob fetch` put it there), and a `git` import with no pin is E037.
+    let import_lock = match lock::LockFile::load(Path::new("cob.lock")) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let cache_root = Path::new(".cob-cache");
+    let mut loaded: BTreeMap<String, site::ForestRef> = BTreeMap::new();
+    for (name, imp) in &cfg.imports {
+        let dir = match fetch::index_dir(name, imp, &import_lock, cache_root) {
+            Ok(Some(dir)) => dir,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Ok(json) = std::fs::read_to_string(dir.join("cob-exports.json")) {
+            match site::read_exports(&json) {
+                Ok(Some(index)) => {
+                    let url = imp.url.clone().unwrap_or_default();
+                    loaded.insert(name.clone(), site::ForestRef { url, index });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    }
+    // §14 citations: load the bibliography named in `[cite] bib`, if any. A parse
+    // or read failure is E039; an absent `[cite]` means no bibliography (a `\cite`
+    // then fails E040 in the weave).
+    let bib = match &cfg.cite.bib {
+        Some(path) => match cite::load(Path::new(path)) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => cite::Bib::default(),
+    };
     match weave::write_site(
         &doc,
         Path::new(&out),
@@ -264,6 +379,10 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         Path::new("cob.lock"),
         meta,
         &lang_cfg,
+        &loaded,
+        &bib,
+        &cfg.fences,
+        cfg.forest.url.as_deref().unwrap_or_default(),
         archive,
         mode,
     ) {
@@ -284,6 +403,78 @@ fn weave_cmd(args: &[String]) -> ExitCode {
                 eprintln!("cob: {warnings} warning(s); failing due to --deny-warnings");
                 return ExitCode::FAILURE;
             }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The fetch and update commands pin remote imports (§13). Both load \code{cob.toml} and
+the lock, resolve each \code{git} import into the cache, write the grown lock, and
+report each pinned commit; they never weave, so they are the commands that may
+touch the network. \code{fetch} honors existing pins (resolving only what is new or
+changed); \code{update} re-resolves to the newest matching release — all imports, or one
+named alias. They share one worker.
+<<the fetch command>>=
+fn fetch_cmd() -> ExitCode {
+    run_fetch(fetch::Mode::Fetch)
+}
+
+fn update_cmd(alias: Option<&str>) -> ExitCode {
+    run_fetch(fetch::Mode::Update(alias.map(str::to_string)))
+}
+
+fn run_fetch(mode: fetch::Mode) -> ExitCode {
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lock_path = Path::new("cob.lock");
+    let mut lock = match lock::LockFile::load(lock_path) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match fetch::run(&cfg, &mut lock, Path::new(".cob-cache"), &mode) {
+        Ok(fetched) => {
+            if let Err(e) = lock.save(lock_path) {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+            if fetched.is_empty() {
+                println!("cob: imports are up to date");
+            }
+            for f in &fetched {
+                let short: String = f.sha.chars().take(12).collect();
+                println!("pinned {} @ {short}", f.alias);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The backlinks command runs the forest-wide inversion (§16). It takes the built site
+directories, writes a reverse-backlink fragment per targeted node, and reports how
+many it wrote. It never weaves; it only reads each site's \code{cob-exports.json} and
+writes fragments beside its node pages.
+<<the backlinks command>>=
+fn backlinks_cmd(dirs: &[String]) -> ExitCode {
+    let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+    match backlinks::run(&paths) {
+        Ok(n) => {
+            println!("cob backlinks: wrote {n} fragment(s)");
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -324,6 +515,14 @@ The report shows how many were newly minted.
 /// `.cob` source. Ids already present are left untouched; new ones are written back
 /// so a later `--locked` weave finds them.
 fn lock_cmd(files: &[String]) -> ExitCode {
+    let files = match document_files(files.to_vec()) {
+        Ok(f) => f,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::from(2);
+        }
+    };
+    let files = files.as_slice();
     let doc = match build_doc(files) {
         Ok(doc) => doc,
         Err(code) => return code,
@@ -482,6 +681,67 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
     }
 }
 @
+The find command is the reverse of \code{id}: given an id or a label name, it
+searches every file in \code{cob.lock}, not one named up front, because that is the
+whole point — you have the id from a woven page and do not yet know which file it
+is in. Once it has the \code{(file, label)} pair, it reads that file and looks for the
+label's own defining text: \code{\\label{name}} on a fence or node-fence title line, or
+\code{{#name}} on a heading. Both are literal substrings the source must spell out at
+the point of definition, and neither ever appears at a \code{\\ref{name}} use site, so
+the first matching line is the definition, not a mention. A citation has no such
+line in any \code{.cob} — it lives in the bibliography — so that case prints the key
+instead of a file:line.
+<<the find command>>=
+/// `cob find <id-or-label>`: given a frozen id or a label name, print the
+/// `.cob` file and line that defines it (§7.1) — the reverse of `cob id`, which
+/// needs the file already in hand. A citation has no defining line in any
+/// `.cob` file, so it prints the key instead.
+fn find_cmd(needle: &str) -> ExitCode {
+    let lock = match lock::LockFile::load(Path::new("cob.lock")) {
+        Ok(lock) => lock,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (file, label, entry) = match lock.find_label(needle) {
+        Some(found) => found,
+        None => {
+            eprintln!("cob: no label or id `{needle}` in cob.lock (run `cob lock`)");
+            return ExitCode::FAILURE;
+        }
+    };
+    if entry.kind == rewrite::Kind::Citation {
+        println!("{label} is a citation ({}): see the bibliography, not a .cob file", entry.id);
+        return ExitCode::SUCCESS;
+    }
+    let text = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("cob: {file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let as_label = format!("label{{{label}}}");
+    let as_heading = format!("{{#{label}}}");
+    match text
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains(&as_label) || line.contains(&as_heading))
+    {
+        Some((i, _)) => {
+            println!("{file}:{} ({} {})", i + 1, entry.kind.word(), entry.id);
+            ExitCode::SUCCESS
+        }
+        None => {
+            // The lock and the source have drifted (a hand edit, a stale lock).
+            // Still useful: the file is right, just not the line.
+            println!("{file} ({} {}, line not found — try `cob lock`)", entry.kind.word(), entry.id);
+            ExitCode::SUCCESS
+        }
+    }
+}
+@
 \code{lang_config} builds the resolved highlighting config from the \code{[weave]} table. It
 validates every language name — the document default and every per-chunk value.
 An unknown name is a config error (E033), not a silent fallback, so a typo is
@@ -560,6 +820,107 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+@
+The where command maps a line in a tangled file back to its `.cob` source (§11,
+#3). A compiler or test names a line in `src/main.rs`, which cob tangled; `cob
+where src/main.rs.cob src/main.rs 42` prints the `.cob` file, line, and chunk that
+wrote it. It tangles the root with a line map (`tangle::tangle_root_located`) and
+reads the one entry. A line past the end, or a root with no definition, is an
+error, so a build script can rely on the exit code.
+<<the where command>>=
+/// `cob where <file.cob> <root> <line>`: map a 1-based line of the tangled `root`
+/// back to the `.cob` source line that wrote it.
+fn where_cmd(file: &str, root: &str, line: &str) -> ExitCode {
+    let line: usize = match line.parse() {
+        Ok(n) if n >= 1 => n,
+        _ => {
+            eprintln!("cob: <line> must be a positive integer, got `{line}`");
+            return ExitCode::from(2);
+        }
+    };
+    let doc = match build_doc(&[file.to_string()]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    if !doc.chunks.contains_key(root) {
+        eprintln!("cob: `{root}` is not a chunk in {file}");
+        return ExitCode::FAILURE;
+    }
+    let (_, map) = match tangle::tangle_root_located(&doc, root) {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match map.get(line - 1) {
+        Some(loc) => {
+            println!("{}:{} (chunk {})", loc.file, loc.line, loc.chunk);
+            ExitCode::SUCCESS
+        }
+        None => {
+            eprintln!("cob: {root} tangles to {} line(s); {line} is past the end", map.len());
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The tokens command prints the whole-file semantic tokens (§5.5, #2), one per line
+as `<line>:<col> <len> <kind>`, with a zero-based column and a 1-based line. It is
+the testable core of the editor's semantic highlighting; `cob lsp` serves the same
+tokens over the Language Server Protocol. It loads config the same as `language`,
+because the token colors use the resolved grammar for each chunk.
+<<the tokens command>>=
+/// `cob tokens <file.cob>`: print every semantic token of the document.
+fn tokens_cmd(file: &str) -> ExitCode {
+    let doc = match build_doc(&[file.to_string()]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let source = std::fs::read_to_string(file).unwrap_or_default();
+    for t in lsp::tokens(&doc, &lang_cfg, &source) {
+        println!("{}:{} {} {}", t.line, t.col, t.len, t.kind);
+    }
+    ExitCode::SUCCESS
+}
+@
+The lsp command runs the editor language server (§5.5, #2). It loads the config the
+same as `tokens` — the token colors need the resolved grammar — then hands the
+language config to the server, which reads and writes LSP messages over stdio until
+the editor disconnects.
+<<the lsp command>>=
+/// `cob lsp`: run the semantic-tokens language server over stdin and stdout.
+fn lsp_cmd() -> ExitCode {
+    let cfg = match config::Config::load(Path::new(".")) {
+        Ok(c) => c.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let lang_cfg = match lang_config(&cfg.weave) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+    };
+    lsp::serve(lang_cfg)
 }
 @
 The tangle command extracts root chunks. It parses \code{--out}, \code{-R}, and \code{--check}.
@@ -702,6 +1063,60 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
                 };
                 println!("{verb} {root}");
             }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+@
+The untangle command is the reverse of tangle (§11, #2): it reads the edits made to
+the tangled files under \code{--out} (default the current directory) and prints a
+unified diff on the `.cob` source that reproduces them, so a quick fix to
+`src/main.rs` becomes a patch on `src/main.rs.cob`. An edit it cannot map back —
+an added or removed line, a line holding an expanded chunk-use, or a changed
+indentation — is reported on stderr and left out of the patch, never guessed. The
+patch goes to stdout, so a caller pipes it to `git apply`.
+<<the untangle command>>=
+/// `cob untangle <file.cob> [--out dir]`: print a patch on the `.cob` source from
+/// edits made to its tangled files.
+fn untangle_cmd(args: &[String]) -> ExitCode {
+    let mut file = None;
+    let mut outdir = PathBuf::from(".");
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--out" => match it.next() {
+                Some(dir) => outdir = PathBuf::from(dir),
+                None => {
+                    eprintln!("cob: --out needs a directory");
+                    return ExitCode::from(2);
+                }
+            },
+            _ if file.is_none() => file = Some(a.clone()),
+            _ => {}
+        }
+    }
+    let Some(file) = file else {
+        eprint!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    let doc = match build_doc(&[file]) {
+        Ok(doc) => doc,
+        Err(code) => return code,
+    };
+    match untangle::patch(&doc, &outdir) {
+        Ok((patch, conflicts)) => {
+            for c in &conflicts {
+                if c.line == 0 {
+                    eprintln!("cob: {}: {}", c.root, c.reason);
+                } else {
+                    eprintln!("cob: {} tangled line {}: {}", c.root, c.line, c.reason);
+                }
+            }
+            print!("{patch}");
             ExitCode::SUCCESS
         }
         Err(e) => {

@@ -30,8 +30,16 @@ link text if there is any. An href is relative: a same-page target is a bare
 becomes a dash in the emitted anchor, because a colon needs escaping in every CSS
 selector that touches it.
 
-- Namespaces are by prefix: \code{eq:}, \code{fig:}, \code{tbl:}, \code{sec:}, and \code{chunk:}. An id
-  with no known prefix is not a target.
+- Namespaces are by prefix: \code{eq:}, \code{fig:}, \code{tbl:} name floats; \code{chunk:} names
+  a chunk; \code{cite:} a citation. A heading takes any other namespace — \code{sec:},
+  \code{def:}, \code{thm:}, \code{ex:}, and so on — and becomes a referenceable node (§10);
+  its taxon names the word a \code{\ref} to it reads. A float-only ref id on a
+  heading is not a heading node.
+- A page heading (an h1) may carry a \code{ch:} or \code{part:} label: \code{# Title {#ch:name}}. It is
+  then a target for \code{\ref}, which reads "Chapter" or "Part" with a frozen id and links to
+  the page. A page is not a node, so it gets no permalink prefix and no \code{n/} page. A book
+  needs this to refer to its own chapters. \code{\ref{ch:name}{Title}} keeps the author's link text,
+  so a table of contents can name a chapter by its title.
 - The numbering scheme is \code{flat} or \code{by-page}; the default is \code{flat}, so a page
   boundary does not leak into a stable reference. M2 implements \code{flat}.
 - cob numbers an equation by default. A \code{data-nonumber} equation div opts out.
@@ -102,6 +110,7 @@ use std::fmt;
 
 use crate::model::{DocModel, Lint};
 use crate::rewrite::{anchor_of, slug, Kind, ResolvedRef, Scan};
+use crate::site::ForestRef;
 @
 The label-id map carries every labelled float's human label to its frozen opaque
 id (§7.1). Weave builds it from \code{cob.lock} before planning.
@@ -220,6 +229,28 @@ fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
         format!("{base}-{n}")
     }
 }
+
+/// The word a `\ref` to a heading reads. A page heading (an h1) takes it from its
+/// label's namespace: `ch:` is a "Chapter", `part:` a "Part". Any other heading
+/// takes it from the node's taxon (§10): "definition" becomes "Definition". A
+/// heading with neither is a "Section".
+fn heading_ref_word(taxon: Option<&str>, label: &str, level: u8) -> String {
+    if level == 1 {
+        match label.split_once(':').map(|(ns, _)| ns) {
+            Some("ch") => return "Chapter".to_string(),
+            Some("part") => return "Part".to_string(),
+            _ => {}
+        }
+    }
+    match taxon {
+        Some(t) if !t.is_empty() => {
+            let mut c = t.chars();
+            let first = c.next().unwrap().to_uppercase().collect::<String>();
+            first + c.as_str()
+        }
+        _ => Kind::Section.word().to_string(),
+    }
+}
 @
 \code{plan} runs in five phases. It first indexes the h1 text per section, then assigns
 each section to a page (Pass A), stamps heading anchors and builds the nav, fills
@@ -233,6 +264,7 @@ pub fn plan(
     scan: &Scan,
     first_tags: &[Option<String>],
     label_ids: &LabelIds,
+    imports: &BTreeMap<String, ForestRef>,
 ) -> Result<Resolution, ResolveError> {
     let n = doc.sections.len();
 
@@ -292,9 +324,9 @@ starts a new page whose slug is derived from its title and made unique.
     }
 @
 An h1 anchors to its page id; a deeper heading gets a page-unique slug unless the
-author pinned an id, which a \code{sec:} ref may target. A pinned section label is
-recorded for the label table, and its opaque id is carried out so \code{apply} can
-stamp the permalink prefix.
+author pinned an id. A pinned id in a node namespace (§10) makes the heading a
+referenceable node: it is recorded for the label table with its taxon, and its
+opaque id is carried out so \code{apply} can stamp the permalink and node link.
 <<stamp heading anchors and build the nav>>=
     // --- Heading anchors + nav --------------------------------------------
     // An h1 anchors to its page id; deeper headings get a page-unique slug,
@@ -307,19 +339,31 @@ stamp the permalink prefix.
     let mut heading_uids: Vec<Option<String>> = Vec::with_capacity(scan.headings.len());
     // (page, level, anchor, text) for nav construction.
     let mut nav_flat: Vec<(usize, u8, String, String)> = Vec::new();
-    // Section-namespace labels the author declared via a heading id.
-    let mut heading_labels: Vec<(String, usize, String, String)> = Vec::new();
+    // Labels the author declared via a heading id, any node namespace (§10):
+    // (id, page, anchor, fallback text, taxon, level). The taxon names the ref word
+    // of a section; the level tells a page-heading label from a section label.
+    let mut heading_labels: Vec<(String, usize, String, String, Option<String>, u8)> = Vec::new();
 
     for h in &scan.headings {
         let page = section_page[h.section];
         let mut uid = None;
         let anchor = if h.level == 1 {
-            pages[page].id.clone()
+            // An h1 is its page and anchors to the page id. A labelled one (`ch:`,
+            // `part:`) is also a ref target, so `\ref{ch:x}` reaches the chapter.
+            // It earns an id for the ref text but no `uid`: a page is not a node,
+            // so it gets no permalink prefix and no `n/` page.
+            let a = pages[page].id.clone();
+            if let Some(given) = &h.given_id {
+                if Kind::label_is_page_heading(given) {
+                    heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), None, 1));
+                }
+            }
+            a
         } else if let Some(given) = &h.given_id {
             let a = anchor_of(given);
-            if Kind::from_label(given) == Some(Kind::Section) {
+            if Kind::label_is_heading_node(given) {
                 uid = label_ids.get(given).cloned();
-                heading_labels.push((given.clone(), page, a.clone(), h.text.clone()));
+                heading_labels.push((given.clone(), page, a.clone(), h.text.clone(), h.taxon.clone(), h.level));
             }
             a
         } else {
@@ -353,9 +397,15 @@ code. A repeat id is E014.
         // minted before planning, so a labelled float always has one; a missing
         // entry degrades to the bare kind word rather than panicking.
         let opaque = label_ids.get(&l.id);
-        let text = match opaque {
-            Some(id) => format!("{} {id}", l.kind.word()),
+        // A `node` fence carries a taxon (§10), which names the word: "Definition".
+        // A float takes the word of its kind.
+        let word = match &l.taxon {
+            Some(_) => heading_ref_word(l.taxon.as_deref(), &l.id, 2),
             None => l.kind.word().to_string(),
+        };
+        let text = match opaque {
+            Some(id) => format!("{word} {id}"),
+            None => word,
         };
         insert(
             l.id.clone(),
@@ -368,14 +418,17 @@ code. A repeat id is E014.
             },
         )?;
     }
-    for (id, page, anchor, text) in heading_labels {
-        // §7.1: a `\ref{sec:…}` renders the kind-qualified opaque id ("Section
-        // k3f9"), not the heading text, which rots on rename. The heading text
-        // survives only as a fallback if the id was never minted (Mint always
-        // mints; `--locked` would already have failed on a missing label).
+    for (id, page, anchor, text, taxon, level) in heading_labels {
+        // §7.1: a `\ref{…}` to a heading renders the kind-qualified opaque id
+        // ("Definition k3f9"), not the heading text, which rots on rename. The
+        // kind word comes from the node's taxon (§10) — "Definition", "Theorem"
+        // — or is "Section" for a plain heading; a page heading reads "Chapter" or
+        // "Part" from its `ch:`/`part:` label. The heading text survives only
+        // as a fallback if the id was never minted (Mint always mints; `--locked`
+        // would already have failed on a missing label).
         let opaque = label_ids.get(&id).cloned();
         let display = match &opaque {
-            Some(uid) => format!("{} {uid}", Kind::Section.word()),
+            Some(uid) => format!("{} {uid}", heading_ref_word(taxon.as_deref(), &id, level)),
             None => text,
         };
         insert(
@@ -415,10 +468,40 @@ code. A repeat id is E014.
 Each ref resolves to an href — a bare fragment when the target is on the same
 page, page-qualified when it crosses — and to display text, kept from the author
 if present, otherwise the label's own text. An unknown target is E015.
+
+A target of the form \code{label@alias} points into an imported forest (§13). cob
+reads that forest's label index (from its \code{cob-exports.json}), so the href lands on the
+deployed page \code{<url>/<page>.html#<anchor>}, and the display text is the kind word
+and the target's frozen opaque id, the same shape a local ref shows. An unknown
+alias or an unknown label in a known forest is E015, the same as any other
+undefined reference.
 <<resolve every ref>>=
     // --- Resolve refs -----------------------------------------------------
     let mut refs = Vec::with_capacity(scan.refs.len());
     for r in &scan.refs {
+        // A `label@alias` target resolves against an imported forest (§13): its
+        // href lands on the deployed page, its text is the kind word plus the
+        // target's frozen opaque id.
+        if let Some((label, alias)) = r.target.rsplit_once('@') {
+            let fr = imports.get(alias).ok_or_else(|| ResolveError::UnknownRef {
+                target: r.target.clone(),
+            })?;
+            let fl = fr.index.labels.get(label).ok_or_else(|| ResolveError::UnknownRef {
+                target: r.target.clone(),
+            })?;
+            let base = fr.url.trim_end_matches('/');
+            let href = format!("{base}/{}.html#{}", fl.page, fl.anchor);
+            let text = match (Kind::from_label(label).map(Kind::word), &fl.id) {
+                (Some(word), Some(id)) => format!("{word} {id}"),
+                (_, Some(id)) => id.clone(),
+                _ => label.to_string(),
+            };
+            refs.push(ResolvedRef {
+                href,
+                text: if r.has_text { None } else { Some(text) },
+            });
+            continue;
+        }
         let info = labels
             .get(&r.target)
             .ok_or_else(|| ResolveError::UnknownRef {
@@ -489,11 +572,19 @@ the \code{chunks} section already represents.
         lints,
     })
 @
-The nav builder folds the flat heading list into a tree: h1s are roots, h2s nest
-under the last h1, h3s under the last h2, with a graceful fallback when a level is
-skipped. An h1's href is the page file; a deeper heading's is a fragment within
+The nav builder folds the flat heading list into a tree: h1s are roots, and each deeper
+heading nests under the latest heading above it in level, at any depth (a `node` fence
+can reach h6), with a graceful fallback when a level is skipped. An h1's href is the page file; a deeper heading's is a fragment within
 it.
 <<build the nav tree>>=
+/// Put `node` under the latest node above it in level, at any depth, else beside it.
+fn nest(nodes: &mut Vec<NavNode>, node: NavNode) {
+    match nodes.last_mut() {
+        Some(last) if last.level < node.level => nest(&mut last.children, node),
+        _ => nodes.push(node),
+    }
+}
+
 fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<NavNode> {
     let mut roots: Vec<NavNode> = Vec::new();
     for (page, level, anchor, text) in flat {
@@ -516,25 +607,7 @@ fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<Na
             },
             children: Vec::new(),
         };
-        match level {
-            1 => roots.push(node),
-            2 => {
-                if let Some(h1) = roots.last_mut() {
-                    h1.children.push(node);
-                } else {
-                    roots.push(node);
-                }
-            }
-            _ => {
-                if let Some(h2) = roots.last_mut().and_then(|h1| h1.children.last_mut()) {
-                    h2.children.push(node);
-                } else if let Some(h1) = roots.last_mut() {
-                    h1.children.push(node);
-                } else {
-                    roots.push(node);
-                }
-            }
-        }
+        nest(&mut roots, node);
     }
     roots
 }
@@ -561,6 +634,14 @@ mod tests {
     <<nav nests h2 and h3 under h1>>
 
     <<cross-page refs qualify, same-page refs are fragments>>
+
+    <<a taxon heading is a node and its ref is typed>>
+
+    <<a labelled page heading is a ref target but not a node>>
+
+    <<a node fence is a labelled typed node>>
+
+    <<a cross-document ref targets the imported forest>>
 
     <<chunk refs target the defining section>>
 
@@ -634,12 +715,27 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
         sections,
         chunks,
     };
-    let label_ids: LabelIds = sc
+    let mut label_ids: LabelIds = sc
         .labels
         .iter()
         .map(|l| (l.id.clone(), fake_id(&l.id)))
         .collect();
-    let res = plan(&doc, &sc, &first_tags, &label_ids).unwrap();
+    // Mirror weave's `mintable`: a labelled heading in a node namespace also
+    // earns a frozen id, so a `\ref` to a definition, a theorem, or a chapter
+    // resolves.
+    for h in &sc.headings {
+        if let Some(g) = &h.given_id {
+            let earns = if h.level == 1 {
+                Kind::label_is_page_heading(g)
+            } else {
+                Kind::label_is_heading_node(g)
+            };
+            if earns {
+                label_ids.entry(g.clone()).or_insert_with(|| fake_id(g));
+            }
+        }
+    }
+    let res = plan(&doc, &sc, &first_tags, &label_ids, &BTreeMap::new()).unwrap();
     (doc, res)
 }
 @
@@ -689,6 +785,75 @@ fn nav_nests_h2_and_h3_under_h1() {
 @
 A ref to a target on another page is page-qualified; a ref to a target on the same
 page is a bare fragment. The link text is the kind-qualified opaque id.
+A heading with a non-float label in any namespace is a node (§10): it earns an
+opaque id, so a \code{\ref} to it resolves, and the link text takes the node's
+taxon as its word — "Definition", not "Section" — while a plain labelled heading
+stays "Section".
+<<a taxon heading is a node and its ref is typed>>=
+#[test]
+fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
+    let (_, r) = resolve(&[(
+        "<h1>T</h1>\
+         <h2 id=\"def:d\" data-taxon=\"definition\">D</h2>\
+         <h2 id=\"sec:s\">S</h2>\
+         <a data-ref=\"def:d\"></a><a data-ref=\"sec:s\"></a>",
+        false,
+    )]);
+    // The definition ref is typed by its taxon; the plain section ref is not.
+    assert_eq!(r.refs[0].href, "#def-d");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Definition defd"));
+    assert_eq!(r.refs[1].href, "#sec-s");
+    assert_eq!(r.refs[1].text.as_deref(), Some("Section secs"));
+}
+@
+A node fence (§10) is a labelled typed node that is not a heading. Its label is any
+node namespace, and its taxon names the word a \code{\ref} to it reads. It is an element, so
+it earns an opaque id like a float but adds no heading uid, and its anchor is the
+colon-free label.
+<<a node fence is a labelled typed node>>=
+#[test]
+fn a_node_fence_is_a_labelled_typed_node() {
+    let (_, r) = resolve(&[(
+        "<h1>T</h1><section class=\"taxon-node\" id=\"thm:t\" data-taxon=\"theorem\">\
+         <p class=\"node-title\" data-taxon=\"theorem\"></p></section>\
+         <a data-ref=\"thm:t\"></a>",
+        false,
+    )]);
+    assert_eq!(r.refs[0].href, "#thm-t");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Theorem thmt"));
+    assert!(r.labels.contains_key("thm:t"));
+    // A node fence is not a heading: it adds no heading uid.
+    assert!(r.heading_uids.iter().all(|u| u.is_none()));
+}
+@
+A page heading (an h1) with a \code{ch:} or \code{part:} label is a target for \code{\ref}: the
+thesis refers to its chapters and parts about sixty times. The ref reads "Chapter" or
+"Part" with the frozen id, and links to the chapter's page. But a page is not a node,
+so the heading earns no permalink uid and no \code{n/} page.
+<<a labelled page heading is a ref target but not a node>>=
+#[test]
+fn a_labelled_page_heading_is_a_ref_target_but_not_a_node() {
+    let (_, r) = resolve(&[
+        (
+            "<h1 id=\"part:p\">Intro</h1><a data-ref=\"ch:b\"></a><a data-ref=\"part:p\"></a>",
+            false,
+        ),
+        ("<h1 id=\"ch:b\">Body</h1><h2 id=\"sec:s\">S</h2>", false),
+        // A non-page label on an h1 (a `sec:` one) means nothing, as it always
+        // did: an existing document is not changed by page labels.
+        ("<h1 id=\"sec:old\">Old</h1>", false),
+    ]);
+    assert!(r.labels.contains_key("ch:b") && !r.labels.contains_key("sec:old"));
+    // A cross-page ref lands on the chapter's page; a same-page ref is a fragment.
+    assert_eq!(r.refs[0].href, "body.html#body");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Chapter chb"));
+    assert_eq!(r.refs[1].href, "#index");
+    assert_eq!(r.refs[1].text.as_deref(), Some("Part partp"));
+    // Only the h2 earns a uid: no h1 is a node.
+    let uids: Vec<bool> = r.heading_uids.iter().map(|u| u.is_some()).collect();
+    assert_eq!(uids, vec![false, false, true, false]);
+}
+@
 <<cross-page refs qualify, same-page refs are fragments>>=
 #[test]
 fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
@@ -710,6 +875,61 @@ fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
     assert_eq!(r.refs[1].href, "body.html#eq-c");
     // The third ref is on the same page as eq:c.
     assert_eq!(r.refs[2].href, "#eq-c");
+}
+@
+A \code{label@alias} ref resolves against the imported forest's label index: the href
+lands on the deployed page, and the text is the kind word with the frozen opaque
+id. An unknown alias (or an unknown label in a known forest) is E015.
+<<a cross-document ref targets the imported forest>>=
+#[test]
+fn a_cross_document_ref_targets_the_imported_forest() {
+    use crate::site::{ForestIndex, ForestLabel, ForestRef};
+    let doc = DocModel {
+        files: vec!["t.cob".into()],
+        sections: vec![crate::model::Section {
+            id: "sec-1".into(),
+            file: "t.cob".into(),
+            line: 1,
+            kind: SectionKind::Docs { spans: vec![] },
+        }],
+        chunks: BTreeMap::new(),
+    };
+    let mut labels = BTreeMap::new();
+    labels.insert(
+        "eq:cost".to_string(),
+        ForestLabel {
+            id: Some("k3f9".into()),
+            kind: "equation".into(),
+            page: "index".into(),
+            anchor: "eq-cost".into(),
+        },
+    );
+    let mut imports = BTreeMap::new();
+    imports.insert(
+        "alg".to_string(),
+        ForestRef {
+            url: "https://alg.example/".into(),
+            index: ForestIndex {
+                macros: BTreeMap::new(),
+                labels,
+                ..Default::default()
+            },
+        },
+    );
+
+    let mut sc = Scan::default();
+    scan("<h1>I</h1><a data-ref=\"eq:cost@alg\"></a>", 0, &mut sc).unwrap();
+    let r = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new(), &imports).unwrap();
+    // The href lands on the deployed page; the trailing slash on the url does not
+    // double. The text is the kind word with the frozen opaque id.
+    assert_eq!(r.refs[0].href, "https://alg.example/index.html#eq-cost");
+    assert_eq!(r.refs[0].text.as_deref(), Some("Equation k3f9"));
+
+    // An unknown alias is E015, like any other undefined reference.
+    let mut sc2 = Scan::default();
+    scan("<h1>I</h1><a data-ref=\"eq:cost@ghost\"></a>", 0, &mut sc2).unwrap();
+    let err = plan(&doc, &sc2, &[Some("h1".into())], &LabelIds::new(), &imports).unwrap_err();
+    assert!(err.to_string().starts_with("error[E015]"));
 }
 @
 A \code{chunk:} ref points at the chunk's defining section, with the chunk name as
@@ -760,7 +980,8 @@ fn duplicate_label_is_e014() {
         }],
         chunks: BTreeMap::new(),
     };
-    let err = plan(&doc, &sc, &[Some("figure".into())], &LabelIds::new()).unwrap_err();
+    let err = plan(&doc, &sc, &[Some("figure".into())], &LabelIds::new(), &BTreeMap::new())
+        .unwrap_err();
     assert!(err.to_string().starts_with("error[E014]"));
 }
 @
@@ -780,7 +1001,8 @@ fn unknown_ref_is_e015() {
         }],
         chunks: BTreeMap::new(),
     };
-    let err = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new()).unwrap_err();
+    let err = plan(&doc, &sc, &[Some("h1".into())], &LabelIds::new(), &BTreeMap::new())
+        .unwrap_err();
     assert!(err.to_string().starts_with("error[E015]"));
 }
 @

@@ -28,6 +28,20 @@ pub struct LockEntry {
     pub kind: Kind,
 }
 
+/// One resolved remote import (§13): the `git` URL, the author's request (`req` —
+/// a semver requirement, or a raw `rev`), the resolved semver `version` (absent for
+/// a `rev` import), and the commit `sha` `cob fetch` pinned to. Keyed by import
+/// alias in the lock's `fetch` section, it lets a later weave read the cached index
+/// offline and a `cob fetch` decide whether the pin still satisfies the request.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct FetchPin {
+    pub git: String,
+    pub req: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub sha: String,
+}
+
 /// Whether a weave may mint fresh ids (dev-time) or must find every label
 /// already in the lock (`--locked`, for CI and the read-only Nix sandbox; §7.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,12 +50,34 @@ pub enum LockMode {
     Locked,
 }
 
-/// `file → (label → entry)`. `used` is a derived index of every id in play, so a
-/// mint can reject a collision in one lookup; it is rebuilt on load, never
-/// serialized.
-#[derive(Default)]
+/// The JSON shape of `cob.lock` (§7.1): a semver schema, the `file → (label →
+/// entry)` id map, and the remote-import pins (§13). `fetch` is skipped when empty
+/// so a project with no imports keeps a clean file.
+#[derive(Serialize, Deserialize, Default)]
+struct LockDoc {
+    #[serde(default = "default_schema")]
+    schema: String,
+    #[serde(default)]
+    labels: BTreeMap<String, BTreeMap<String, LockEntry>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    fetch: BTreeMap<String, FetchPin>,
+}
+
+/// The current `cob.lock` schema (§7.1). Semver: a newer major is rejected (E038).
+pub const SCHEMA: &str = "1.0.0";
+const SCHEMA_MAJOR: u64 = 1;
+
+fn default_schema() -> String {
+    SCHEMA.to_string()
+}
+
+/// `file → (label → entry)`, the remote-import pins, and `used` — a derived index
+/// of every id in play, so a mint can reject a collision in one lookup. `used` is
+/// rebuilt on load, never serialized.
+#[derive(Default, Debug)]
 pub struct LockFile {
     files: BTreeMap<String, BTreeMap<String, LockEntry>>,
+    fetch: BTreeMap<String, FetchPin>,
     used: BTreeSet<String>,
 }
 
@@ -52,6 +88,8 @@ pub enum LockError {
     /// E032 — `cob.lock` could not be read/parsed or written.
     Io(std::io::Error),
     Parse(String),
+    /// E038 — `cob.lock` has a newer major schema than this cob understands.
+    Schema { found: String },
 }
 
 impl fmt::Display for LockError {
@@ -64,6 +102,11 @@ impl fmt::Display for LockError {
             ),
             LockError::Io(e) => write!(f, "error[E032]: cob.lock: {e}"),
             LockError::Parse(m) => write!(f, "error[E032]: cob.lock: {m}"),
+            LockError::Schema { found } => write!(
+                f,
+                "error[E038]: cob.lock schema {found} is newer than this cob \
+                 supports ({SCHEMA}); upgrade cob"
+            ),
         }
     }
 }
@@ -118,31 +161,66 @@ fn base62(mut n: u32) -> String {
 
 impl LockFile {
     /// Load `cob.lock`; an absent file is an empty lock, not an error (the first
-    /// `cob lock`/`weave` mints into it).
+    /// `cob lock`/`weave` mints into it). The current format is JSON (§7.1); a legacy
+    /// TOML label map still loads and upgrades to JSON on the next save.
     pub fn load(path: &Path) -> Result<LockFile, LockError> {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(LockFile::default()),
             Err(e) => return Err(LockError::Io(e)),
         };
-        let files: BTreeMap<String, BTreeMap<String, LockEntry>> =
-            toml::from_str(&text).map_err(|e| LockError::Parse(e.to_string()))?;
+        let doc = Self::parse_lock(&text)?;
+        Self::check_schema(&doc.schema)?;
         let mut used = BTreeSet::new();
-        for inner in files.values() {
+        for inner in doc.labels.values() {
             for entry in inner.values() {
                 used.insert(entry.id.clone());
             }
         }
-        Ok(LockFile { files, used })
+        Ok(LockFile {
+            files: doc.labels,
+            fetch: doc.fetch,
+            used,
+        })
     }
 
-    /// Write the lock deterministically (BTreeMaps → sorted keys, no timestamp).
+    /// Parse the lock text: JSON first (the current format), then — as a one-version
+    /// bridge — a legacy TOML `file → (label → entry)` map with no fetch pins.
+    fn parse_lock(text: &str) -> Result<LockDoc, LockError> {
+        if let Ok(doc) = serde_json::from_str::<LockDoc>(text) {
+            return Ok(doc);
+        }
+        let labels: BTreeMap<String, BTreeMap<String, LockEntry>> =
+            toml::from_str(text).map_err(|e| LockError::Parse(e.to_string()))?;
+        Ok(LockDoc {
+            schema: SCHEMA.to_string(),
+            labels,
+            fetch: BTreeMap::new(),
+        })
+    }
+
+    /// Reject a lock whose major schema is newer than this cob understands (E038);
+    /// a newer minor only adds fields cob ignores, so it is accepted. An unparseable
+    /// schema is treated as the current one, so a hand-edited lock is not fatal.
+    fn check_schema(schema: &str) -> Result<(), LockError> {
+        match semver::Version::parse(schema) {
+            Ok(v) if v.major > SCHEMA_MAJOR => Err(LockError::Schema {
+                found: schema.to_string(),
+            }),
+            _ => Ok(()),
+        }
+    }
+
+    /// Write the lock deterministically as JSON (BTreeMaps → sorted keys, no timestamp).
     pub fn save(&self, path: &Path) -> Result<(), LockError> {
-        let body = toml::to_string(&self.files).map_err(|e| LockError::Parse(e.to_string()))?;
-        let text = format!(
-            "# cob.lock — generated (§7.1). label → frozen opaque id.\n\
-             # Edit only to retire a label; ids never change once minted.\n{body}"
-        );
+        let doc = LockDoc {
+            schema: SCHEMA.to_string(),
+            labels: self.files.clone(),
+            fetch: self.fetch.clone(),
+        };
+        let mut text =
+            serde_json::to_string_pretty(&doc).map_err(|e| LockError::Parse(e.to_string()))?;
+        text.push('\n');
         std::fs::write(path, text).map_err(LockError::Io)
     }
 
@@ -221,9 +299,37 @@ impl LockFile {
         }
     }
 
+    /// The `(file, label, entry)` whose frozen id or label name is `needle`, if any —
+    /// unlike `find_section`, not restricted to `Kind::Section` (§7.1, `cob find`).
+    pub fn find_label(&self, needle: &str) -> Option<(String, String, LockEntry)> {
+        for (file, inner) in &self.files {
+            for (label, entry) in inner {
+                if entry.id == needle || label == needle {
+                    return Some((file.clone(), label.clone(), entry.clone()));
+                }
+            }
+        }
+        None
+    }
+
     /// A file's `label → entry` pairs in sorted order (for `cob labels`).
     pub fn labels(&self, file: &str) -> impl Iterator<Item = (&String, &LockEntry)> {
         self.files.get(file).into_iter().flat_map(|m| m.iter())
+    }
+
+    /// The pinned commit for a remote import alias, if `cob fetch` recorded one (§13).
+    pub fn fetch_pin(&self, alias: &str) -> Option<&FetchPin> {
+        self.fetch.get(alias)
+    }
+
+    /// Record (or replace) the pin for a remote import alias (§13).
+    pub fn set_fetch_pin(&mut self, alias: String, pin: FetchPin) {
+        self.fetch.insert(alias, pin);
+    }
+
+    /// Every import alias and its pin, in sorted order (for `cob fetch` reporting).
+    pub fn fetch_pins(&self) -> impl Iterator<Item = (&String, &FetchPin)> {
+        self.fetch.iter()
     }
 
     /// The total number of frozen ids across every file — used by `cob lock` to
@@ -278,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn toml_round_trips() {
+    fn json_round_trips() {
         let dir = std::env::temp_dir().join("cob-lock-roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("cob.lock");
@@ -286,7 +392,21 @@ mod tests {
         let mut m = Minter::seeded(99);
         let fig = lock.mint("parser.cob", "fig:pipeline", Kind::Figure, &mut m);
         let tbl = lock.mint("parser.cob", "tbl:api", Kind::Table, &mut m);
+        // A fetch pin rides in the same file (§13).
+        lock.set_fetch_pin(
+            "algebra".to_string(),
+            FetchPin {
+                git: "ssh://h/a.cob".to_string(),
+                req: "^1.2".to_string(),
+                version: Some("1.3.0".to_string()),
+                sha: "deadbeef".to_string(),
+            },
+        );
         lock.save(&path).unwrap();
+        // The committed file is JSON with a semver schema.
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.trim_start().starts_with('{'));
+        assert!(on_disk.contains("\"schema\": \"1.0.0\""));
 
         let reloaded = LockFile::load(&path).unwrap();
         assert_eq!(reloaded.get("parser.cob", "fig:pipeline").unwrap().id, fig);
@@ -294,15 +414,57 @@ mod tests {
             reloaded.get("parser.cob", "tbl:api").unwrap().kind,
             Kind::Table
         );
+        assert_eq!(reloaded.fetch_pin("algebra").unwrap().sha, "deadbeef");
+        assert_eq!(
+            reloaded.fetch_pin("algebra").unwrap().version.as_deref(),
+            Some("1.3.0")
+        );
         // The reload rebuilds `used`, so a mint after load still avoids collisions.
         let _ = tbl;
         // Saving the reloaded lock is byte-stable.
         let path2 = dir.join("cob.lock.2");
         reloaded.save(&path2).unwrap();
+        assert_eq!(on_disk, std::fs::read_to_string(&path2).unwrap());
+    }
+
+    #[test]
+    fn legacy_toml_lock_upgrades_without_changing_an_id() {
+        // An older TOML `cob.lock` must still load, keep its ids, and re-save as
+        // JSON (§7.1 in-place upgrade).
+        let dir = std::env::temp_dir().join("cob-lock-legacy");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cob.lock");
+        std::fs::write(
+            &path,
+            "[\"parser.cob\"]\n\"fig:pipeline\" = { id = \"k3f9\", kind = \"figure\" }\n",
+        )
+        .unwrap();
+        let lock = LockFile::load(&path).unwrap();
+        assert_eq!(lock.get("parser.cob", "fig:pipeline").unwrap().id, "k3f9");
+        // Re-save upgrades the format to JSON, id untouched.
+        lock.save(&path).unwrap();
+        let on_disk = std::fs::read_to_string(&path).unwrap();
+        assert!(on_disk.trim_start().starts_with('{'));
+        assert!(on_disk.contains("\"k3f9\""));
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            std::fs::read_to_string(&path2).unwrap()
+            LockFile::load(&path).unwrap().get("parser.cob", "fig:pipeline").unwrap().id,
+            "k3f9"
         );
+    }
+
+    #[test]
+    fn a_newer_major_schema_is_rejected() {
+        // A lock written by a newer cob (major schema 2) must not load into this
+        // one (§7.1 E038); a same-major newer minor is fine.
+        let dir = std::env::temp_dir().join("cob-lock-schema");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cob.lock");
+        std::fs::write(&path, "{ \"schema\": \"2.0.0\", \"labels\": {} }").unwrap();
+        let err = LockFile::load(&path).unwrap_err();
+        assert!(err.to_string().starts_with("error[E038]"));
+        // A newer minor of the same major loads.
+        std::fs::write(&path, "{ \"schema\": \"1.9.0\", \"labels\": {} }").unwrap();
+        assert!(LockFile::load(&path).is_ok());
     }
 
     #[test]
@@ -311,5 +473,22 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let lock = LockFile::load(&path).unwrap();
         assert!(lock.get("f.cob", "fig:x").is_none());
+    }
+
+    #[test]
+    fn find_label_matches_by_id_or_by_name_not_restricted_to_sections() {
+        // Unlike find_section, every kind is reachable — a reader with a
+        // rendered "Proposition 7F5U" in hand has no way to know it is not a
+        // section before asking.
+        let mut lock = LockFile::default();
+        let mut m = Minter::seeded(5);
+        let id = lock.mint("parser.cob", "fig:pipeline", Kind::Figure, &mut m);
+        let (file, label, entry) = lock.find_label(&id).expect("found by id");
+        assert_eq!(file, "parser.cob");
+        assert_eq!(label, "fig:pipeline");
+        assert_eq!(entry.kind, Kind::Figure);
+        let (file2, _, _) = lock.find_label("fig:pipeline").expect("found by name");
+        assert_eq!(file2, "parser.cob");
+        assert!(lock.find_label("no-such-thing").is_none());
     }
 }

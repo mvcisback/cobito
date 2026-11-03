@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "cob",
+      "scope": "source.cob",
+      "path": ".",
+      "file-types": ["cob"],
+      "injection-regex": "^cob$"
+    }
+  ],
+  "metadata": {
+    "version": "0.0.1",
+    "license": "MIT",
+    "description": "tree-sitter grammar for cobito .cob literate sources",
+    "authors": [{ "name": "cobito" }]
+  },
+  "bindings": {
+    "c": true,
+    "rust": false,
+    "node": false,
+    "go": false,
+    "python": false,
+    "swift": false,
+    "kotlin": false
+  }
+}
