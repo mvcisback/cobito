@@ -29,16 +29,16 @@
     "seed": {
       "flake": false,
       "locked": {
-        "lastModified": 1790147867,
-        "narHash": "sha256-lwyO9WER9EUCUs7xDCBCims3qozXqEH6ivTFjzSeKhw=",
+        "lastModified": 1793730849,
+        "narHash": "sha256-uy0RT/d+AnleY5r/O8Y0Gzk/OJ2ozBQayDEdNYZjvRI=",
         "owner": "mvcisback",
         "repo": "cobito",
-        "rev": "1a5ffbef7b30ad1a8256b6a0dee7e05f027abd50",
+        "rev": "80a997062914ddb399a7bc4b81393adc4b29efa0",
         "type": "github"
       },
       "original": {
         "owner": "mvcisback",
-        "ref": "v0.1.2",
+        "ref": "v0.2.0",
         "repo": "cobito",
         "type": "github"
       }

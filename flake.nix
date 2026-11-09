@@ -8,7 +8,7 @@
   # contributor) must be able to fetch it without an ssh key. A release pushes
   # `tangled` + the new tag to both remotes; bump this ref to match.
   inputs.seed = {
-    url = "github:mvcisback/cobito/v0.1.2";
+    url = "github:mvcisback/cobito/v0.2.0";
     flake = false;
   };
 
