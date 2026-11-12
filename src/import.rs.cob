@@ -35,7 +35,7 @@ tool can trace an opaque id back to where it came from.
 
 The module is the result type, the error, the public \code{resolve}, the merkle-id
 walk, and the tests.
-<<src/import.rs>>=
+````chunk src/import.rs
 <<the module banner>>
 
 <<imports>>
@@ -51,23 +51,23 @@ walk, and the tests.
 <<the content id>>
 
 <<the tests>>
-@
+````
 The banner states the one job: turn imported macro tables into content-addressed
 KaTeX macros and the rewrite map the weaver needs.
-<<the module banner>>=
+````chunk the module banner
 //! Importing macros from another forest (§13). An `imports` fence declares
 //! `\import <name> as <alias>`; this turns the imported macro tables into
 //! content-addressed (merkle) KaTeX macros, plus the `alias.name -> id` map the
 //! weaver uses to rewrite `\alias.name` in a formula. The author never sees the
 //! id; it only has to be clash-free and stable, which a content hash gives.
-@
+````
 Just the maps and formatting.
-<<imports>>=
+````chunk imports
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-@
+````
 The three maps the weaver reads. `BTreeMap` keeps every one deterministic.
-<<the import result>>=
+````chunk the import result
 #[derive(Debug, Default)]
 pub struct Imports {
     /// `\<id>` → the macro's expansion, with its own references already rewritten
@@ -79,11 +79,11 @@ pub struct Imports {
     /// `\<id>` → (import name, original macro name), so an opaque id is traceable.
     pub provenance: BTreeMap<String, (String, String)>,
 }
-@
+````
 Two faults. An \code{\import} can name a source that was not loaded (no \code{[import.…]},
 or no \code{cob-exports.json}). A source's macros can refer to themselves in a loop. Both
 are E036.
-<<the import error>>=
+````chunk the import error
 #[derive(Debug, PartialEq, Eq)]
 pub enum ImportError {
     /// `\import <name> as …` names a source with no loaded macro table.
@@ -115,10 +115,10 @@ impl fmt::Display for ImportError {
 }
 
 impl std::error::Error for ImportError {}
-@
+````
 For each \code{\import name as alias}, content-id every macro of that source, then
 record it under the alias. A source with no loaded table is E036.
-<<resolve the imports>>=
+````chunk resolve the imports
 /// Resolve `decls` (import name, local alias) against `sources` (import name →
 /// its macro table). See §13.
 pub fn resolve(
@@ -146,13 +146,13 @@ pub fn resolve(
     }
     Ok(out)
 }
-@
+````
 The merkle walk. \code{compute} memoizes each macro's id and its rewritten expansion.
 It recurses into a macro's references first, so the id covers its dependencies. A
 \code{stack} catches a cycle. \code{rewrite_refs} replaces each reference to another macro of
 the source with that macro's id; a builtin or unknown control word is left alone,
 and \code{#1} and other non-letter escapes pass through.
-<<the merkle-id walk>>=
+````chunk the merkle-id walk
 /// Compute (and memoize) a macro's content id and its dependency-rewritten
 /// expansion. Recurses into references first, so the id is a merkle id.
 fn compute(
@@ -217,11 +217,11 @@ fn rewrite_refs(
     out.push_str(rest);
     Ok(out)
 }
-@
+````
 The content id is FNV-1a over the rewritten expansion, encoded as twelve
 lowercase letters. Letters only, so it is a valid KaTeX name; twelve of them make
 a clash very unlikely, and the weaver checks for one anyway.
-<<the content id>>=
+````chunk the content id
 fn content_id(s: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
@@ -235,12 +235,12 @@ fn content_id(s: &str) -> String {
     }
     out
 }
-@
+````
 The tests pin the contract: a flat macro resolves and maps; a macro that uses
 another carries the dependency's id in its expansion; the same macro resolves to
 the same id (content addressing); an unknown import and a cycle are E036; and a
 parameter placeholder survives.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,10 +265,10 @@ mod tests {
 
     <<a parameter survives>>
 }
-@
+````
 A flat macro (no references) resolves to a letters id, maps \code{alias.name} to it,
 and keeps the expansion.
-<<a flat macro resolves>>=
+````chunk a flat macro resolves
 #[test]
 fn a_flat_macro_resolves() {
     let s = sources("algebra", table(&[("\\RR", "\\mathbb{R}")]));
@@ -278,10 +278,10 @@ fn a_flat_macro_resolves() {
     assert_eq!(im.macros.get(id).map(String::as_str), Some("\\mathbb{R}"));
     assert_eq!(im.provenance.get(id), Some(&("algebra".to_string(), "\\RR".to_string())));
 }
-@
+````
 A macro that uses another carries the dependency's id in its expansion, not the
 dependency's name — so the imported pair resolves in KaTeX.
-<<a dependency is carried as an id>>=
+````chunk a dependency is carried as an id
 #[test]
 fn a_dependency_is_carried_as_an_id() {
     let s = sources("algebra", table(&[("\\RR", "\\mathbb{R}"), ("\\R", "\\RR")]));
@@ -292,10 +292,10 @@ fn a_dependency_is_carried_as_an_id() {
     assert_eq!(im.macros[&r], rr);
     assert_ne!(r, rr);
 }
-@
+````
 Content addressing: the same macro resolves to the same id every time, so two
 forests that import it share one definition.
-<<the same macro gets the same id>>=
+````chunk the same macro gets the same id
 #[test]
 fn the_same_macro_gets_the_same_id() {
     let a = resolve(
@@ -310,9 +310,9 @@ fn the_same_macro_gets_the_same_id() {
     .unwrap();
     assert_eq!(a.rewrites["p.RR"], b.rewrites["q.RR"]);
 }
-@
+````
 An \code{\import} with no loaded source is E036; a self-referential macro is E036.
-<<unknown and cycle are e036>>=
+````chunk unknown and cycle are e036
 #[test]
 fn unknown_and_cycle_are_e036() {
     let empty = BTreeMap::new();
@@ -324,13 +324,13 @@ fn unknown_and_cycle_are_e036() {
     let err = resolve(&s, &[("loop".to_string(), "l".to_string())]).unwrap_err();
     assert!(matches!(err, ImportError::Cycle(_)));
 }
-@
+````
 A parameter placeholder (`#1`) has no backslash, so it passes through untouched.
-<<a parameter survives>>=
+````chunk a parameter survives
 #[test]
 fn a_parameter_survives() {
     let s = sources("algebra", table(&[("\\abs", "\\lvert #1 \\rvert")]));
     let im = resolve(&s, &[("algebra".to_string(), "alg".to_string())]).unwrap();
     assert_eq!(im.macros[&im.rewrites["alg.abs"]], "\\lvert #1 \\rvert");
 }
-@
+````

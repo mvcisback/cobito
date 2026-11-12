@@ -54,9 +54,8 @@ specific tier wins.
 1. Per-chunk override. A \code{[weave.chunk-lang]} table in \code{cob.toml} maps a chunk
    name to a language. This is the escape hatch for a shell snippet inside a
    Rust document, or for an abstract chunk whose name has no extension. The map
-   is out-of-band config, so it survives \code{markup}. An inline tag on the def line
-   would not, because \code{markup} folds everything after the chunk name into the
-   body.
+   is out-of-band config. It keeps the open line of a chunk to a name and nothing
+   else.
 2. Document default. A \code{[weave] lang} key in \code{cob.toml} sets one language for
    the whole document.
 3. Root file extension. With nothing else said, a chunk takes the language of
@@ -115,7 +114,7 @@ per-language grammar cache, the token-run engine, and the line-splitting merge.
 The banner doc-comment below carries a hole example. In a code chunk a bare hole
 is a chunk use, so each bracket pair carries the noweb at-escape; the example
 survives tangle as literal text and never expands.
-<<src/highlight.rs>>=
+````chunk src/highlight.rs
 <<the module banner>>
 
 <<imports>>
@@ -151,10 +150,10 @@ survives tangle as literal text and never expands.
 <<render per-line html from runs>>
 
 <<the tests>>
-@
+````
 The banner states the two invariants: holes stay opaque to the tokenizer, and color
 is pure CSS so the archival and annotation contracts hold.
-<<the module banner>>=
+````chunk the module banner
 //! Syntax highlighting (§5.5). A code chunk is not a valid program: it is
 //! target-language text with *chunk-use holes* (`@<<next char@>>`) spliced in, and
 //! those are cob's syntax, not the target's. So the tokenizer never sees a hole —
@@ -164,10 +163,10 @@ is pure CSS so the archival and annotation contracts hold.
 //! Color is a CSS `tok-*` class, never injected text, so §5.4's copy-paste and the
 //! annotation layer's quote selectors (§9.2) see the same bytes they saw before —
 //! and there is no `<script>`, so the archival invariant (§6.3) holds.
-@
+````
 Interior mutability for the per-thread grammar cache, plus tree-sitter's highlighter
 and the model types a chunk is drawn from.
-<<imports>>=
+````chunk imports
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -178,7 +177,7 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 
 use crate::model::{CodeSpan, DocModel, SectionKind};
 use crate::prose;
-@
+````
 cob is language-agnostic except for highlighting (CLAUDE goal #2), so the grammars
 live in one **registry**, not a closed enum — and the registry is a **build input**,
 not a dependency list (§5.5, the meta-language direction). A grammar is its id, the
@@ -189,7 +188,7 @@ entries, so a user adds a grammar by naming its pinned repo to the build — not
 in cob changes. The Nix build pins Rust, Nix, Bash, and CSS as the default grammars
 because cob needs them to weave itself; a grammar whose query uses the standard
 tree-sitter capture names maps straight onto cob's `tok-*` classes.
-<<the language enum>>=
+````chunk the language enum
 /// One highlightable grammar (§5.5): its id, the extensions that imply it, the
 /// tree-sitter language, and its highlights query. Every entry comes from the
 /// build-time manifest (`build.rs`, the meta-language path) — no grammar is a
@@ -218,11 +217,11 @@ fn registry() -> &'static [Grammar] {
 /// through the weaver as before, and keys the per-language config cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Lang(usize);
-@
+````
 Four small conversions: the id \code{cob language} prints, parsing an id from config,
 mapping a file extension to a language, and reading a language off a chunk or root
 name that ends in a known extension.
-<<language conversions>>=
+````chunk language conversions
 impl Lang {
     /// This language's registry entry.
     fn grammar(self) -> &'static Grammar {
@@ -250,11 +249,11 @@ impl Lang {
         name.rsplit_once('.').and_then(|(_, ext)| Lang::from_ext(ext))
     }
 }
-@
+````
 The resolved highlighting configuration. \code{default} is the document-wide tier-2
 language; \code{chunk_lang} is the tier-1 per-chunk map. Both are already parsed to
 \code{Lang}, so an unknown id was rejected once at config-load, not here.
-<<the resolved config>>=
+````chunk the resolved config
 /// The resolved highlighting configuration for a document (§5.5). `default` is the
 /// document-wide `[weave] lang` (tier 2); `chunk_lang` is the `[weave.chunk-lang]`
 /// map (tier 1), keyed by chunk name. Both are already parsed to `Lang`, so an
@@ -264,9 +263,9 @@ pub struct LangConfig {
     pub default: Option<Lang>,
     pub chunk_lang: HashMap<String, Lang>,
 }
-@
+````
 A test constructor: a document default with no per-chunk overrides.
-<<the test config constructor>>=
+````chunk the test config constructor
 impl LangConfig {
     /// A document-wide default with no per-chunk overrides (what tests build).
     #[cfg(test)]
@@ -277,12 +276,12 @@ impl LangConfig {
         }
     }
 }
-@
+````
 §5.5 resolution, most specific tier first. A tier-1 entry for this exact chunk wins;
 else the tier-2 default; else tier 3 — the chunk's own name extension, or the
 extension of a tangle root that transitively uses it. The root walk is in sorted
 order, so the winner is stable.
-<<resolve a chunk's language>>=
+````chunk resolve a chunk's language
 /// §5.5 language resolution, most specific tier first.
 ///
 /// 1. Tier 1 — an explicit `[weave.chunk-lang]` entry for this exact chunk.
@@ -310,11 +309,11 @@ pub fn resolve(doc: &DocModel, chunk: &str, cfg: &LangConfig) -> Option<Lang> {
     }
     None
 }
-@
+````
 Chunk name to the names it uses, drawn from each code section's spans. \code{ChunkInfo.uses}
 is a reverse index of use-site sections, so the forward edges are built here for the
 reachability walk.
-<<forward chunk-use edges>>=
+````chunk forward chunk-use edges
 /// Chunk name → the chunk names it uses, drawn from each code section's spans.
 /// `ChunkInfo.uses` is a *reverse* index (use-site section ids), so we build the
 /// forward edges here for reachability.
@@ -332,9 +331,9 @@ fn forward_uses(doc: &DocModel) -> HashMap<&str, Vec<&str>> {
     }
     fwd
 }
-@
+````
 Does \code{root} reach \code{target} by following chunk uses, counting \code{root} itself.
-<<reachability>>=
+````chunk reachability
 /// Does `root` reach `target` by following chunk uses? (`root == target` counts.)
 fn reaches(forward: &HashMap<&str, Vec<&str>>, root: &str, target: &str) -> bool {
     let mut stack = vec![root];
@@ -352,9 +351,9 @@ fn reaches(forward: &HashMap<&str, Vec<&str>>, root: &str, target: &str) -> bool
     }
     false
 }
-@
+````
 A highlighting failure — a grammar that will not configure, or an event-stream error.
-<<the highlight error>>=
+````chunk the highlight error
 #[derive(Debug)]
 pub struct HlError(String);
 
@@ -365,11 +364,11 @@ impl fmt::Display for HlError {
 }
 
 impl std::error::Error for HlError {}
-@
+````
 The highlight names recognized, in fixed order. tree-sitter matches a grammar's
 dotted capture to the longest of these that is a prefix, so listing base names is
 enough; each maps to a \code{tok-} class.
-<<the highlight names>>=
+````chunk the highlight names
 /// The highlight names we recognize, in a fixed order. tree-sitter matches a
 /// grammar's dotted capture (`punctuation.bracket`) to the longest of these that
 /// is a prefix (`punctuation`), so listing base names is enough; each maps to the
@@ -393,10 +392,10 @@ const HL_NAMES: &[&str] = &[
     "type",
     "variable",
 ];
-@
+````
 The \code{tok-} class for each name, same order. An index out of range falls back to
 \code{tok-variable}, the plainest colored class.
-<<the token classes>>=
+````chunk the token classes
 /// The `tok-*` class for each `HL_NAMES` entry, same order. A highlight index out
 /// of range falls back to `tok-variable` (the plainest colored class).
 const TOK_CLASSES: &[&str] = &[
@@ -418,11 +417,11 @@ const TOK_CLASSES: &[&str] = &[
     "tok-type",
     "tok-variable",
 ];
-@
+````
 One configured grammar per language, built on first use and confined to the weave
 thread. Determinism is unaffected — the config is a pure function of the pinned
 grammar and query.
-<<the per-language grammar cache>>=
+````chunk the per-language grammar cache
 thread_local! {
     // One configured grammar per language, built on first use. Confined to the
     // weave thread; determinism is unaffected (the config is a pure function of
@@ -430,10 +429,10 @@ thread_local! {
     static CONFIGS: RefCell<HashMap<Lang, Rc<HighlightConfiguration>>> =
         RefCell::new(HashMap::new());
 }
-@
+````
 Fetch or build the grammar configuration for a language, caching it. Building applies
 \code{HL_NAMES} so capture indices line up with \code{TOK_CLASSES}.
-<<build or fetch a grammar config>>=
+````chunk build or fetch a grammar config
 fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
     if let Some(cfg) = CONFIGS.with(|m| m.borrow().get(&lang).cloned()) {
         return Ok(cfg);
@@ -446,14 +445,14 @@ fn config(lang: Lang) -> Result<Rc<HighlightConfiguration>, HlError> {
     CONFIGS.with(|m| m.borrow_mut().insert(lang, cfg.clone()));
     Ok(cfg)
 }
-@
+````
 Highlight one chunk. The source is the raw code with holes removed and lines joined
 by newline; \code{holes} gives each removed hole's byte offset and its anchor HTML. The
 walk keeps a stack of open \code{tok-} classes so it can close them in reverse and reopen
 them across a line break or around a hole — a hole is always emitted outside every
 color span, and each line is left self-contained so the caller can wrap and number
 it. The returned strings are the inner HTML of each line.
-<<highlight one chunk>>=
+````chunk highlight one chunk
 /// Highlight one chunk. `source` is the raw code with lines joined by `\n` and the
 /// holes removed; `holes` is `(byte offset into `source`, anchor HTML)` in ascending
 /// offset order. Returns the inner HTML of each line (no `<span class="line">`
@@ -549,7 +548,7 @@ pub fn highlight(source: &str, holes: &[(usize, &str)], lang: Lang) -> Result<Ve
     flush_holes(source.len(), &mut hole, &open, &mut lines);
     Ok(lines)
 }
-@
+````
 Highlighting per chunk is improper: a chunk is a fragment, not a valid program, so a
 brace, string, or comment that opens in one chunk and closes in another tokenizes
 wrong (§5.5, #1). The fix is to tokenize the whole *tangled* file, which is valid,
@@ -558,7 +557,7 @@ tokenizes any source and returns the flat, innermost highlight run per byte — 
 end, name index)}, ascending and coalesced — without splicing or splitting. Nesting
 collapses to the innermost run, which is the visible color. The weave runs this once per
 tangled root and maps the runs back to each chunk (\code{weave.rs}).
-<<highlight runs from a source>>=
+````chunk highlight runs from a source
 /// The flat, innermost highlight runs over `source` (§5.5): `(start, end, name
 /// index)`, ascending and coalesced, no splice or split. The token source for the
 /// tangle-based path — run once per tangled root, then mapped back onto each chunk.
@@ -598,14 +597,14 @@ pub fn runs(source: &str, lang: Lang) -> Result<Vec<(usize, usize, usize)>, HlEr
 pub fn tok_class(index: usize) -> &'static str {
     TOK_CLASSES.get(index).copied().unwrap_or("tok-variable")
 }
-@
+````
 \code{render_runs} is the other half: it renders one chunk's per-line inner HTML from the
 chunk's clean \code{source}, its \code{holes}, and the flat \code{runs} mapped onto that source. It
 is the same splice shape as \code{highlight} — a hole is emitted outside any color span, a
 line is left self-contained — but the color comes from the given runs (the tangle),
 not from tokenizing the fragment. With empty runs it emits exactly the plain-text
 payload, so an un-highlighted span is byte-identical to the no-language path.
-<<render per-line html from runs>>=
+````chunk render per-line html from runs
 /// Render one chunk's per-line inner HTML from its clean `source`, its `holes`
 /// (`(offset, anchor HTML)`, ascending), and the flat highlight `runs` mapped onto
 /// `source` (§5.5, #1). Same splice as `highlight`; the color is the runs'.
@@ -674,12 +673,12 @@ pub fn render_runs(source: &str, holes: &[(usize, &str)], runs: &[(usize, usize,
     }
     lines
 }
-@
+````
 The tests cover both halves: real grammars produce token classes with a byte-
 identical plain-text payload, a hole splices back outside any color span, a construct
 spanning a line break stays self-contained per line, and the resolver honors each
 tier.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,9 +725,9 @@ mod tests {
 
     <<css highlights>>
 }
-@
+````
 Strip every tag, leaving the plain-text payload — used to prove color adds no text.
-<<strip tags for the payload check>>=
+````chunk strip tags for the payload check
 fn strip_tags(html: &str) -> String {
     let mut out = String::new();
     let mut in_tag = false;
@@ -742,10 +741,10 @@ fn strip_tags(html: &str) -> String {
     }
     out
 }
-@
+````
 Rust keywords and strings get classes, and the payload is byte-identical to the old
 escape path.
-<<rust keyword and string get classes>>=
+````chunk rust keyword and string get classes
 #[test]
 fn rust_keyword_and_string_get_classes() {
     let lines = highlight("let s = \"hi\";", &[], rust()).unwrap();
@@ -756,18 +755,18 @@ fn rust_keyword_and_string_get_classes() {
     // not injected text — so `"` is still `&quot;` and nothing else is added.
     assert_eq!(strip_tags(&lines[0]), "let s = &quot;hi&quot;;");
 }
-@
+````
 Nix produces token spans too.
-<<nix highlights too>>=
+````chunk nix highlights too
 #[test]
 fn nix_highlights_too() {
     let lines = highlight("{ x = 1; }", &[], nix()).unwrap();
     assert!(lines[0].contains("tok-"), "{}", lines[0]);
     assert_eq!(strip_tags(&lines[0]), "{ x = 1; }");
 }
-@
+````
 A hole's anchor is spliced back verbatim and never sits inside an open color span.
-<<a hole splices back outside color>>=
+````chunk a hole splices back outside color
 #[test]
 fn a_hole_is_spliced_back_outside_any_color_span() {
     // `let c = ` then a hole then `;` — offset 8 is between the two literals.
@@ -783,9 +782,9 @@ fn a_hole_is_spliced_back_outside_any_color_span() {
         lines[0]
     );
 }
-@
+````
 A block comment across two lines opens and closes its own span on each line.
-<<a line break keeps each line self-contained>>=
+````chunk a line break keeps each line self-contained
 #[test]
 fn a_line_break_keeps_each_line_self_contained() {
     // A block comment spans two lines; each line must open and close its own span.
@@ -797,15 +796,15 @@ fn a_line_break_keeps_each_line_self_contained() {
     assert_eq!(strip_tags(&lines[0]), "/* a");
     assert_eq!(strip_tags(&lines[1]), " b */");
 }
-@
+````
 Build a document model from raw markup IR, for the resolver tests.
-<<build a model from markup>>=
+````chunk build a model from markup
 fn model_from(markup: &str) -> DocModel {
     model::build(&parse(markup).unwrap()).unwrap()
 }
-@
+````
 Tier 1 beats the chunk's own extension and the default.
-<<resolve prefers a chunk-lang override>>=
+````chunk resolve prefers a chunk-lang override
 #[test]
 fn resolve_prefers_a_chunk_lang_override() {
     // Tier 1 wins over the chunk's own `.rs` extension (tier 3) and the default.
@@ -814,27 +813,27 @@ fn resolve_prefers_a_chunk_lang_override() {
     cfg.chunk_lang.insert("build.rs".to_string(), bash());
     assert_eq!(resolve(&doc, "build.rs", &cfg), Some(bash()));
 }
-@
+````
 Tier 2 is used when there is no per-chunk entry.
-<<resolve prefers the document default>>=
+````chunk resolve prefers the document default
 #[test]
 fn resolve_prefers_the_document_default() {
     let doc = model_from("@file t.cob\n@begin code 0\n@defn a.rs\n@nl\n@text x\n@nl\n@end code 0\n");
     let cfg = LangConfig::with_default(Some(nix()));
     assert_eq!(resolve(&doc, "a.rs", &cfg), Some(nix()));
 }
-@
+````
 Tier 3 reads the language off the chunk's own name.
-<<resolve uses the chunk-name extension>>=
+````chunk resolve uses the chunk-name extension
 #[test]
 fn resolve_uses_the_chunk_name_extension() {
     let doc = model_from("@file t.cob\n@begin code 0\n@defn flake.nix\n@nl\n@text x\n@nl\n@end code 0\n");
     let cfg = LangConfig::default();
     assert_eq!(resolve(&doc, "flake.nix", &cfg), Some(nix()));
 }
-@
+````
 An abstract chunk with no extension inherits its root's language by reachability.
-<<resolve follows an abstract chunk to its root>>=
+````chunk resolve follows an abstract chunk to its root
 #[test]
 fn resolve_follows_an_abstract_chunk_to_its_root() {
     // `main.rs` uses `helper`; `helper` has no extension of its own.
@@ -845,9 +844,9 @@ fn resolve_follows_an_abstract_chunk_to_its_root() {
     let cfg = LangConfig::default();
     assert_eq!(resolve(&doc, "helper", &cfg), Some(rust()));
 }
-@
+````
 An unknown extension resolves to nothing, which the weaver treats as plain text.
-<<resolve gives up on an unknown language>>=
+````chunk resolve gives up on an unknown language
 #[test]
 fn resolve_gives_up_on_an_unknown_language() {
     let ir = "@file t.cob\n@begin code 0\n@defn notes.txt\n@nl\n@text x\n@nl\n@end code 0\n";
@@ -855,18 +854,18 @@ fn resolve_gives_up_on_an_unknown_language() {
     let cfg = LangConfig::default();
     assert_eq!(resolve(&doc, "notes.txt", &cfg), None);
 }
-@
+````
 Bash produces token spans.
-<<bash highlights>>=
+````chunk bash highlights
 #[test]
 fn bash_highlights() {
     let lines = highlight("if true; then\n  echo hi\nfi", &[], bash()).unwrap();
     let all = lines.join("\n");
     assert!(all.contains("tok-"), "bash produced no token spans: {all}");
 }
-@
+````
 CSS produces token spans, with a byte-identical plain-text payload.
-<<css highlights>>=
+````chunk css highlights
 #[test]
 fn css_highlights() {
     let lines = highlight(".chunk { color: red; }", &[], css()).unwrap();
@@ -874,4 +873,4 @@ fn css_highlights() {
     assert!(all.contains("tok-"), "css produced no token spans: {all}");
     assert_eq!(strip_tags(&lines[0]), ".chunk { color: red; }");
 }
-@
+````

@@ -64,7 +64,7 @@ which is what makes math copy-pasteable (relevant to \code{ANNOTATIONS.md} AN-2)
 
 The module is five pieces: the error type, the cache-key hash, the renderer, the
 atomic cache write, and the tests.
-<<src/math.rs>>=
+````chunk src/math.rs
 <<the module banner>>
 
 <<imports>>
@@ -78,28 +78,28 @@ atomic cache write, and the tests.
 <<atomic cache writes>>
 
 <<the tests>>
-@
+````
 The banner states the pipeline position and the two forces that shape the module:
 no client JavaScript, and a slow engine that must be cached.
-<<the module banner>>=
+````chunk the module banner
 //! Step 6 of the prose pipeline: KaTeX at weave time (§6.3).
 //!
 //! Rendering is server-side so the math needs no client JavaScript. The
 //! `katex` crate drives a bundled JS engine, which is slow enough that every
 //! result is cached on disk keyed by a content hash — otherwise re-rendering
 //! every equation on every weave dominates build time.
-@
+````
 Just paths, formatting, and the \code{Math} fragment the prose pass hands us.
-<<imports>>=
+````chunk imports
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::prose::Math;
-@
+````
 A formula KaTeX rejects is E020, and it is a hard error — never a silent fallback
 to raw text (§6.3). A broken formula cannot wait for a browser that will never run.
-<<the math error>>=
+````chunk the math error
 #[derive(Debug)]
 pub struct MathError {
     pub source: String,
@@ -117,14 +117,14 @@ impl fmt::Display for MathError {
 }
 
 impl std::error::Error for MathError {}
-@
+````
 The key is FNV-1a, chosen because it is stable across toolchains. \code{DefaultHasher}
 is not — a hash that silently changed between compilers would invalidate every
 cache entry and force a full re-render. The display flag is folded into the hash
 so inline and display forms of the same formula never share a key. The macro
 preamble is folded in too (§6.4), so a change to a \code{\def} invalidates every
 cached formula that could use it.
-<<the cache key>>=
+````chunk the cache key
 /// FNV-1a. Stable across toolchains, which `DefaultHasher` does not promise —
 /// a cache key that silently changes would quietly cost a full re-render. The
 /// macro map is folded in (sorted, since it is a `BTreeMap`), so editing a macro
@@ -145,11 +145,11 @@ fn hash(s: &str, display: bool, macros: &BTreeMap<String, String>) -> String {
     }
     format!("{h:016x}")
 }
-@
+````
 The renderer holds an optional cache directory — optional because a cache that
 cannot be created is not fatal; weaving just gets slower. \code{render_all} maps over a
 batch; \code{render} does the work.
-<<the renderer>>=
+````chunk the renderer
 pub struct Renderer {
     dir: Option<PathBuf>,
     /// The document macro table: name → expansion, from every `macros` fence
@@ -169,10 +169,10 @@ impl Renderer {
 
     <<render one formula>>
 }
-@
+````
 Creating the cache directory is best-effort: on failure \code{dir} stays \code{None} and the
 renderer simply runs uncached.
-<<create the renderer>>=
+````chunk create the renderer
 /// A cache that cannot be created is not fatal; weaving just gets slower. The
 /// macro table is every `macros` fence's definitions (name → expansion, §6.4),
 /// passed to KaTeX's `macros` option so the formula source stays clean.
@@ -226,18 +226,18 @@ fn apply_rewrites(&self, src: &str) -> String {
     out.push_str(rest);
     out
 }
-@
+````
 One formula at a time, short-circuiting on the first error.
-<<render a batch>>=
+````chunk render a batch
 pub fn render_all(&self, math: &[Math]) -> Result<Vec<String>, MathError> {
     math.iter().map(|m| self.render(m)).collect()
 }
-@
+````
 The cache key names a file. A hit returns its bytes verbatim. A miss builds KaTeX
 options, renders, and — the deliberate choice — maps any KaTeX failure to E020
 rather than falling back to raw text. The fresh result is written back through the
 atomic writer.
-<<render one formula>>=
+````chunk render one formula
 fn render(&self, m: &Math) -> Result<String, MathError> {
     // Rewrite any `\alias.name` import reference to its content id (§13) first; the
     // cache key is the actual KaTeX input.
@@ -279,11 +279,11 @@ fn render(&self, m: &Math) -> Result<String, MathError> {
     }
     Ok(out)
 }
-@
+````
 The write goes through a unique temp file and a rename, so a concurrent weave never
 reads a half-written entry — a torn read would make output non-deterministic. It is
 best-effort: a failed write only costs a re-render.
-<<atomic cache writes>>=
+````chunk atomic cache writes
 /// Write via a unique temp file and rename, so a concurrent weave never reads a
 /// half-written cache entry (which would make output non-deterministic). Best
 /// effort: a failed cache write only costs a re-render.
@@ -296,11 +296,11 @@ fn write_atomic(path: &Path, contents: &str) {
         let _ = std::fs::remove_file(&tmp);
     }
 }
-@
+````
 The tests pin the contract: inline and display both render, the less-than sign
 survives as an entity rather than a stray tag, a second renderer reads identical
 bytes from disk, the display flag is part of the key, and bad math is E020.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,4 +432,4 @@ mod tests {
         assert!(err.to_string().starts_with("error[E020]"));
     }
 }
-@
+````

@@ -265,7 +265,7 @@ fn expand_located<'a>(
     let mut cur: Option<Loc> = None;
     for (sec_idx, spans) in defs.get(name).into_iter().flatten() {
         let sec = &doc.sections[*sec_idx];
-        // The body opens on the line after the `<<name>>=` def line.
+        // The body opens on the line after the chunk's open line.
         let mut line = sec.line + 1;
         let here = |line| Loc {
             file: sec.file.clone(),

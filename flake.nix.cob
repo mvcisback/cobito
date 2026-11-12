@@ -39,7 +39,7 @@ connection. A flake that depends on cobito as an input inherits whatever \code{s
 resolves to; pointing it at a public, token-free URL means no consumer ever needs to
 override it. The \code{outputs} function starts with a \code{let} block of shared
 helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
-<<flake.nix>>=
+````chunk flake.nix
 {
   description = "cobito — a web-first literate programming system";
 
@@ -50,7 +50,7 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
   # contributor) must be able to fetch it without an ssh key. A release pushes
   # `tangled` + the new tag to both remotes; bump this ref to match.
   inputs.seed = {
-    url = "github:mvcisback/cobito/v0.1.2";
+    url = "github:mvcisback/cobito/v0.2.0";
     flake = false;
   };
 
@@ -88,7 +88,7 @@ helpers, then gives the \code{packages}, \code{devShells}, and \code{checks}.
       });
     };
 }
-@
+````
 ## The dist flake {#sec:e9uc}
 
 The \code{dist} flake is what the \code{tangled} branch carries as its \code{flake.nix}. On
@@ -98,7 +98,7 @@ tangle step: it just builds the committed tree with \code{mkCob self}. That keep
 \code{nixpkgs} — no self-reference. It reuses the same shared helpers as the \code{main}
 flake. The build check compiles the crate and runs the hermetic tests, which is
 the whole point of a release snapshot: proof that these committed bytes build.
-<<flake.dist.nix>>=
+````chunk flake.dist.nix
 {
   description = "cobito — buildable release snapshot (the tangled branch)";
 
@@ -191,18 +191,18 @@ the whole point of a release snapshot: proof that these committed bytes build.
       });
     };
 }
-@
+````
 ## System iteration {#sec:kHIL}
 
 cob builds each output for the four systems in the list. \code{eachSystem} is the
 helper for this. It maps a function of \code{system} and \code{pkgs} across the list with
 \code{genAttrs}. You write \code{packages}, \code{devShells}, and \code{checks} one time. cob then
 makes one instance for each system.
-<<system iteration>>=
+````chunk system iteration
 systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 eachSystem = f: nixpkgs.lib.genAttrs systems (system:
   f system nixpkgs.legacyPackages.${system});
-@
+````
 ## The KaTeX pin {#sec:hwLv}
 
 cob renders math at weave time. The HTML from KaTeX is coupled to its own CSS
@@ -210,7 +210,7 @@ and font metrics. The assets must match the version of KaTeX that the \code{kate
 crate contains. The \code{katex} package in nixpkgs is a different version. A wrong
 version makes each equation show two times. The flake pins the version and the
 asset bundle together, by hash (§6.3).
-<<pinned katex assets>>=
+````chunk pinned katex assets
 # KaTeX renders to HTML that is version-coupled to its own CSS and font
 # metrics, so these assets must match the version the `katex` crate
 # embeds (0.16.4) — nixpkgs' katex is a different release. See §6.3.
@@ -220,7 +220,7 @@ katexAssets = pkgs: pkgs.fetchzip {
   url = "https://github.com/KaTeX/KaTeX/releases/download/v${katexVersion}/katex.tar.gz";
   sha256 = "0pgajj8vqfvgws3wnn5bfy4h3w75n4dz8jvjsxcw8s80jnp0md8c";
 };
-@
+````
 ## The grammar manifest {#sec:grammars}
 
 Highlighting is the one language-bound part of cob (§5.5). cob keeps it a **build
@@ -249,7 +249,7 @@ A user adds a grammar with no edit to cob: both \code{cob} and \code{static} car
 src = tree-sitter-sql; \} ]} is cob with that one grammar compiled in. This is the
 meta-language point of §5.5 — cob is language-agnostic, and a grammar is a build
 input, not a fork.
-<<grammar inputs and manifest>>=
+````chunk grammar inputs and manifest
 # The grammars cobito needs to weave its OWN documents (§5.5): the crate, the
 # flake, shell scripts, the stylesheet. The shipped cob ships none of these — a
 # user opts in with `cob.withGrammars`. A grammar is `{ id; exts; src; symbol? }`:
@@ -271,7 +271,7 @@ grammarManifest = pkgs: grammars:
               ("tree_sitter_" + builtins.replaceStrings [ "-" ] [ "_" ] g.id);
         in "${g.id}\t${nixpkgs.lib.concatStringsSep "," g.exts}\t${g.src}\t${symbol}\n";
   in pkgs.writeText "cob-grammars" (nixpkgs.lib.concatMapStrings line grammars);
-@
+````
 ## The builder {#sec:Mh65}
 
 Two builders, for the two deployment shapes (§6.3). \code{mkCob} is the Nix build:
@@ -284,7 +284,7 @@ and from the tangled \code{.cob}. The last argument, \code{runTests}, says wheth
 the hermetic cargo tests. cob ships with an **empty** grammar registry (§5.5), and
 the highlighting unit tests need a grammar, so only the grammar-ful \code{cobDoc} output
 runs the tests; the shipped empty \code{cob} only has to compile.
-<<the cob builder>>=
+````chunk the cob builder
 # One buildRustPackage, applied to two source trees (the committed seed and
 # the freshly tangled .cob). cob reads and tangles .cob natively, so the binary
 # needs no noweb — only the KaTeX assets for weave, read from the store at run
@@ -308,13 +308,13 @@ mkCob = pkgs: src: lock: grammars: runTests: pkgs.rustPlatform.buildRustPackage 
       --set COB_KATEX_ASSETS ${katexAssets pkgs}
   '';
 };
-@
+````
 \code{mkCobStatic} is the standalone build: a fully static musl binary
 (\code{pkgsStatic}) with the KaTeX dist baked in (feature \code{embed-assets}, from
 \code{COB_KATEX_ASSETS} at build time). It carries no wrapper and no store references,
 so the one file runs on any Linux box — this is the distribution artifact for
 non-Nix users. It skips the cargo tests; the Nix \code{build} check already runs them.
-<<the cob builder>>=
+````chunk the cob builder
 # The standalone single binary: static musl (pkgsStatic) with the pinned KaTeX
 # dist baked in (feature `embed-assets`, embedded from COB_KATEX_ASSETS at build
 # time). No wrapper, no store paths — one file that runs anywhere.
@@ -332,7 +332,7 @@ mkCobStatic = pkgs: src: lock: grammars: pkgs.pkgsStatic.rustPlatform.buildRustP
   # Tests are covered by the Nix `build` check; keep the static build lean.
   doCheck = false;
 };
-@
+````
 ## The package: two stages {#sec:UIDl}
 
 cob builds in two stages, so the literate \code{.cob} sources stay the one authority
@@ -346,7 +346,7 @@ of the pinned \code{tangled} snapshot. Stage 1 is \code{cob}, the default packag
 \code{cobBootstrap} tangles every \code{.cob} with cob itself into \code{cobSource}, and \code{cob}
 builds from that. The \code{selfhost} check proves \code{cob tangle} reproduces \code{cobSource}
 byte for byte, so cob is a fixed point of its own tangler and the loop is sound.
-<<the cob package>>=
+````chunk the cob package
 # Stage 0: build cob from the seed — the committed .rs of the pinned tangled
 # snapshot. The bootstrap only tangles cobSource, which needs no grammars, so it
 # builds with an empty set and skips the tests.
@@ -418,13 +418,13 @@ cobMarkdownInjections = pkgs.runCommand "cob-markdown-injections" { } ''
 cobDoc = mkCob pkgs cobSource ./Cargo.lock
   (cobGrammars ++ [{ id = "cob"; exts = [ "cob" ]; src = treeSitterCob; symbol = "tree_sitter_cob"; }])
   true;
-@
+````
 Stage 1 tangles each literate source again with \code{cob} itself. Each root chunk
 names its target file (\code{src/main.rs}, \code{templates/cob.css}), so \code{--out .} writes
 each tangled file into place. \code{cob tangle} enumerates every root of a file, so
 \code{templates/cob.css.cob} yields both the sheet and its palette from one call. This
 runs no noweb — cob's tangler is native (§11).
-<<the tangled source tree>>=
+````chunk the tangled source tree
 # Stage 1 tangles every .cob with cob (natively, no noweb), so the shipped
 # binary compiles from a tree cob itself made (§13). templates/cob.css is
 # include_str!'d into the weaver, so it and its palette are tangled here too.
@@ -437,7 +437,7 @@ cobSource = pkgs.runCommand "cob-src" { } ''
     ${cobBootstrap}/bin/cob tangle "$nw" --out .
   done
 '';
-@
+````
 ## The tangled flake, as an output {#sec:3OSt}
 
 This output makes the dogfood loop a file that you can build. \code{nix build .#flake}
@@ -446,7 +446,7 @@ that built this output. The loop is not circular. The build needs \code{cob}, an
 \code{cob} needs the committed \code{flake.nix} as its permanent bootstrap (§13).
 \code{checks.dogfood} compares the committed file with this output.
 
-<<the tangled flake output>>=
+````chunk the tangled flake output
 # `nix build .#flake` re-tangles flake.nix.cob and emits the flake.nix this
 # very output was built from — the dogfood loop as a buildable artifact
 # (§13). checks.dogfood diffs the committed file against this.
@@ -455,7 +455,7 @@ flake = pkgs.runCommand "flake.nix" { } ''
   ${cob}/bin/cob tangle flake.nix.cob --out $TMPDIR
   cp $TMPDIR/flake.nix $out
 '';
-@
+````
 ## The dev shell {#sec:zQ5K}
 
 The dev shell has the Rust toolchain, and no noweb — cob needs none. It sets
@@ -467,7 +467,7 @@ On \code{main} no \code{.rs} or \code{.css} is committed, so a fresh checkout ha
 \code{tangled} snapshot (\code{seed}) once, if \code{src/main.rs} is absent. That is enough to
 build \code{cob}; after that, edit the \code{.cob} and re-tangle with \code{cob tangle} to refresh
 from the current sources.
-<<the dev shell>>=
+````chunk the dev shell
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
@@ -485,11 +485,11 @@ default = pkgs.mkShell {
     fi
   '';
 };
-@
+````
 The \code{dist} dev shell is simpler: on the \code{tangled} branch the \code{.rs}/\code{.css} are
 tracked, so there is nothing to seed. It gives the same toolchain and KaTeX assets,
 for anyone who wants to build or hack the snapshot directly.
-<<the dist dev shell>>=
+````chunk the dist dev shell
 default = pkgs.mkShell {
   packages = with pkgs; [ cargo rustc rustfmt clippy rust-analyzer ];
   shellHook = ''
@@ -497,14 +497,14 @@ default = pkgs.mkShell {
     export COB_GRAMMARS="${grammarManifest pkgs cobGrammars}"
   '';
 };
-@
+````
 ## The checks {#sec:P3N3}
 
 \code{nix flake check} runs the full test set of cob. Each check is an independent
 derivation. Together the checks guard the build, byte-determinism, the frozen
 label lock, the tangle goldens, and the native reader against its frozen
 \code{markup} goldens. No check runs noweb — the goldens are the oracle now.
-<<the checks>>=
+````chunk the checks
 <<the build check>>
 
 <<the determinism check>>
@@ -536,7 +536,7 @@ label lock, the tangle goldens, and the native reader against its frozen
 <<the backlinks check>>
 
 <<the treesitter check>>
-@
+````
 ### build {#sec:9hJs}
 
 These are the cheapest checks, each one Nix expression, not a shell script.
@@ -545,12 +545,12 @@ so it proves the language-agnostic binary builds with no grammar at all. \code{t
 compiles \code{cobDoc}, the grammar-ful development build, which runs the hermetic cargo
 tests; the highlighting tests need a grammar, so they run here, not on the empty
 build.
-<<the build check>>=
+````chunk the build check
 # The shipped cob builds with an empty grammar registry (§5.5).
 build = self.packages.${system}.cob;
 # The grammar-ful development build runs the hermetic cargo tests.
 tests = self.packages.${system}.cobDoc;
-@
+````
 ### determinism {#sec:dNbo}
 
 This is the most important check. It weaves several documents two times each and
@@ -561,17 +561,17 @@ shows that the frozen float ids stay the same across runs.
 The Nix wrapper is short. It names the derivation and hands the whole test to one
 Bash chunk. The Bash chunk sets up the shell and then calls one chunk for each
 group of assertions. Each group has its own prose below.
-<<the determinism check>>=
+````chunk the determinism check
 # Weave twice, compare bytes. Determinism is the property §8's JSON
 # contract and the archival goal both rest on. The book fixture also
 # exercises M2: page splitting, cross-page refs, and numbering.
 determinism = pkgs.runCommand "cob-determinism" { } ''
   <<determinism script>>
 '';
-@
+````
 The script sets the \code{cob} path once and then runs each assertion group in order.
 A \code{touch} of the output at the end tells Nix that the check passed.
-<<determinism script>>=
+````chunk determinism script
 cd ${self}
 cob=${self.packages.${system}.cobDoc}/bin/cob
 <<weave the book fixture, twice>>
@@ -582,12 +582,12 @@ cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert transclusion>>
 <<assert float nodes>>
 touch $out
-@
+````
 This group is the core determinism act. It weaves the book fixture two times with
 \code{--archive} and diffs the two trees. \code{--archive} brings \code{site.json} and the
 per-page JSON into the diff. The group also confirms that the KaTeX assets are
 present.
-<<weave the book fixture, twice>>=
+````chunk weave the book fixture, twice
 # The Nix sandbox is read-only, so every weave runs `--locked`: it reads
 # the committed cob.lock and never mints (§7.1). This also proves the
 # frozen ids are stable across runs — the whole point of the lock.
@@ -598,12 +598,12 @@ $cob weave --locked --archive fixtures/book.cob --out $TMPDIR/b
 diff -r $TMPDIR/a $TMPDIR/b
 test -s $TMPDIR/a/katex/katex.min.css
 grep -q 'katex-mathml' $TMPDIR/a/parsing.html
-@
+````
 This group checks the opaque-id scheme of §7.1. The book splits into three pages
 at its h1 headings. A cross-page reference points at the target page and anchor.
 A float and a labelled section each carry a four-character base62 id, never a
 sequential number.
-<<assert the opaque-id scheme>>=
+````chunk assert the opaque-id scheme
 # §5.3 split at h1: three source headings ⇒ three pages.
 test -f $TMPDIR/a/index.html
 test -f $TMPDIR/a/parsing.html
@@ -624,14 +624,14 @@ if grep -q 'data-number' $TMPDIR/a/parsing.html; then
   echo "float still carries a sequential data-number; §7.1 wants an opaque id" >&2
   exit 1
 fi
-@
+````
 This group checks the archival contract. The \emph{content} must need no JavaScript
 (§6.3): a page may carry only the inline \code{nav-spy} navigation aid, no other script
 and no external \code{src}. Every content page carries that one aid. The \code{site.json}
 must use the frozen schema, give one file per page, and hoist sidenotes out of the
 prose into the margin (§8). The weaver must also emit one standalone \code{sitemap.html}
 that lists the whole nav tree, and every page footer must link to it.
-<<assert the archival contract>>=
+````chunk assert the archival contract
 # §6.3 the content needs no JavaScript: the only script a page may carry is
 # the inline nav-spy aid — no math script, no external src.
 for p in $TMPDIR/a/*.html; do
@@ -665,12 +665,12 @@ grep -q 'href="parsing.html#sec-lexing">Lexing</a>' $TMPDIR/a/sitemap.html
 grep -q 'href="sitemap.html"' $TMPDIR/a/index.html
 # The syntax palette is imported by cob.css; both files must be in the output.
 test -f $TMPDIR/a/cob-syntax.css
-@
+````
 This group checks the Markdown dialect (§6.4). It weaves two Markdown documents
 two times each and diffs them. It confirms that prose became HTML and that the
 fenced float directives made a table, an equation, and a figure, each with its
 own opaque id.
-<<assert the markdown dialect>>=
+`````chunk assert the markdown dialect
 # §6.4 Markdown dialect: ring.cob is authored in CommonMark (the default
 # dialect, so no cob.toml needed). Weave twice, byte-diff, and confirm
 # prose actually became HTML rather than passing through literally.
@@ -848,12 +848,12 @@ sed -n '/<nav class="toc">/,/<\/nav>/p' $nf/_site/index.html | grep -q 'Why it m
 grep -qE '<section class="taxon-node" id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}">' $nf/_site/index.html
 lid=$(grep -oE 'id="lem-y" data-taxon="lemma" data-id="[0-9A-Za-z]{4}"' $nf/_site/index.html | grep -oE '[0-9A-Za-z]{4}"$' | tr -d '"')
 grep -q 'Inner lemma' $nf/_site/n/$lid.html
-@
+`````
 This group checks syntax highlighting (§5.5). The \code{hl.cob} fixture has a Rust root
 and a Nix root. Each root pulls an abstract chunk in through a hole. The group
 confirms that both grammars ran, that the chunk-use hole stays outside any color
 span, and that the page carries no script but the nav-spy aid.
-<<assert syntax highlighting>>=
+````chunk assert syntax highlighting
 # §5.5 syntax highlighting: hl.cob has a Rust root and a Nix root, each
 # pulling an abstract chunk in through a hole. Weave twice, byte-diff,
 # and confirm the coloring is deterministic and structurally sound.
@@ -891,19 +891,19 @@ span=$TMPDIR/span
 mkdir -p $span
 op=$(printf '\074\074')
 cl=$(printf '\076\076')
-printf '@ # span\n\n%sout.rs%s=\nlet s = "%sinner%s";\n@\n\n%sinner%s=\ninside the string\n@\n' \
-  "$op" "$cl" "$op" "$cl" "$op" "$cl" > $span/t.cob
+printf '# span\n\n````chunk out.rs\nlet s = "%sinner%s";\n````\n\n````chunk inner\ninside the string\n````\n' \
+  "$op" "$cl" > $span/t.cob
 ( cd $span && $cob lock t.cob >/dev/null && $cob weave --locked t.cob --out _site )
 grep -q 'class="tok-string">inside the string' $span/_site/index.html
-@
+````
 This group checks transclusion and the node model (§10). The \code{tx.cob} fixture puts
-a title, an intro, and the source heading in one \code{@} chunk, then transcludes the
+a title, an intro, and the source heading in one docs chunk, then transcludes the
 source into a later section. The group confirms that the copy is cut at the
 markdown heading — so the shallower \code{h1} stays out and the page keeps one \code{h1} —
 that the copy scopes its ids and links back to the canonical node, that the node
 runs across the following code chunk, and that nothing but the nav-spy aid is a
 script.
-<<assert transclusion>>=
+````chunk assert transclusion
 # §10 transclusion: tx.cob puts a title, an intro, and the source heading
 # in one @ chunk, then transcludes the source into a later section. Weave
 # twice, byte-diff, and confirm the node model and scoping are sound.
@@ -953,12 +953,12 @@ for p in $TMPDIR/tx-a/n/*.html; do
     exit 1
   fi
 done
-@
+````
 A float is a node too (§10). The \code{txf.cob} fixture labels an equation and a figure,
 then transcludes each into a later section. This group confirms that a labelled
 float is cut from its section body by balancing its tag, gets its own page under
 \code{n/}, links to that page in context, and can be transcluded on its own.
-<<assert float nodes>>=
+````chunk assert float nodes
 # §10 floats are nodes: txf.cob labels an equation and a figure, then
 # transcludes each into a later section. Weave twice, byte-diff, and
 # confirm a float is cut, paged, linked, and transcludable.
@@ -998,13 +998,13 @@ for p in $TMPDIR/txf-a/n/*.html; do
     exit 1
   fi
 done
-@
+````
 ### lock {#sec:Vv1B}
 
 The committed \code{cob.lock} is the source of truth for the frozen id of each label.
 This check tests the read-only CLI on top of the lock. The Nix wrapper hands the
 work to one Bash chunk, which runs two assertion groups.
-<<the lock check>>=
+````chunk the lock check
 # §7.1 the committed cob.lock is the source of truth. If a float were
 # added without running `cob lock` and committing the grown lock, a
 # `--locked` weave would trip E031 — so a green `determinism` check above
@@ -1013,33 +1013,33 @@ work to one Bash chunk, which runs two assertion groups.
 lock = pkgs.runCommand "cob-lock" { } ''
   <<lock check script>>
 '';
-@
+````
 The script sets the \code{cob} path and runs the two groups.
-<<lock check script>>=
+````chunk lock check script
 cd ${self}
 cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert the frozen label lock>>
 <<assert the language resolver>>
 <<assert semantic tokens>>
 touch $out
-@
+````
 The semantic-token mapping (§5.5, #2) tokenizes the whole tangled file and maps the
 tokens back onto the `.cob` buffer, through holes. On `hello.cob`, `let` on line 7
 is a keyword at column 0, and the `;` after a chunk-use hole lands at the buffer
 column past the hole, not the holes-removed column — the proof the reconstruction
 accounts for the hole width.
-<<assert semantic tokens>>=
+````chunk assert semantic tokens
 # `cob tokens` prints whole-file semantic tokens in .cob buffer coordinates (#2).
 # `let` opens line 7 as a keyword at column 0.
 $cob tokens fixtures/hello.cob | grep -qx '7:0 3 keyword'
 # The `;` after the chunk-use hole on line 7 is at buffer column 21 — holes
 # removed it is at 8, so this proves the hole width is mapped back.
 $cob tokens fixtures/hello.cob | grep -qx '7:21 1 operator'
-@
+````
 This group tests the label side of the lock. \code{cob id} returns a four-character
 id. \code{cob labels} lists each label with its kind. A \code{sec:}-labelled heading is a
 first-class label. An unknown label gives a nonzero exit.
-<<assert the frozen label lock>>=
+````chunk assert the frozen label lock
 $cob id fixtures/book.cob fig:pipeline | grep -qE '^[0-9A-Za-z]{4}$'
 $cob labels examples/ring.cob | grep -qE '^eq:wrap\s+[0-9A-Za-z]{4}\s+Equation$'
 # §7.1 a `sec:`-labelled heading is a first-class label: it has an id
@@ -1051,12 +1051,12 @@ if $cob id fixtures/book.cob fig:nope; then
   echo "cob id returned success for a label not in the lock" >&2
   exit 1
 fi
-@
+````
 This group tests the highlighting resolver. \code{cob language} is the shared resolver
 that the weaver and any editor plugin agree on (§5.5). A root resolves from its
 own extension. An abstract chunk resolves from the root that reaches it. An
 unknown chunk gives a nonzero exit, so a build can gate on it.
-<<assert the language resolver>>=
+````chunk assert the language resolver
 # §5.5 `cob language` is the shared resolver: a root resolves from its
 # own extension, an abstract chunk from the root that reaches it, and an
 # unknown chunk is a nonzero exit (so a build can gate on it).
@@ -1068,7 +1068,7 @@ if $cob language fixtures/hl.cob nope; then
   echo "cob language returned success for a chunk with no known language" >&2
   exit 1
 fi
-@
+````
 ### section anchors {#sec:FT5y}
 
 Every section earns an opaque id (§7.1). \code{cob lock} auto-anchors an unlabelled
@@ -1079,14 +1079,14 @@ read-only. It then proves the round trip: the source gets the anchor, the lock
 gets a \code{Section} entry, the weave draws a permalink prefix, \code{cob rename-label}
 gives the id a human name without changing the id, and a second \code{cob lock} mints
 nothing.
-<<the section-anchor check>>=
+````chunk the section-anchor check
 section-anchors = pkgs.runCommand "cob-section-anchors" { } ''
   <<section-anchor check script>>
 '';
-@
+````
 The script works on a writable copy of \code{sections.cob}, a Markdown-dialect fixture
 with three unlabelled headings (two \code{h2}, one \code{h3}).
-<<section-anchor check script>>=
+````chunk section-anchor check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 # `cob lock` edits the source in place, so work on a writable copy; the
 # store path is read-only.
@@ -1131,7 +1131,7 @@ fi
 # A second lock is idempotent: an already-anchored heading is left alone.
 $cob lock sections.cob | grep -q '0 newly minted'
 touch $out
-@
+````
 ### tangle goldens {#sec:ATUX}
 
 \code{cob tangle} must make the same bytes as the frozen \code{notangle} goldens in
@@ -1139,7 +1139,7 @@ touch $out
 report drift after an edit. The goldens were made once by \code{notangle} and record
 its behavior with no live noweb — the hermetic half of the two-tangler agreement
 that seeded cob's own tangler. The Nix wrapper hands the work to one Bash chunk.
-<<the tangle check>>=
+````chunk the tangle check
 # Tangle goldens (§11): `cob tangle` must byte-match the frozen notangle
 # goldens in fixtures/tangled/, and `--check` must be clean after a tangle
 # and flag drift after an edit. The goldens are the oracle now — no live
@@ -1147,11 +1147,11 @@ that seeded cob's own tangler. The Nix wrapper hands the work to one Bash chunk.
 tangle = pkgs.runCommand "cob-tangle" { } ''
   <<tangle check script>>
 '';
-@
+````
 The script tangles every fixture that has goldens, diffs the output tree against
 the committed goldens, and then edits an output to confirm that \code{--check}
 reports the drift.
-<<tangle check script>>=
+````chunk tangle check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 cd ${self}
 # `cob tangle --out DIR` writes each root under DIR; fixtures/tangled/<stem>
@@ -1170,12 +1170,12 @@ if $cob tangle --check fixtures/hello.cob --out $TMPDIR/hello; then
 fi
 <<assert the source map>>
 touch $out
-@
+````
 The source map (§11, #3) turns a line in a tangled file back into its `.cob`
 source. `fn main() {` is the root's first body line; the lines inside the
 `@<<lex a token@>>` expansion map to that chunk, at its own source lines, not to
 the use site. A line past the end is a nonzero exit, so a build can rely on it.
-<<assert the source map>>=
+````chunk assert the source map
 # `cob where` maps a tangled line back to the .cob line that wrote it (#3). The
 # root's own first body line, then lines from an expanded chunk map to that chunk.
 test "$($cob where fixtures/hello.cob src/main.rs 1)" = 'fixtures/hello.cob:29 (chunk src/main.rs)'
@@ -1186,23 +1186,23 @@ if $cob where fixtures/hello.cob src/main.rs 999; then
   echo "cob where accepted a line past the end" >&2
   exit 1
 fi
-@
+````
 ### untangle {#sec:untangle}
 
 The untangle check (§11, #2/D) proves the round trip: an edit to a tangled file
 becomes a `.cob` patch that, applied, re-tangles to the same edit. It also proves a
 structural edit (a new line) is a reported conflict, not a silent, wrong patch. It
 needs `git` to apply the patch.
-<<the untangle check>>=
+````chunk the untangle check
 untangle = pkgs.runCommand "cob-untangle" { nativeBuildInputs = [ pkgs.git ]; } ''
   <<untangle check script>>
 '';
-@
+````
 The script works on a writable copy: tangle `hello.cob`, edit one non-hole line of
 the tangled output, untangle to a patch, apply it, and re-tangle to confirm the
 edit round-trips. Then it appends a line and checks that untangle reports the
 structural change instead of patching it.
-<<untangle check script>>=
+````chunk untangle check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/ut
 mkdir -p $work
@@ -1224,78 +1224,99 @@ $cob untangle hello.cob --out out 2> conflicts.txt > structural.diff
 grep -q 'lines added or removed' conflicts.txt
 test ! -s structural.diff
 touch $out
-@
+````
 ### reader {#sec:c8DE}
 
 This check guards the native reader (§4.1). The reader makes the \code{markup} event
 stream in Rust, so cob reads its own source with no noweb process. The check runs
-the native reader over each fixture and diffs its events against the frozen
+the native reader over each fixture. It compares what it finds against the frozen
 \code{markup} golden for that fixture — \code{cob dump-ir <file>.cob} against \code{cob dump-ir
---from-markup <file>.markup}, which parses the committed IR. The two must be
-identical for the noweb-era subset (a docs line, chunk uses, `%def`, indentation).
+--from-markup <file>.markup}, which parses the committed IR.
+
+The fixtures use the fence syntax now, and noweb cannot read it. The goldens came from
+the same fixtures in noweb's syntax. So the two streams differ where a documentation
+chunk starts, and in the index events. They agree on two things. The first is every code
+chunk: its name, its text, its uses, and its newlines. The second is every non-blank
+line of prose. The check keeps just those two and compares them. A chunk use, an
+escape, and the indentation before a use all stay under the oracle this way.
+
 The reader departs from noweb on `[[…]]`, which noweb quotes but cob reads as plain
 text (§6.4 uses \code{\code{…}}), so no fixture uses it. The crate, \code{cobito.cob},
 and the flake are read by the \code{selfhost} and \code{dogfood} checks, so a reader
 break there fails those too.
-<<the reader check>>=
-# Reader differential (§4.1): the native reader (`cob dump-ir`) must make
-# the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
-# over the committed .markup). Hermetic — no live noweb.
+````chunk the reader check
+# Reader differential (§4.1): the native reader (`cob dump-ir`) must agree with
+# the frozen `markup` golden (`cob dump-ir --from-markup` over the committed
+# .markup) on every code chunk and every line of prose. Hermetic — no live noweb.
 reader = pkgs.runCommand "cob-reader" { } ''
   <<reader script>>
 '';
-@
-The script walks every fixture and diffs the native reader against the frozen
-\code{markup} golden.
-<<reader script>>=
+````
+The script defines one function, \code{sig}. It reads an event dump and prints the code
+chunk events, then the non-blank prose lines, in document order. It drops the chunk
+numbers and the index events. Then it walks every fixture and compares the two
+signatures.
+````chunk reader script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 cd ${self}
+sig() {
+  awk '
+    /^BeginDocs\(/ { mode = "docs"; next }
+    /^EndDocs\(/   { mode = ""; next }
+    /^BeginCode\(/ { mode = "code"; print "BeginCode"; next }
+    /^EndCode\(/   { mode = ""; print "EndCode"; next }
+    /^File\(/      { print; next }
+    /^Index(Defn|Use|Nl)/ { next }
+    mode == "code" { print; next }
+    mode == "docs" && /^Text\(/ && !/^Text\(""\)$/ { print "P " $0; next }
+  '
+}
 for nw in fixtures/*.cob; do
-  $cob dump-ir "$nw" > "$TMPDIR/reader"
-  $cob dump-ir --from-markup "''${nw%.cob}.markup" > "$TMPDIR/golden"
+  $cob dump-ir "$nw" | sig > "$TMPDIR/reader"
+  $cob dump-ir --from-markup "''${nw%.cob}.markup" | sig > "$TMPDIR/golden"
   if ! diff -u "$TMPDIR/golden" "$TMPDIR/reader"; then
     echo "reader diverged from the frozen markup golden for $nw" >&2
     exit 1
   fi
 done
 touch $out
-@
+````
 ### dogfood {#sec:NJXp}
 
 This check closes the loop. \code{flake.nix.cob}, this page, is the flake as a literate
 program. \code{packages.flake} is the tangled output of this page. The Nix wrapper
 hands the work to one Bash chunk, which runs two groups.
-<<the dogfood check>>=
+````chunk the dogfood check
 # Dogfood (§13): flake.nix.cob is this flake told as a literate program, and
 # packages.flake is `cob tangle flake.nix.cob` as a buildable output. The
 # committed flake.nix must equal it, or the self-host loop has drifted.
 dogfood = pkgs.runCommand "cob-dogfood" { } ''
   <<dogfood script>>
 '';
-@
+````
 The script sets the \code{cob} path and runs the two groups.
-<<dogfood script>>=
+````chunk dogfood script
 cd ${self}
 cob=${self.packages.${system}.cobDoc}/bin/cob
 <<assert the flake round-trips>>
 <<assert cob highlights its own nix>>
 touch $out
-@
+````
 This group closes the tangle loop. The committed \code{flake.nix} must equal the
 tangled output. It then weaves this page two times and diffs the result, so the
 page is deterministic.
-<<assert the flake round-trips>>=
+````chunk assert the flake round-trips
 # The committed flake.nix must be exactly the tangled output.
 diff ${self}/flake.nix ${self.packages.${system}.flake}
 # Weave the literate flake twice, byte-diff: the page is deterministic.
 $cob weave --locked flake.nix.cob --out $TMPDIR/df-a
 $cob weave --locked flake.nix.cob --out $TMPDIR/df-b
 diff -r $TMPDIR/df-a $TMPDIR/df-b
-@
+````
 This group confirms that cob gives color to its own Nix. The Nix grammar colors
 an attribute path as a property and \code{let} as a keyword. A chunk-use hole stays
 inside its \code{.line} and never gets a color span. The page carries no script but the nav-spy aid.
-<<assert cob highlights its own nix>>=
+````chunk assert cob highlights its own nix
 # The Nix grammar coloured the page — an attribute path is a property and
 # `let` is a keyword — so cob self-hosts its own highlighter (§5.5).
 grep -q 'class="tok-property">' $TMPDIR/df-a/index.html
@@ -1311,7 +1332,7 @@ if grep '<script' $TMPDIR/df-a/index.html | grep -qvE 'script id="(nav-spy|cob-t
   echo "dogfood weave emitted a script other than the nav-spy aid; coloring must be pure CSS" >&2
   exit 1
 fi
-@
+````
 ### self-host {#sec:mxHP}
 
 This check closes the self-host loop for the crate (§13). Each \code{src/*.rs.cob} is
@@ -1323,19 +1344,19 @@ point of its own tangler: the source it makes is the source it is made of. A
 tangler change on \code{main} that the seed has not caught up to shows here as drift,
 which is the signal to cut a new release. The Nix wrapper hands the work to one
 Bash chunk.
-<<the selfhost check>>=
+````chunk the selfhost check
 # Self-host (§13): the shipped cob must tangle every module to the same bytes
 # as cobSource, the tree it was compiled from. A fixed point of its own
 # tangler — no second tangler, no noweb.
 selfhost = pkgs.runCommand "cob-selfhost" { } ''
   <<selfhost script>>
 '';
-@
+````
 The script tangles every module with \code{cob} and diffs against \code{cobSource}, then
 weaves two modules to prove that cob also colors its own source — one Rust
 module for the crate, and the stylesheet itself, which exercises the CSS grammar
 (the fourth grammar, and the reason it exists).
-<<selfhost script>>=
+````chunk selfhost script
 cd ${self}
 cob=${self.packages.${system}.cobDoc}/bin/cob
 src=${self.packages.${system}.cobSource}
@@ -1366,7 +1387,7 @@ for page in $TMPDIR/sh $TMPDIR/shcss; do
   fi
 done
 touch $out
-@
+````
 ### modules {#sec:5DHH}
 
 Every crate module is itself a literate document, so the whole crate reads as one
@@ -1374,7 +1395,7 @@ book (§13). This check weaves each \code{src/*.rs.cob} under \code{--locked} an
 any does not render — a guard against a module's prose drifting into a construct
 the dialect rejects (a bad fence, a bare brace, an unlocked label). The archival
 no-script rule (§6.3) holds for every module page too.
-<<the modules check>>=
+````chunk the modules check
 # Every module weaves on its own (§13), so the crate is one literate book. Guards
 # against prose that the dialect rejects (bad fence, bare brace, unlocked label).
 modules = pkgs.runCommand "cob-modules" { } ''
@@ -1390,7 +1411,7 @@ modules = pkgs.runCommand "cob-modules" { } ''
   done
   touch $out
 '';
-@
+````
 ### macros {#sec:1XOf}
 
 The \code{macros} fence (§6.4) defines KaTeX macros and shows them as a \code{def:} node
@@ -1398,12 +1419,12 @@ The \code{macros} fence (§6.4) defines KaTeX macros and shows them as a \code{d
 then weaves it twice under \code{--locked}. It proves the macros expand, the node is
 homeless (no in-flow anchor), the node has an \code{n/} page a \code{\ref} points at, and
 a \code{\transclude} splices a copy — all deterministic and with no script.
-<<the macros check>>=
+````chunk the macros check
 macros = pkgs.runCommand "cob-macros" { } ''
   <<macros check script>>
 '';
-@
-<<macros check script>>=
+````
+````chunk macros check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/mac
 mkdir -p $work
@@ -1484,7 +1505,7 @@ if grep '<script' a/index.html | grep -qvE 'script id="(nav-spy|cob-transclude|c
   exit 1
 fi
 touch $out
-@
+````
 ### imports {#sec:voGO}
 
 One forest imports another's macros and references its nodes (§13). This check
@@ -1495,12 +1516,12 @@ cross-document \code{\ref{sec:conv@alg}} and a \code{\transclude{def:basics@alg}
 proves the imported macros resolve and render, the cross-document reference lands
 on the producer's deployed page, the cross-document transclusion points at the
 producer's node page, and no definition leaks into a formula's annotation.
-<<the imports check>>=
+````chunk the imports check
 imports = pkgs.runCommand "cob-imports" { } ''
   <<imports check script>>
 '';
-@
-<<imports check script>>=
+````
+````chunk imports check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/imp
 mkdir -p $work/alg $work/topo
@@ -1571,7 +1592,7 @@ if grep -qE 'application/x-tex">[^<]*\\\\def' $work/topo/_site/index.html; then
   exit 1
 fi
 touch $out
-@
+````
 ### fetch {#sec:f8hV}
 
 A remote import is pinned and cached by \code{cob fetch} (§13). This check proves the
@@ -1582,12 +1603,12 @@ the index is cached by commit, and a \code{git}-import weave resolves the macro 
 cross-document \code{\ref} offline from the cache. \code{git} builds the fixture; cob reads
 it with \code{gix} over the pure-Rust \code{file://} transport, so the sandbox needs no
 network.
-<<the fetch check>>=
+````chunk the fetch check
 fetch = pkgs.runCommand "cob-fetch" { nativeBuildInputs = [ pkgs.git ]; } ''
   <<fetch check script>>
 '';
-@
-<<fetch check script>>=
+````
+````chunk fetch check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 export HOME=$TMPDIR
 export GIT_CONFIG_NOSYSTEM=1
@@ -1674,7 +1695,7 @@ if ( cd $work/consumer && $cob weave --locked doc.cob --out _site2 ) 2>$work/err
 fi
 grep -q 'E037' $work/err
 touch $out
-@
+````
 ### cite {#sec:FnBe}
 
 Citations (§14). This check weaves a document that cites a BibTeX bibliography. It
@@ -1685,12 +1706,12 @@ work is a node: it has a node page with the reference and a "Cited by" backlink,
 \code{\transclude{cite:key}} inlines it, and the References entry links to that page.
 Finally it proves cross-forest \code{\cite{key@alias}}: a producer exports its cited
 works, and a consumer cites one, landing on the producer's deployed node page.
-<<the cite check>>=
+````chunk the cite check
 cite = pkgs.runCommand "cob-cite" { } ''
   <<cite check script>>
 '';
-@
-<<cite check script>>=
+````
+````chunk cite check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/cite
 mkdir -p $work
@@ -1804,7 +1825,7 @@ if ( cd $work && $cob weave doc.cob --out _err ) 2>$work/e; then
 fi
 grep -q 'E040' $work/e
 touch $out
-@
+````
 ### backlinks {#sec:CDt4}
 
 Reverse backlinks (§16). A producer forest cites a work (so the work has a node
@@ -1814,12 +1835,12 @@ backlinks} over the two built sites inverts the edges and writes a fragment into
 producer: the producer's node now shows it is "Cited by" the consumer's node,
 linking back to the consumer's deployed page. Proves the join-by-url inversion, the
 fragment, and the lazy \code{<cob-backlinks>} element.
-<<the backlinks check>>=
+````chunk the backlinks check
 backlinks = pkgs.runCommand "cob-backlinks" { } ''
   <<backlinks check script>>
 '';
-@
-<<backlinks check script>>=
+````
+````chunk backlinks check script
 cob=${self.packages.${system}.cobDoc}/bin/cob
 work=$TMPDIR/bl
 prod=$work/prod
@@ -1881,7 +1902,7 @@ grep -q '<h2>Cited by</h2>' $prod/_site/n/$id.backlinks.html
 grep -q 'href="https://cons.example/n/' $prod/_site/n/$id.backlinks.html
 grep -q "<cob-backlinks src=\"$id.backlinks.html\">" $prod/_site/n/$id.html
 touch $out
-@
+````
 ### treesitter {#sec:treesitter}
 
 This check guards the editor grammar (§5.5, Tier 1). `tree-sitter-cob` is the
@@ -1889,16 +1910,16 @@ grammar for `.cob` files. The check builds it and parses every `.cob` in the
 repository, so a grammar change or a new source construct that the grammar cannot
 read fails here. It also proves the web dogfood: cob carries `tree-sitter-cob` as a
 grammar (the `cobDoc` build), so cob colors a `.cob` shown as code.
-<<the treesitter check>>=
+````chunk the treesitter check
 treesitter = pkgs.runCommand "cob-treesitter"
   { nativeBuildInputs = [ pkgs.tree-sitter pkgs.gcc ]; } ''
   <<treesitter check script>>
 '';
-@
+````
 The script builds the parser library where the tree-sitter CLI looks for it, then
 parses every `.cob` from a copy of the grammar directory (so the CLI resolves the
 `cob` grammar from the working directory, the same as a local run).
-<<treesitter check script>>=
+````chunk treesitter check script
 export HOME=$TMPDIR
 ts=$HOME/tree-sitter-cob
 cp -r ${self.packages.${system}.treeSitterCob} $ts
@@ -1918,11 +1939,11 @@ for f in ${self}/fixtures/*.cob ${self}/*.cob ${self}/src/*.rs.cob ${self}/tree-
 done
 <<assert cob colors a .cob as code>>
 touch $out
-@
+````
 The web dogfood: cob carries `tree-sitter-cob` as one of its grammars (§5.5), so a
 code chunk whose file is a `.cob` is colored by it. The chunk below shows a chunk
 definition, which the grammar colors as a name — a `tok-function` in the weave.
-<<assert cob colors a .cob as code>>=
+````chunk assert cob colors a .cob as code
 cob=${self.packages.${system}.cobDoc}/bin/cob
 # cobDoc knows the cob grammar: a .cob-rooted chunk resolves to "cob".
 test "$($cob language ${self}/fixtures/hello.cob src/main.rs)" = rust
@@ -1931,8 +1952,8 @@ mkdir -p $work
 cd $work
 # Show a .cob as code: the body is an escaped chunk-def line, so the cob grammar
 # colors it (the chunk name becomes a tok-function in the weave).
-printf '@ # cob as code\n\n@<<demo.cob@>>=\n@@<<greeting@@>>=\nhello\n@\n' > d.cob
+printf '# cob as code\n\n````chunk demo.cob\n@@<<greeting@@>>=\nhello\n````\n' > d.cob
 $cob weave d.cob --out _site
 # tree-sitter-cob coloured the chunk name inside the .cob code chunk.
 grep -q 'class="tok-function">' _site/index.html
-@
+````

@@ -1,4 +1,4 @@
-@ # Float transclusion fixture
+# Float transclusion fixture
 
 A Markdown document that exercises the float node model (§10). A labelled figure
 and a labelled equation live inside a section. A later section refers to each and

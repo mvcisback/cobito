@@ -7,6 +7,24 @@
         "kind": "section"
       }
     },
+    "/tmp/claude-1000/-home-mvc-work-cobito/fced5da7-6b91-4230-a10a-d78f3d8233cc/scratchpad/book_old.cob": {
+      "eq:cost": {
+        "id": "TGN6",
+        "kind": "equation"
+      },
+      "fig:pipeline": {
+        "id": "IPFC",
+        "kind": "figure"
+      },
+      "sec:lexing": {
+        "id": "wTVZ",
+        "kind": "section"
+      },
+      "tbl:opcodes": {
+        "id": "ZaOC",
+        "kind": "table"
+      }
+    },
     "/tmp/macdemo.cob": {
       "def:basics": {
         "id": "DRWM",
@@ -516,6 +534,10 @@
         "id": "ZzPB",
         "kind": "section"
       },
+      "sec:read-docs": {
+        "id": "jggU",
+        "kind": "section"
+      },
       "sec:read-grammar": {
         "id": "oPoT",
         "kind": "section"
@@ -544,6 +566,20 @@
       },
       "sec:sHOO": {
         "id": "sHOO",
+        "kind": "section"
+      }
+    },
+    "src/migrate.rs.cob": {
+      "sec:ULAd": {
+        "id": "ULAd",
+        "kind": "section"
+      },
+      "sec:V6TQ": {
+        "id": "V6TQ",
+        "kind": "section"
+      },
+      "sec:ivz0": {
+        "id": "ivz0",
         "kind": "section"
       }
     },
@@ -740,6 +776,40 @@
       },
       "sec:LG7c": {
         "id": "LG7c",
+        "kind": "section"
+      }
+    },
+    "tree-sitter-cob/tree-sitter-cob.cob": {
+      "sec:5FQr": {
+        "id": "5FQr",
+        "kind": "section"
+      },
+      "sec:5vYN": {
+        "id": "5vYN",
+        "kind": "section"
+      },
+      "sec:B7g1": {
+        "id": "B7g1",
+        "kind": "section"
+      },
+      "sec:I9DM": {
+        "id": "I9DM",
+        "kind": "section"
+      },
+      "sec:WAeo": {
+        "id": "WAeo",
+        "kind": "section"
+      },
+      "sec:gL53": {
+        "id": "gL53",
+        "kind": "section"
+      },
+      "sec:hLDV": {
+        "id": "hLDV",
+        "kind": "section"
+      },
+      "sec:s6Z1": {
+        "id": "s6Z1",
         "kind": "section"
       }
     }

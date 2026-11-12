@@ -78,7 +78,7 @@ note links back, both by the frozen id. The JSON keeps the note as a structured
 The module is the JSON shape (a tree of serialize structs), the sidenote hoist,
 the per-page footnote collector, the document builder that fills the shape from the
 model, and the two serializers that write the whole document and one page.
-<<src/site.rs>>=
+````chunk src/site.rs
 <<the module banner>>
 
 <<imports>>
@@ -122,10 +122,10 @@ model, and the two serializers that write the whole document and one page.
 <<the forest index>>
 
 <<the tests>>
-@
+````
 The banner states the contract, the determinism rule, and the sidenote hoist —
 the three things a maintainer must not break.
-<<the module banner>>=
+````chunk the module banner
 //! The `site.json` contract (§8): a `schema: 2` document model that
 //! Phase 1 produces and Phase 2 (annotation/review tooling) consumes unchanged.
 //!
@@ -136,10 +136,10 @@ the three things a maintainer must not break.
 //! This module also owns the sidenote hoist: §8 keeps a section's prose and its
 //! margin material disjoint, so `<aside class="sidenote">` is lifted out of the
 //! rendered body into structured `margin[]` entries with stable `sn-N` ids.
-@
+````
 Serde does the serializing; the model, the resolution, and the slug helper supply
 the content.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -147,19 +147,19 @@ use serde::Serialize;
 use crate::model::{CodeSpan, DocModel, SectionKind};
 use crate::resolve::Resolution;
 use crate::rewrite::slug;
-@
+````
 The schema version is bumped only on a breaking shape change, and consumers
 hard-fail on a mismatch rather than guess. Schema 2 (M11) replaced a label's
 position-dependent number with its frozen opaque id (§7.1).
-<<the schema version>>=
+````chunk the schema version
 /// Bumped only on a breaking change to this shape; consumers hard-fail on a
 /// mismatch rather than guess (§8). Schema 2 (M11) replaced a label's
 /// position-dependent `number` with its frozen opaque `id` (§7.1).
 pub const SCHEMA: u32 = 2;
-@
+````
 \code{Meta} is the document header: its id, title, authors, and the source files it
 was woven from.
-<<document metadata>>=
+````chunk document metadata
 #[derive(Serialize, Clone, Default)]
 pub struct Meta {
     pub id: String,
@@ -167,10 +167,10 @@ pub struct Meta {
     pub authors: Vec<String>,
     pub source_files: Vec<String>,
 }
-@
+````
 \code{Nav} is one node of the table-of-contents tree. An empty \code{children} list is
 dropped from the JSON so a leaf stays compact.
-<<the nav tree>>=
+````chunk the nav tree
 #[derive(Serialize, Clone)]
 struct Nav {
     id: String,
@@ -179,13 +179,13 @@ struct Nav {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     children: Vec<Nav>,
 }
-@
+````
 Three tables let a consumer resolve any cross reference. \code{Label} is a reference
 target — its page, anchor, kind, and (for a float) its frozen opaque id. \code{Def}
 and \code{Use} are the two ends of a chunk edge, each a page plus an anchor; a \code{Def}
 also records whether the chunk continues an earlier definition. \code{Chunk} gathers a
 chunk's defs and uses under its slug.
-<<the cross-reference tables>>=
+````chunk the cross-reference tables
 #[derive(Serialize, Clone)]
 pub struct Label {
     pub page: String,
@@ -216,13 +216,13 @@ struct Chunk {
     defs: Vec<Def>,
     uses: Vec<Use>,
 }
-@
+````
 The per-section shape. \code{Margin} is one hoisted sidenote. \code{Source} pins the
 section to its \code{.cob} file and line. \code{Section} is the rendered unit: docs sections
 carry a (possibly empty) \code{margin}, code sections carry a chunk \code{name}, a
 \code{continues} flag, and the chunk names they define and use. Absent optional fields
 are dropped so docs and code sections each serialize only what applies.
-<<the per-section shape>>=
+````chunk the per-section shape
 #[derive(Serialize, Clone)]
 pub struct Margin {
     pub kind: &'static str,
@@ -254,10 +254,10 @@ struct Section {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     uses: Vec<String>,
 }
-@
+````
 \code{Page} is one output page with its neighbours for prev/next links; \code{SiteJson} is
 the whole document — schema, metadata, nav, the two tables, and the pages.
-<<the page and the whole document>>=
+````chunk the page and the whole document
 #[derive(Serialize, Clone)]
 struct Page {
     id: String,
@@ -287,10 +287,10 @@ pub struct SiteJson {
     pub imports: Vec<ImportLink>,
     pages: Vec<Page>,
 }
-@
+````
 The page list is private, so this exposes just the page ids in document order —
 enough for a caller to drive \code{page_json} without reaching inside.
-<<page ids for the caller>>=
+````chunk page ids for the caller
 impl SiteJson {
     /// Page ids in document order — enough for a caller to drive `page_json`
     /// without reaching into the private page list.
@@ -298,23 +298,23 @@ impl SiteJson {
         self.pages.iter().map(|p| p.id.clone()).collect()
     }
 }
-@
+````
 \code{RawSection} is what weave hands this module for one section: the rendered body
 with sidenotes already hoisted, plus the margin material.
-<<a rendered section>>=
+````chunk a rendered section
 /// One section's rendered body as weave produces it, ready for `site.json`:
 /// prose with sidenotes already hoisted out, plus the margin material.
 pub struct RawSection {
     pub html: String,
     pub margins: Vec<Margin>,
 }
-@
+````
 \code{Hoisted} is the split output of the hoist: the page body replaces each aside
 with an inline marker, the JSON body drops asides entirely, and \code{margins}
 collects them as structured entries. The marker's \code{href="#sn-N"} and the
 \code{margins} id share the same \code{sn-N} value, so the page footnote and the JSON
 entry line up.
-<<the hoist result>>=
+````chunk the hoist result
 /// Result of lifting sidenotes out of a rendered docs body.
 pub struct Hoisted {
     /// The body as it appears on the woven page: each aside replaced by an
@@ -326,14 +326,14 @@ pub struct Hoisted {
     pub json_html: String,
     pub margins: Vec<Margin>,
 }
-@
+````
 The hoist is deliberate string surgery, not a parse: the input is well-formed
 lol_html output, sidenote asides do not nest in authored prose, and any literal
 aside opener in prose text is entity-escaped so it cannot match. The \code{next}
 counter is document-global, so ids stay unique across sections. A non-sidenote
 aside is copied through untouched; an unbalanced aside stops the walk and copies
 the remainder verbatim.
-<<hoist sidenotes out of a body>>=
+````chunk hoist sidenotes out of a body
 /// Lift every `<aside class="sidenote">` out of `body`. `next` is a
 /// document-global counter so ids are stable and unique across sections.
 ///
@@ -396,11 +396,11 @@ pub fn hoist_sidenotes(body: &str, next: &mut usize) -> Hoisted {
         margins,
     }
 }
-@
+````
 Finding an aside's close counts nesting, so an inner sidenote does not close the
 outer one early. It returns the index of the \code{<} that begins the balancing
 \code{</aside>}.
-<<find the matching close>>=
+````chunk find the matching close
 /// Index of the `<` beginning the `</aside>` that closes the aside whose body
 /// starts at `from`, accounting for nested asides.
 fn matching_close(body: &str, mut pos: usize) -> Option<usize> {
@@ -425,7 +425,7 @@ fn matching_close(body: &str, mut pos: usize) -> Option<usize> {
     }
     None
 }
-@
+````
 A page carries its notes as a footnotes list at its foot (§10). The hoist already
 turned each aside into an inline marker and kept the note body in a \code{margin[]}
 entry; this gathers the notes a page actually shows. It reads the page body, finds
@@ -434,7 +434,7 @@ So a note appears on the one page that marks it — and a node page shows only t
 notes its own body marks. A scope-prefixed marker (a transcluded copy, id
 \code{tx<n>-sn-N}) does not match and so does not pull the canonical note onto the
 copy's page; a transcluded note is a known deferred edge (§10).
-<<collect footnotes for a page>>=
+````chunk collect footnotes for a page
 /// One note as the page renders it at its foot: the frozen `sn-N` id, the
 /// `fnref-N` id of the marker that points here (for the back-link), and the
 /// rendered note HTML.
@@ -470,7 +470,7 @@ pub fn footnotes_in(body: &str, notes: &BTreeMap<String, String>) -> Vec<Footnot
     }
     out
 }
-@
+````
 A taxon labels a typed node (§10). To let CSS draw a box around the whole node —
 not only its heading — the weaver wraps the node in a
 \code{<section class="taxon-node" data-taxon="NAME">} at render time. A node is a
@@ -484,7 +484,7 @@ not a parse: a \code{<h1>}–\code{<h6>} opener in a docs body is a real heading
 (any literal one in prose text is entity-escaped). It does not wrap an h1 (the
 page title) and does not nest — a taxon inside a boxed taxon keeps only the outer
 box, a rare case deferred to §10.
-<<wrap taxon nodes>>=
+````chunk wrap taxon nodes
 /// The next `<h[1-6]` opener at or after `start`: its `<` index and its level.
 fn next_heading(body: &str, start: usize) -> Option<(usize, u8)> {
     let bytes = body.as_bytes();
@@ -559,13 +559,13 @@ pub fn wrap_taxa(body: &str) -> String {
     out.push_str(&body[i..]);
     out
 }
-@
+````
 The builder fills the JSON shape from three inputs: the model, the resolution,
 and weave's per-section bodies aligned to \code{doc.sections}. It first indexes each
 section to its page and continues-flag, then maps the label table, the chunk
 table, the sections, and finally the pages — narrowing the flat section list to
 each page and wiring prev/next.
-<<build the document>>=
+````chunk build the document
 /// Assemble the whole-document `site.json` from the model, the resolution, and
 /// weave's per-section rendered bodies (aligned to `doc.sections`).
 pub fn build(doc: &DocModel, res: &Resolution, raw: &[RawSection], meta: Meta) -> SiteJson {
@@ -699,10 +699,10 @@ pub fn build(doc: &DocModel, res: &Resolution, raw: &[RawSection], meta: Meta) -
         pages,
     }
 }
-@
+````
 A code section's \code{uses} are the distinct chunk names it references, kept in
 first-use order so the table reads the way the code does.
-<<a section's chunk uses>>=
+````chunk a section's chunk uses
 /// Distinct chunk names a code section references, in first-use order.
 fn chunk_uses(spans: &[CodeSpan]) -> Vec<String> {
     let mut seen = Vec::new();
@@ -715,9 +715,9 @@ fn chunk_uses(spans: &[CodeSpan]) -> Vec<String> {
     }
     seen
 }
-@
+````
 Lowering a nav node to its JSON form is a plain recursive copy.
-<<lower one nav node>>=
+````chunk lower one nav node
 fn nav_of(n: &crate::resolve::NavNode) -> Nav {
     Nav {
         id: n.id.clone(),
@@ -726,11 +726,11 @@ fn nav_of(n: &crate::resolve::NavNode) -> Nav {
         children: n.children.iter().map(nav_of).collect(),
     }
 }
-@
+````
 The whole document serializes to pretty JSON with a trailing newline — pretty
 because a human diffs it, deterministic because serde walks fields and
 \code{BTreeMap}s in a fixed order.
-<<serialize the whole document>>=
+````chunk serialize the whole document
 /// Pretty JSON with a trailing newline. Pretty because the archival artifact is
 /// read and diffed by humans; deterministic because serde walks fields and
 /// `BTreeMap`s in a fixed order.
@@ -739,10 +739,10 @@ pub fn to_json(site: &SiteJson) -> String {
     s.push('\n');
     s
 }
-@
+````
 The per-page JSON is the whole object with \code{pages} narrowed to one entry. Nav,
 labels, and chunks stay in full so a page stands alone (§8).
-<<serialize one page>>=
+````chunk serialize one page
 /// The per-page JSON: the whole object with `pages` narrowed to one entry.
 /// `nav`, `labels`, and `chunks` are retained in full so a page stands alone
 /// (§8).
@@ -759,7 +759,7 @@ pub fn page_json(site: &SiteJson, page_id: &str) -> Option<String> {
     };
     Some(to_json(&one))
 }
-@
+````
 A forest's importable index (§13) is a separate, small artifact: what another
 forest reads to \code{\import} this one. It carries the exported macro table (name →
 expansion) and the label index — each public label's id, kind, page, and anchor —
@@ -767,7 +767,7 @@ so a cross-document \code{\ref}/\code{\transclude} can resolve against it. The l
 reuses \code{site.json}'s own label table. \code{schema} is a semver string: a consumer
 accepts the same major (a newer minor only adds fields it ignores) and rejects a
 newer major (E038), so a forest cannot be read by a cob too old to understand it.
-<<the forest index>>=
+````chunk the forest index
 /// The current `cob-exports.json` schema (§13). Semver: a consumer rejects a newer
 /// major (E038).
 pub const EXPORTS_SCHEMA: &str = "1.2.0";
@@ -900,11 +900,11 @@ pub fn read_exports(json: &str) -> Result<Option<ForestIndex>, String> {
     }
     Ok(Some(index))
 }
-@
+````
 The tests pin the hoist: one sidenote is lifted and id-tagged on both sides, the
 counter carries across sections, a non-sidenote aside is untouched, and nested
 asides collapse into a single outer margin.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -919,10 +919,10 @@ mod tests {
 
     <<the forest index carries the macros>>
 }
-@
+````
 The forest index (§13) serializes the schema and the exported macro table, sorted
 and deterministic, so another forest can \code{\import} it.
-<<the forest index carries the macros>>=
+````chunk the forest index carries the macros
 #[test]
 fn forest_index_carries_the_macros() {
     let mut macros = BTreeMap::new();
@@ -954,10 +954,10 @@ fn forest_index_carries_the_macros() {
     assert!(json.contains("\"anchor\": \"eq-cost\""));
     assert!(json.contains("\"kind\": \"equation\""));
 }
-@
+````
 A single sidenote is removed from the JSON body, replaced on the page by an inline
 marker, captured as a margin, and the counter advances.
-<<hoist lifts one sidenote>>=
+````chunk hoist lifts one sidenote
 #[test]
 fn hoist_lifts_sidenote_and_ids_both_sides() {
     let mut n = 0;
@@ -1018,9 +1018,9 @@ fn wrap_taxa_boxes_a_node_to_its_boundary() {
     let plain = "<h1 data-taxon=\"definition\">Title</h1><h2>S</h2><p>x</p>";
     assert_eq!(wrap_taxa(plain), plain);
 }
-@
+````
 The shared counter means two sections get distinct ids.
-<<the counter spans sections>>=
+````chunk the counter spans sections
 #[test]
 fn counter_spans_sections() {
     let mut n = 0;
@@ -1029,10 +1029,10 @@ fn counter_spans_sections() {
     assert_eq!(a.margins[0].id, "sn-1");
     assert_eq!(b.margins[0].id, "sn-2");
 }
-@
+````
 An aside that is not a sidenote passes through both outputs and does not consume a
 counter value.
-<<a non-sidenote aside is untouched>>=
+````chunk a non-sidenote aside is untouched
 #[test]
 fn non_sidenote_aside_is_left_untouched() {
     let mut n = 0;
@@ -1042,10 +1042,10 @@ fn non_sidenote_aside_is_left_untouched() {
     assert!(h.margins.is_empty());
     assert_eq!(n, 0);
 }
-@
+````
 A nested sidenote does not close the outer one early: the whole outer aside
 becomes one margin and the id advances only once.
-<<nested asides match the outer close>>=
+````chunk nested asides match the outer close
 #[test]
 fn nested_asides_match_the_outer_close() {
     let mut n = 0;
@@ -1060,4 +1060,4 @@ fn nested_asides_match_the_outer_close() {
     assert_eq!(h.margins[0].id, "sn-1");
     assert!(h.margins[0].html.contains("inner"));
 }
-@
+````

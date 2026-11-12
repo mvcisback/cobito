@@ -1,4 +1,4 @@
-@ # A byte ring buffer
+# A byte ring buffer
 
 This is a small literate program: a fixed-capacity ring buffer of bytes,
 written in Rust. It exists to see what it feels like to author real prose in
@@ -10,7 +10,7 @@ three pieces: the \ref{chunk:buffer state}, then \ref{chunk:push a byte} and
 \ref{chunk:pop a byte}. The one idea worth stating up front is the wrap-around
 index in \ref{eq:wrap}; the public surface is summarised in \ref{tbl:api}.
 
-@ ## State
+## State
 
 A ring buffer is a fixed array plus two cursors. We keep an explicit \code{len}
 rather than only a head and tail, because with just two cursors a completely
@@ -22,7 +22,7 @@ read, which is what matters here.</aside>
 The capacity is a power of two so the wrap in \ref{eq:wrap} could
 later become a bitmask, though we keep the modulo for clarity.
 
-<<buffer state>>=
+````chunk buffer state
 const CAP: usize = 16;
 
 pub struct Ring {
@@ -30,9 +30,9 @@ pub struct Ring {
     head: usize,
     len: usize,
 }
-@
+````
 
-@ ## Indexing
+## Indexing
 
 Logical position \code{i} counts from the oldest byte still in the buffer. It maps
 to a physical slot by adding the head and wrapping:
@@ -45,7 +45,7 @@ Both operations below reduce to one call to this rule, so it is worth naming
 once. The tail — the slot the next pushed byte will occupy — is just
 $\operatorname{slot}(\mathit{len})$.
 
-@ ## Operations
+## Operations
 
 The buffer exposes the four methods in \ref{tbl:api}. Reads and
 writes are $O(1)$; there is no allocation after construction.
@@ -64,7 +64,7 @@ writes are $O(1)$; there is no allocation after construction.
 length. It refuses to overwrite unread data, returning \code{false} when the buffer
 is full.
 
-<<push a byte>>=
+````chunk push a byte
 pub fn push(&mut self, b: u8) -> bool {
     if self.len == CAP {
         return false;
@@ -74,12 +74,12 @@ pub fn push(&mut self, b: u8) -> bool {
     self.len += 1;
     true
 }
-@
+````
 
 \ref{chunk:pop a byte} is the mirror image: it reads the head
 slot, advances the head with the same wrap, and shrinks the length.
 
-<<pop a byte>>=
+````chunk pop a byte
 pub fn pop(&mut self) -> Option<u8> {
     if self.len == 0 {
         return None;
@@ -89,14 +89,14 @@ pub fn pop(&mut self) -> Option<u8> {
     self.len -= 1;
     Some(b)
 }
-@
+````
 
-@ ## Assembling the module
+## Assembling the module
 
 Finally we compose the pieces into one file. The state defines the type; the
 operations and the two small predicates hang off it in a single \code{impl} block.
 
-<<src/ring.rs>>=
+````chunk src/ring.rs
 <<buffer state>>
 
 impl Ring {
@@ -116,4 +116,4 @@ impl Ring {
         self.len == CAP
     }
 }
-@
+````

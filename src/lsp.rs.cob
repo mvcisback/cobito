@@ -12,13 +12,13 @@ server half speaks LSP over stdin and stdout and answers a `semanticTokens`
 request with the same tokens. `cob tokens` prints them for a test; `cob lsp` runs
 the server.
 
-@ ## The token {#sec:AmEH}
+## The token {#sec:AmEH}
 
 A token is a line, a start column, a length, and a kind — the shape the LSP
 semantic-tokens encoding needs. Lines and columns are zero-based bytes, which an
 editor reads as UTF-16 for an ASCII buffer (cob's code is ASCII in the common
 case).
-<<src/lsp.rs>>=
+````chunk src/lsp.rs
 <<imports>>
 
 <<the token>>
@@ -32,9 +32,10 @@ case).
 <<the language server>>
 
 <<the tests>>
-@ The module reads the model, borrows the weave's per-section token runs, and uses
+````
+The module reads the model, borrows the weave's per-section token runs, and uses
 the highlighter's tok-class accessor. The server half speaks JSON-RPC over stdio.
-<<imports>>=
+````chunk imports
 use crate::highlight::{self, LangConfig};
 use crate::model::{self, CodeSpan, DocModel, SectionKind};
 use crate::{markup, weave};
@@ -42,8 +43,9 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::process::ExitCode;
-@ The token type.
-<<the token>>=
+````
+The token type.
+````chunk the token
 /// One colored span in a `.cob` buffer: a zero-based line and start column, a byte
 /// length, and an LSP semantic-token kind (one of `LEGEND`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +55,8 @@ pub struct Token {
     pub len: u32,
     pub kind: &'static str,
 }
-@ ## Computing the tokens {#sec:tkaN}
+````
+## Computing the tokens {#sec:tkaN}
 
 `tokens` reuses the weave's `tangle_section_runs`: it tokenizes each root's whole
 tangled text once and maps the runs back onto each code section's holes-removed
@@ -61,7 +64,7 @@ source (§5.5, #1). For each section this module then reconstructs where those
 source bytes sit in the `.cob` buffer — holes and the `@<<` escape widen the line —
 and emits one `Token` per run, split at line boundaries because an LSP token never
 crosses a line. The result is sorted, the order the encoding needs.
-<<compute the tokens>>=
+````chunk compute the tokens
 /// Every semantic token for the document, in `.cob` buffer coordinates, sorted by
 /// line then column (§5.5, #2). Whole-file context comes from the weave's tangle
 /// runs; this maps them back onto each section's buffer bytes.
@@ -103,7 +106,8 @@ fn emit(hr: &str, pos: &[(u32, u32)], s: usize, e: usize, kind: &'static str, ou
         k = if m < e { m + 1 } else { m };
     }
 }
-@ ## Reconstructing buffer positions {#sec:Ex5F}
+````
+## Reconstructing buffer positions {#sec:Ex5F}
 
 The tangle runs are offsets into a section's **holes-removed** source — the bytes
 the tokenizer saw. The editor buffer has more: each chunk-use hole is the literal
@@ -117,7 +121,7 @@ To make the column exact — not off by one on a bare `<<` operator or heredoc �
 never saw are a chunk-use hole (`<<name>>`, a known width) and the `@` of an
 escape (`@<<` / `@>>`), which the raw line shows directly. Every other byte is one
 to one, so the map is exact.
-<<reconstruct buffer positions>>=
+````chunk reconstruct buffer positions
 /// For a code section's spans and the buffer's `source_lines`, rebuild the
 /// holes-removed source and a map from each byte offset to the buffer
 /// `(line, column)` — 1-based line from `first_line`, zero-based column. The raw
@@ -171,13 +175,14 @@ fn reconstruct(spans: &[CodeSpan], first_line: u32, source_lines: &[&str]) -> (S
     }
     (hr, pos)
 }
-@ ## The token kinds {#sec:hfBF}
+````
+## The token kinds {#sec:hfBF}
 
 cob's grammars color with a closed set of `tok-*` classes (§5.5). The LSP needs its
 own fixed legend, declared once in `initialize`; a token's type is an index into
 it. `lsp_kind` maps each `tok-*` class to the nearest standard LSP type, and
 `LEGEND` lists every type those map to, in index order.
-<<map a tok class to an lsp kind>>=
+````chunk map a tok class to an lsp kind
 /// The LSP semantic-token legend: a token's `kind` is one of these, and the server
 /// encodes it as this array's index. Keep `lsp_kind`'s outputs a subset of this.
 pub const LEGEND: &[&str] = &[
@@ -202,7 +207,8 @@ fn lsp_kind(class: &str) -> &'static str {
         _ => "variable",
     }
 }
-@ ## The language server {#sec:euE9}
+````
+## The language server {#sec:euE9}
 
 `cob lsp` speaks the Language Server Protocol over stdin and stdout: a loop that
 reads one JSON-RPC message, dispatches it, and writes any response. The protocol
@@ -217,7 +223,7 @@ disk. A buffer the model rejects (a mid-edit error) yields no tokens rather than
 crash. The tokens are encoded as the LSP's packed deltas: five integers per token
 — line delta, start delta, length, type index into `LEGEND`, and no modifiers —
 with the line made zero-based.
-<<the language server>>=
+````chunk the language server
 /// The server state: open buffers by uri, and the resolved language config.
 struct Server {
     docs: HashMap<String, String>,
@@ -360,9 +366,10 @@ fn send<W: Write>(w: &mut W, v: &Value) {
     let _ = write!(w, "Content-Length: {}\r\n\r\n{}", body.len(), body);
     let _ = w.flush();
 }
-@ The test builds a model with a hole mid-line and a use on its own line, and
+````
+The test builds a model with a hole mid-line and a use on its own line, and
 checks that the reconstructed columns account for the hole width.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,7 +422,7 @@ mod tests {
         // then ask for its tokens.
         s.handle(&json!({"method":"textDocument/didOpen","params":{"textDocument":{
             "uri":"file:///x/demo.cob",
-            "text":"@ # t\n\n@<<src/main.rs@>>=\nfn main() {}\n@\n"
+            "text":"# t\n\n````chunk src/main.rs\nfn main() {}\n````\n"
         }}}));
         let resp = s
             .handle(&json!({"jsonrpc":"2.0","id":2,
@@ -428,7 +435,8 @@ mod tests {
         assert_eq!(data.len() % 5, 0);
     }
 }
-@ ## Using it in an editor {#sec:AXnG}
+````
+## Using it in an editor {#sec:AXnG}
 
 An editor runs `cob lsp` as the language server for `.cob` files and turns on
 semantic highlighting. This needs a `cob` binary on `PATH` — `nix develop` in a
@@ -452,4 +460,3 @@ vim.api.nvim_create_autocmd("FileType", {
 The server gives whole-file color with cob's own grammars, so it needs no editor
 grammar. It pairs with `tree-sitter-cob` (Tier 1): the grammar gives structure,
 folding, and navigation; the server gives the in-context color.
-@

@@ -1,4 +1,4 @@
-@ # Sections fixture
+# Sections fixture
 
 A small document in the \emph{Markdown} dialect. It has unlabelled \code{h2} and
 \code{h3} headings. \code{cob lock} auto-anchors each one: it mints an opaque id
@@ -19,8 +19,8 @@ A short note under a level-three heading. It also earns an id.
 The parser reads tokens and builds a tree. The code lives in
 \ref{chunk:src/answer.rs}.
 
-<<src/answer.rs>>=
+````chunk src/answer.rs
 pub fn answer() -> u32 {
     42
 }
-@
+````

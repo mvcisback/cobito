@@ -93,6 +93,18 @@ pub fn explain(code: &str) -> Option<&'static str> {
         "E041" => "`cob backlinks` could not write a reverse-backlink fragment — usually \
                    a permissions or disk problem writing into a site's `n/` directory. \
                    The path and OS error are included (§16).",
+        "E043" => "A `.cob` file uses noweb's chunk syntax, which cob no longer reads: a \
+                   line that starts with `<<name>>=` opened a chunk, and a line that \
+                   starts with `@` closed one. A chunk is a fence now: four or more \
+                   backticks, the word `chunk`, and the name, closed by a backtick run \
+                   at least as long. Run `cob migrate FILE` to rewrite the file; it \
+                   changes no code byte (§4.2, §4.3).",
+        "E044" => "`cob migrate` could not convert a file, and it left the file as it \
+                   was. Causes: a chunk name starts or ends with a space (the new \
+                   syntax trims names), a `%def` or `%use` line is outside a code \
+                   chunk, a line of prose would open a chunk in the new syntax, or the \
+                   file could not be read or written. The message names the file and \
+                   the line. Fix that line by hand, then run the command again (§4.3).",
         _ => return None,
     };
     Some(text)
@@ -111,6 +123,8 @@ mod tests {
         assert!(explain("E034").unwrap().contains("verbatim"));
         assert!(explain("E031").unwrap().contains("cob.lock"));
         assert!(explain("E032").unwrap().contains("cob.lock"));
+        assert!(explain("E043").unwrap().contains("cob migrate"));
+        assert!(explain("E044").unwrap().contains("cob migrate"));
     }
 
     #[test]

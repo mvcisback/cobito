@@ -67,7 +67,7 @@ which document, and which tangle roots carry a line-pragma format. The file is
 laid out the way a reader meets it: the module banner, the imports, the error
 type, then each table struct in source order, then the loader and its queries,
 then the tests.
-<<src/config.rs>>=
+````chunk src/config.rs
 <<the module banner>>
 
 <<imports>>
@@ -97,32 +97,32 @@ then the tests.
 <<loading and querying the manifest>>
 
 <<the tests>>
-@
+````
 The banner records how much of the manifest is live today. M4 reads a small slice;
 the \code{[weave.annotate]} keys of §5.3 and §10 parse leniently now and gain meaning
 with their milestones.
-<<the module banner>>=
+````chunk the module banner
 //! `cob.toml`, the project manifest (§5.2). M4 reads a deliberately
 //! small slice: `[[document]]` metadata (which feeds `site.json`'s `meta`) and
 //! `[[tangle.root]]` line-pragma formats. The `[weave]` / `[weave.annotate]`
 //! keys of §5.3/§10 are parsed leniently (unknown keys ignored) but not yet
 //! acted on — they arrive with the milestones that need them.
-@
+````
 Three std imports and serde. Every deserialized map is a \code{BTreeMap}, not a
 \code{HashMap}, so iteration order is deterministic and weaves stay byte-stable — a
 project-wide rule, not a local taste.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
 use serde::Deserialize;
-@
+````
 Reading the manifest fails two ways: the file parsed wrong, or the read itself
 failed for a reason other than absence. Both surface as E029. Absence is *not* an
 error here — the loader turns it into \code{Ok(None)}, because a missing manifest is
 the normal case.
-<<the config error>>=
+````chunk the config error
 #[derive(Debug)]
 pub enum ConfigError {
     /// `cob.toml` was present but did not parse.
@@ -145,11 +145,11 @@ impl fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
-@
+````
 \code{Config} is the whole file. Because every field defaults, \code{#[derive(Default)]}
 gives a valid empty manifest, and each \code{#[serde(default)]} lets its table be
 omitted entirely.
-<<the manifest root>>=
+````chunk the manifest root
 /// The whole manifest. Every section is optional so a bare or absent `cob.toml`
 /// is valid — the CLI simply falls back to its argument-derived defaults.
 #[derive(Deserialize, Default)]
@@ -174,13 +174,13 @@ pub struct Config {
     #[serde(rename = "fence", default)]
     pub fences: BTreeMap<String, FenceHandler>,
 }
-@
+````
 A \code{[fence.<name>]} table registers a handler for a \code{custom[<name>]} fence (§6.6).
 \code{cmd} is the argv of a program cob runs at weave time, from the project root; cob
 sends it the fence body and context as JSON and reads back the HTML. Declaring the
 handler in \code{cob.toml} — the project's own trusted config — is the consent to run
 it; an undeclared handler is the E042 error.
-<<a fence handler>>=
+````chunk a fence handler
 /// One `[fence.<name>]` table (§6.6): the CLI that renders a `custom[<name>]`
 /// fence. `cmd` is the argv — the first element is the program, run from the
 /// project root — so a handler can be `["tools/fig"]` or `["python3", "x.py"]`.
@@ -188,13 +188,13 @@ it; an undeclared handler is the E042 error.
 pub struct FenceHandler {
     pub cmd: Vec<String>,
 }
-@
+````
 The \code{[forest]} table declares this forest's own identity (§16). \code{url} is where its
 pages are deployed; it is the join key for reverse backlinks — a consumer's
 outgoing edge names the target forest by the same url, so the aggregator matches an
 edge to the forest it points at. A forest with no \code{url} does not take part in
 cross-forest backlinks.
-<<the forest table>>=
+````chunk the forest table
 /// The `[forest]` table (§16): this forest's own identity. `url` is its deployed
 /// base — the join key that lets the backlink aggregator match a consumer's
 /// outgoing edge to the forest it targets.
@@ -203,11 +203,11 @@ pub struct Forest {
     #[serde(default)]
     pub url: Option<String>,
 }
-@
+````
 The \code{[cite]} table points at the bibliography (§14). \code{bib} is the path to a BibTeX
 file; \code{\cite{key}} resolves against its entries. Absent means the document has no
 bibliography, so a \code{\cite} is then the E040 unknown-citation error.
-<<the cite table>>=
+````chunk the cite table
 /// The `[cite]` table (§14): where the bibliography comes from. `bib` is the path
 /// to a BibTeX file; a `\cite{key}` resolves against its entries. Absent means no
 /// bibliography.
@@ -216,13 +216,13 @@ pub struct Cite {
     #[serde(default)]
     pub bib: Option<String>,
 }
-@
+````
 An \code{[import.<alias>]} table binds another forest to the alias, so \code{label@alias}
 addresses resolve against it (§13). \code{path} names a local forest to read now; \code{git}
 plus \code{rev} name a remote one that \code{cob fetch} pins into the import cache before a
 weave reads it offline. \code{url} is where that forest's pages are deployed, so a
 cross-document \code{\ref} or \code{\transclude} makes a link that lands on the real site.
-<<an import>>=
+````chunk an import
 /// One `[import.<alias>]` table (§13): where the aliased forest comes from. A
 /// local `path`, or a `git` URL resolved by a semver `version` requirement (the
 /// release model) or a raw `rev` (the escape hatch). `cob fetch` turns a git import
@@ -253,13 +253,13 @@ pub struct Import {
     #[serde(default)]
     pub rev: Option<String>,
 }
-@
+````
 \code{[weave]} carries the syntax-highlighting configuration (§5.5). \code{lang} is the
 document-wide default (tier 2); \code{chunk-lang} is the per-chunk override map (tier
 1) that beats it. The map is out-of-band config, so it survives \code{markup} — an
 inline language tag on the chunk definition line would be tokenized as source and
 lost.
-<<the weave table>>=
+````chunk the weave table
 /// The `[weave]` table (§5.5). Only the document-wide highlighting default lives
 /// here for now; the `[weave.annotate]` keys of §5.3/§10 arrive with their
 /// milestones and are parsed leniently (unknown keys ignored) until then.
@@ -277,10 +277,10 @@ pub struct Weave {
     #[serde(rename = "chunk-lang", default)]
     pub chunk_lang: BTreeMap<String, String>,
 }
-@
+````
 A \code{[[document]]} is one document's identity and its file set. A project may
 declare several; the single-document CLI uses the first.
-<<a declared document>>=
+````chunk a declared document
 /// One document's identity and file set (§5.2). A project may declare several;
 /// M4's single-document CLI uses the first.
 #[derive(Deserialize, Default, Clone)]
@@ -294,9 +294,9 @@ pub struct Document {
     #[serde(default)]
     pub files: Vec<String>,
 }
-@
+````
 \code{[tangle]} sets the output directory and the per-root overrides.
-<<the tangle table>>=
+````chunk the tangle table
 #[derive(Deserialize, Default)]
 pub struct Tangle {
     #[serde(default)]
@@ -304,10 +304,10 @@ pub struct Tangle {
     #[serde(rename = "root", default)]
     pub roots: Vec<Root>,
 }
-@
+````
 Each \code{[[tangle.root]]} names a chunk that is a tangle root and, optionally, the
 line-pragma format to emit for it.
-<<a tangle root>>=
+````chunk a tangle root
 /// A per-root override. Only `line-pragma` matters in M4; `chunk` names the root
 /// it applies to.
 #[derive(Deserialize, Default, Clone)]
@@ -316,12 +316,12 @@ pub struct Root {
     #[serde(rename = "line-pragma", default)]
     pub line_pragma: LinePragma,
 }
-@
+````
 The correct \code{-L} format is language-specific, so a bare boolean can only turn
 pragmas *off* — turning them on needs the format string itself. The untagged enum
 therefore accepts either \code{false} or a format string. The bool variant carries no
 information beyond "off", and \code{format()} collapses it to \code{None}.
-<<the line-pragma format>>=
+````chunk the line-pragma format
 /// `notangle -L` format for a root, or `false` for none. The correct format is
 /// language-specific, so a plain boolean can only *disable* pragmas — enabling
 /// them requires the format string itself (§5.2).
@@ -349,12 +349,12 @@ impl LinePragma {
         }
     }
 }
-@
+````
 \code{load} reads \code{dir/cob.toml}. Absence returns \code{Ok(None)} so the caller keeps its
 defaults; any other read error, or a parse error, becomes E029. The two query
 methods answer exactly what the rest of cob needs: the first document, and the
 root-name → format map for the roots that configure one.
-<<loading and querying the manifest>>=
+````chunk loading and querying the manifest
 impl Config {
     /// Load `dir/cob.toml`. Absence is not an error — returns `Ok(None)` so the
     /// caller keeps its argument-derived defaults.
@@ -392,11 +392,11 @@ impl Config {
             .collect()
     }
 }
-@
+````
 The tests pin the contract: absence is not an error, document metadata
 round-trips, a line-pragma is off unless a format string is given, and both
 \code{[weave]} keys are read.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,4 +481,4 @@ mod tests {
         assert!(c.tangle_pragmas().is_empty());
     }
 }
-@
+````

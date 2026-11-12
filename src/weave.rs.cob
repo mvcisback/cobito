@@ -66,7 +66,7 @@ concern and states the full rule (§5.5).
 The module is the error type, the per-chunk and per-section renderers, the
 fragment passes, the mint-only lock path, the whole-document render, the asset
 copy, and the top-level \code{write_site} that ties them to disk.
-<<src/weave.rs>>=
+````chunk src/weave.rs
 <<the module banner>>
 
 <<imports>>
@@ -108,11 +108,11 @@ copy, and the top-level \code{write_site} that ties them to disk.
 <<write the site to disk>>
 
 <<the tests>>
-@
+````
 The banner states the pass-through decision: three of the six §6.2 steps are a
 deliberate no-op at this milestone, and the placeholder split is already in place
 so a later milestone can insert a real HTML parse without reordering anything.
-<<the module banner>>=
+````chunk the module banner
 //! M1 weave: document model → a single HTML page (§19.3).
 //!
 //! Steps 3–5 of §6.2 (parse, rewrite, serialize) are deliberately a
@@ -120,12 +120,12 @@ so a later milestone can insert a real HTML parse without reordering anything.
 //! do, so there is nothing an HTML parser would contribute yet. The step-2/6
 //! placeholder split is already in place so M2 can insert a real parse between
 //! them without reordering anything.
-@
+````
 The weaver pulls a name from nearly every other module, because it is the stage
 that ties them together: config for the manifest, highlight for the colors, lock
 for the frozen ids, the prose and markdown pipeline, the math renderer, the model,
 the resolver, the rewriter, and the site JSON shape.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -144,11 +144,11 @@ use crate::rewrite::{self, Kind, Plan, RewriteError, Scan};
 use crate::site::{self, SiteJson};
 use crate::tangle;
 use crate::transclude;
-@
+````
 The error type collects a failure from every stage the weaver drives. The markdown
 variant carries the source coordinate so a diagnostic points at the offending line;
 the rest wrap another module's error or a message.
-<<the weave error>>=
+````chunk the weave error
 #[derive(Debug)]
 pub enum WeaveError {
     Markdown {
@@ -176,11 +176,11 @@ pub enum WeaveError {
     Io(std::io::Error),
     Template(String),
 }
-@
+````
 Display assigns each variant its §12 error code. The markdown variant appends the
 source coordinate; the wrapped variants defer to the inner error, which already
 carries its own code.
-<<display a weave error>>=
+````chunk display a weave error
 impl fmt::Display for WeaveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -208,7 +208,7 @@ impl fmt::Display for WeaveError {
 }
 
 impl std::error::Error for WeaveError {}
-@
+````
 Rendering one code chunk is the delicate part. The chunk body is target text with
 chunk-use holes; the holes are cob's syntax, not the target's. So the highlighter
 must never see them. The renderer first walks the spans into a clean source buffer:
@@ -225,7 +225,7 @@ copy-paste is clean and the annotation layer's quote selectors are undisturbed.
 The doc-comment shows the definition and continuation markers. In a code chunk a
 bare hole is a chunk use, so each bracket pair carries the noweb at-escape; the
 example survives tangle as literal text and never expands.
-<<render one code chunk>>=
+````chunk render one code chunk
 /// Render one code chunk, following noweb's own convention: `@<<name@>>=` for a
 /// definition, `@<<name@>>+=` for a continuation (§5.1), and uses linked to the
 /// defining section.
@@ -292,10 +292,10 @@ fn render_code(
     out.push_str("</pre></details>");
     out
 }
-@
+````
 A chunk-use hole renders as an italic label linked to the section that defines the
 named chunk, when one exists. An undefined use renders as the label alone.
-<<the chunk-use anchor>>=
+````chunk the chunk-use anchor
 /// The `<a>` anchor a chunk-use hole renders as: the italic `@<<name@>>` label,
 /// linked to the section that defines `name` when there is one (§5.4).
 fn hole_anchor(name: &str, doc: &DocModel) -> String {
@@ -310,12 +310,12 @@ fn hole_anchor(name: &str, doc: &DocModel) -> String {
         None => label,
     }
 }
-@
+````
 The no-highlight path escapes the clean buffer and splices the holes back, one
 inner-HTML string per line. It mirrors the highlighter's splice without any
 tokenization, so both paths produce the same plain-text payload byte for byte —
 which is what lets a grammar error fall back to this path invisibly.
-<<the no-highlight line splitter>>=
+````chunk the no-highlight line splitter
 /// The no-highlight path: escape the clean buffer and splice the holes back,
 /// yielding one inner-HTML string per line. Mirrors `highlight::highlight`'s
 /// splice but without tokenization, so both paths agree on the plain-text
@@ -350,12 +350,12 @@ fn plain_lines(source: &str, holes: &[(usize, String)]) -> Vec<String> {
     }
     lines
 }
-@
+````
 Every section is wrapped in a provenance envelope: the source file and line it came
 from, an optional chunk name, and an empty margin slot. These attributes are the
 entire contract the annotation layer depends on. They cost nothing now and are
 present from the first milestone even though that layer arrives later.
-<<wrap a section in its provenance>>=
+````chunk wrap a section in its provenance
 /// The §9.1 provenance attributes plus the §9.3 margin slot. Present from M1
 /// even though the annotation layer arrives in M5 — they cost nothing now and
 /// are the entire contract that layer depends on.
@@ -376,14 +376,14 @@ fn wrap_section(
         prose::escape(file)
     )
 }
-@
+````
 A rendered page pairs its metadata with its HTML. The site is every page, one
 standalone sitemap page, the math count, the collected lints, and the archival JSON
 — the JSON is always assembled but only written under the archive flag, and its
 metadata is a placeholder that \code{write_site} fills in. The test-only helper
 concatenates every page's HTML for whole-document assertions where the page split is
 not what is under test.
-<<the rendered page and the site>>=
+````chunk the rendered page and the site
 pub struct RenderedPage {
     pub meta: PageMeta,
     pub html: String,
@@ -429,18 +429,18 @@ impl Site {
             .join("\n")
     }
 }
-@
+````
 A fragment is one section's rendered body before math substitution and section
 wrapping. Only docs bodies are HTML the rewriter touches; code bodies pass through
 untouched, so the two are kept apart by the enum.
-<<one section's fragment>>=
+````chunk one section's fragment
 /// One section's rendered body, before math substitution and section wrapping.
 /// Only docs bodies are HTML the rewriter touches; code bodies pass through.
 enum Frag {
     Docs(String),
     Code(String),
 }
-@
+````
 The first pass renders every section into a fragment. A docs body is reassembled
 and lowered through the Markdown dialect, which also extracts its math. A code body
 is rendered straight, after resolving its highlighting language out of band: the
@@ -448,7 +448,7 @@ config default, else the chunk's own or its root's file extension. A chunk with 
 code but no known language is rendered as plain text and earns one warning, never an
 error. This pass is shared with the mint-only lock path so both see labels the same
 way.
-<<render every fragment>>=
+````chunk render every fragment
 /// Steps 1–2 (§6.2) per section: reassemble each docs body and lower it through the
 /// Markdown dialect (which also extracts math), and render each code body straight.
 /// Shared by `render` and the mint-only `cob lock` path so both see labels the same
@@ -564,7 +564,7 @@ fn render_frags(
                         line: section.line,
                     });
                 }
-                // The `@<<name@>>=` line is `section.line`; the body opens after it.
+                // The chunk's open line is `section.line`; the body opens after it.
                 let runs = section_runs.and_then(|m| m.get(&i)).map(Vec::as_slice);
                 let body = render_code(name, *continues, spans, section.line + 1, doc, lang, runs);
                 frags.push(Frag::Code(body));
@@ -668,12 +668,12 @@ fn rewrite_cites_with(
     out.push_str(&html[i..]);
     out
 }
-@
+````
 The scan pass walks every docs body once, in order, so every labelled float is seen
 before any id is assigned. It returns the collected scan and, per fragment, the
 first tag it opened — a page boundary the resolver uses to split pages. A code
 fragment has no first tag.
-<<scan every fragment>>=
+````chunk scan every fragment
 /// Step 4a: scan every docs body once, in order, so every labelled float is seen
 /// before ids are assigned. Returns the collected `Scan` and the per-fragment
 /// first-tag (a page boundary) so `resolve` can split pages.
@@ -692,13 +692,13 @@ fn scan_frags(frags: &[Frag]) -> Result<(Scan, Vec<Option<String>>), WeaveError>
     }
     Ok((scan, first_tags))
 }
-@
+````
 The mint-only path is \code{cob lock}. It runs the same render and scan passes so it
 sees the same labels the weaver would, then mints a frozen id for each, in document
 order, into the caller's lock. It renders no math and writes no HTML — it only
 grows the lock so the caller can persist it. The language config is empty because
 minting needs labels and floats, not colors.
-<<mint the lock without rendering>>=
+````chunk mint the lock without rendering
 /// Mint a frozen id (§7.1) for every labelled float, in document order, without
 /// rendering the site. This is `cob lock`: it grows the in-memory lock so the
 /// caller can persist it; it never renders math or writes HTML.
@@ -727,13 +727,13 @@ pub fn mint_lock(
     }
     Ok(())
 }
-@
+````
 One iterator names every label that earns a frozen id, in document order: each
 labelled float first, then each deeper heading the author pinned with a section id.
 A top-level heading is its own page and is addressed by the page id, so it needs no
 section id and is skipped. Both the mint path and the render path walk this same
 iterator, so they agree on which labels exist.
-<<every mintable label>>=
+````chunk every mintable label
 /// Every label that earns a frozen opaque id (§7.1), in document order: each
 /// labelled float, then each heading the author pinned with a node-namespace id
 /// — `sec:`, `def:`, `thm:`, and any other that is not a float, chunk, or
@@ -755,7 +755,7 @@ fn mintable(scan: &Scan) -> impl Iterator<Item = (&str, Kind, usize)> {
             earns.then_some((given, Kind::Section, h.section))
         }))
 }
-@
+````
 This is the whole-document render. It renders and scans every fragment, assigns
 each labelled float its frozen id (minting on miss, or failing under the locked
 mode on any label the committed lock lacks), computes the document-global plan,
@@ -764,7 +764,7 @@ wraps each section in its provenance envelope — hoisting sidenotes into the ma
 after math substitution, so a note that contains math carries its rendered form.
 Finally it splits the wrapped sections into pages at each heading and renders each
 page from the template, threading the previous and next links and the nav tree.
-<<render the whole document>>=
+````chunk render the whole document
 /// Steps 1–6 (§6.2) for the whole document, then the §5.3 page split. Docs
 /// bodies make two passes through the rewriter — scan, then apply — around the
 /// document-global `resolve::plan`, because numbering and cross-references
@@ -1210,7 +1210,7 @@ pub fn render(
         custom_assets,
     })
 }
-@
+````
 The template contexts turn a page's metadata into the values the template reads: a
 link is a title and a filename; a nav node is a title, an href, its children, and a
 \code{current} flag. \code{current} is true when the node is the landing entry of the page now
@@ -1218,7 +1218,7 @@ being woven — an h1's href is exactly that page's filename (\code{resolve.rs})
 cob renders every page on its own, it knows which entry is current and marks it
 statically, so the nav shows the reader's place with no script and in every browser.
 The sitemap passes an empty current, so it highlights nothing.
-<<the page link and nav context>>=
+````chunk the page link and nav context
 fn link_context(meta: &PageMeta) -> minijinja::Value {
     minijinja::context! { title => meta.title, href => meta.filename }
 }
@@ -1236,11 +1236,11 @@ fn nav_context(nodes: &[NavNode], current: &str) -> Vec<minijinja::Value> {
         })
         .collect()
 }
-@
+````
 A node page sits one directory down, so its nav links need a \code{../} prefix; it
 marks nothing current. A breadcrumb step and a backlink are each a title and an
 href, so one helper serves both.
-<<the node page context>>=
+````chunk the node page context
 fn rebased_nav(nodes: &[NavNode], base: &str) -> Vec<minijinja::Value> {
     nodes
         .iter()
@@ -1261,7 +1261,7 @@ fn links_context(links: &[transclude::Link]) -> Vec<minijinja::Value> {
         .map(|l| minijinja::context! { title => l.title, href => l.href })
         .collect()
 }
-@
+````
 KaTeX's CSS and fonts are mandatory, not decorative: without the stylesheet both
 the MathML and HTML layers render and every equation appears twice. They are copied
 in from the pinned dist, never linked to a CDN, so the site stays a sealed
@@ -1269,7 +1269,7 @@ artifact. The old copy is cleared first because files from the read-only Nix sto
 keep their read-only mode. Only the woff2 fonts are shipped — every browser that
 renders MathML supports it — and they are sorted before copying, for deterministic
 output.
-<<copy the katex assets>>=
+````chunk copy the katex assets
 <<the embedded katex dist>>
 
 /// KaTeX's CSS and fonts are mandatory, not decorative: without the stylesheet
@@ -1344,13 +1344,13 @@ fn write_embedded_katex(_dst: &Path) -> Result<(), WeaveError> {
             .to_string(),
     ))
 }
-@
+````
 The embedded dist is \code{include_bytes!}d from the pinned \code{COB_KATEX_ASSETS} at build
 time, so the version pin stays in the flake (§6.3) and no fonts are vendored in the
 source tree. The font list is fixed for the pinned KaTeX version; a bump changes
 the list here and the hash in the flake together. This module exists only under
 the \code{embed-assets} feature, so a default build never reads the env at compile time.
-<<the embedded katex dist>>=
+````chunk the embedded katex dist
 /// The pinned KaTeX dist, baked in at build time from `COB_KATEX_ASSETS` for a
 /// standalone binary. Kept sorted for deterministic output (§8).
 #[cfg(feature = "embed-assets")]
@@ -1390,7 +1390,7 @@ mod embedded_katex {
         font!("KaTeX_Typewriter-Regular.woff2"),
     ];
 }
-@
+````
 A woven page may reference a local asset — a figure's `<img src="imgs/fig.svg">`
 (§6.4). For the site to be self-contained, cob copies each referenced local asset
 into the output at the same relative path, so the archive carries exactly the
@@ -1399,7 +1399,7 @@ or a `#` fragment is left alone; one that escapes the project with `..` is skipp
 a missing file is a W107 warning, never a hard error, so a typo does not fail a
 build. Paths resolve against the working directory, the same as `cob.toml` and the
 bibliography.
-<<copy referenced assets>>=
+````chunk copy referenced assets
 /// Every `src="…"` in the HTML that names a local, in-project relative file.
 fn referenced_assets(html: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -1462,7 +1462,7 @@ fn copy_assets(out: &Path, site: &Site) -> Vec<Lint> {
     }
     lints
 }
-@
+````
 The top-level entry loads the lock, renders the whole document, then writes it to
 disk. A dev-time weave writes any newly minted ids back so they freeze; the locked
 mode never mints, so it never touches the committed lock. It writes every page, the
@@ -1470,7 +1470,7 @@ sitemap page, the stylesheet, the KaTeX assets, and the local assets each page
 references. The archival JSON is opt-in: plain weave stays an
 HTML-only artifact, and the archive flag adds the whole-document JSON plus one
 per-page file beside its HTML for the annotation layer.
-<<write the site to disk>>=
+````chunk write the site to disk
 #[allow(clippy::too_many_arguments)]
 pub fn write_site(
     doc: &DocModel,
@@ -1552,13 +1552,13 @@ pub fn write_site(
     }
     Ok(site)
 }
-@
+````
 The tests exercise the whole weaver against the pinned fixtures: the hello fixture
 for the single-page invariants and the book fixture for pages, floats, and
 cross-references, with the md fixture for the Markdown dialect. Each test is its
 own chunk; the shared scaffolding builds a model from a fixture and renders it with
 a fixed-seed minter so float ids are deterministic within a run.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1643,11 +1643,11 @@ mod tests {
 
     <<a float is a node with its own page and can be transcluded>>
 }
-@
+````
 The scaffolding builds a model from a fixture's markup and renders it. The
 fixed-seed minter makes float ids deterministic within a run; their exact value is
 arbitrary, since the lock module owns the minting contract.
-<<test scaffolding>>=
+````chunk test scaffolding
 fn model_of(markup: &str) -> DocModel {
     crate::model::build(&crate::noweb::parse(markup).unwrap()).unwrap()
 }
@@ -1701,10 +1701,10 @@ fn dev_render_lang(doc: &DocModel, lang: Option<Lang>, embed: &str) -> Site {
     )
     .unwrap()
 }
-@
+````
 A locked weave with an empty lock cannot supply the frozen ids the book's floats
 need, so it must fail with the missing-label error rather than mint.
-<<a locked weave errors on a missing label>>=
+````chunk a locked weave errors on a missing label
 #[test]
 fn locked_weave_errors_on_a_label_absent_from_the_lock() {
     // book.cob carries labelled floats; an empty lock under `--locked` cannot
@@ -1730,12 +1730,12 @@ fn locked_weave_errors_on_a_label_absent_from_the_lock() {
     assert!(matches!(err, WeaveError::Lock(LockError::Missing { .. })));
     assert!(err.to_string().contains("E031"));
 }
-@
+````
 Two assertion helpers over rendered HTML. One reads the frozen id off the float
 anchored at a given id; ids are exactly four characters. One renders the hello
 fixture — a single page — as a string. One strips only the color wrappers, keeping
 every structural span and text node, so a structural assertion can ignore coloring.
-<<assertion helpers over rendered html>>=
+````chunk assertion helpers over rendered html
 /// The frozen opaque id stamped on the float anchored at `anchor` (§7.1);
 /// ids are exactly four characters.
 fn id_at(html: &str, anchor: &str) -> String {
@@ -1780,10 +1780,10 @@ fn strip_tok(html: &str) -> String {
     }
     out
 }
-@
+````
 Every section carries its source file and line, a docs section its id, and a code
 section its chunk name and a margin slot.
-<<a page carries provenance and margin slots>>=
+````chunk a page carries provenance and margin slots
 #[test]
 fn page_has_provenance_and_margin_slots() {
     let html = hello_html();
@@ -1793,21 +1793,21 @@ fn page_has_provenance_and_margin_slots() {
     assert!(html.contains("data-nw-line=\"6\" data-chunk=\"lex a token\""));
     assert!(html.contains("<div class=\"margin-slot\" data-for=\"sec-2\"></div>"));
 }
-@
+````
 The definition and continuation markers follow noweb's convention in the chunk
 header.
-<<the continuation marker matches noweb>>=
+````chunk the continuation marker matches noweb
 #[test]
 fn continuation_marker_matches_noweb_convention() {
     let html = hello_html();
     assert!(html.contains("<dfn>lex a token</dfn>&gt;&gt;="));
     assert!(html.contains("<dfn>lex a token</dfn>&gt;&gt;+="));
 }
-@
+````
 A chunk use links to the first section that defines the named chunk, even when the
 definition comes later in the document — a forward reference resolved against the
 finished model.
-<<chunk uses link to the first definition>>=
+````chunk chunk uses link to the first definition
 #[test]
 fn chunk_uses_link_to_first_definition() {
     let html = hello_html();
@@ -1816,10 +1816,10 @@ fn chunk_uses_link_to_first_definition() {
     assert!(html.contains("<a href=\"#sec-8\">&lt;<i>next char</i>&gt;</a>"));
     assert!(html.contains("<a href=\"#sec-2\">&lt;<i>lex a token</i>&gt;</a>"));
 }
-@
+````
 Math is rendered by KaTeX at weave time, not left as a placeholder, and the
 angle-bracket case survives as an entity rather than becoming a tag.
-<<math is rendered not left as a placeholder>>=
+````chunk math is rendered not left as a placeholder
 #[test]
 fn math_is_rendered_not_left_as_placeholder() {
     let site = dev_render(&fixture(), "");
@@ -1830,12 +1830,12 @@ fn math_is_rendered_not_left_as_placeholder() {
     // The angle-bracket case must survive as an entity, never a tag.
     assert!(!html.contains("<span>a < b</span>"));
 }
-@
+````
 A page carries only the progressive-enhancement aids — the \code{nav-spy},
 \code{cob-transclude}, and \code{cob-backlinks} scripts — and no other script. This is the
 §6.3 modularity guard: math renders at weave time and transclusion and backlinks are
 lazy elements, so nothing the content depends on is ever a script, and none leaks in.
-<<a page carries only the enhancement scripts>>=
+````chunk a page carries only the enhancement scripts
 #[test]
 fn a_page_carries_only_the_enhancement_scripts() {
     let html = &dev_render(&fixture(), "").pages[0].html;
@@ -1847,27 +1847,27 @@ fn a_page_carries_only_the_enhancement_scripts() {
     assert!(html.contains("<script id=\"nav-spy\">"));
     assert!(html.contains("<script id=\"cob-transclude\">"));
 }
-@
+````
 A \code{\code{…}} span in prose renders as an escaped inline code element.
-<<quoted code renders as escaped code>>=
+````chunk quoted code renders as escaped code
 #[test]
 fn quoted_code_renders_as_escaped_code() {
     let html = hello_html();
     assert!(html.contains("<code>lex()</code>"));
     assert!(html.contains("<code>tokens[0]</code>"));
 }
-@
+````
 An escaped dollar in prose survives to the output as a literal dollar sign, not the
 start of a math run.
-<<an escaped dollar survives to output>>=
+````chunk an escaped dollar survives to output
 #[test]
 fn escaped_dollar_survives_to_output() {
     assert!(hello_html().contains("cost is $5."));
 }
-@
+````
 A code body is HTML-escaped. The hello root is a Rust file, so its chunks highlight
 as Rust; stripping the color leaves the escaped plain-text payload intact.
-<<a code body is html escaped>>=
+````chunk a code body is html escaped
 #[test]
 fn code_body_is_html_escaped() {
     // hello.cob's root is `src/main.rs`, so its chunks now highlight as Rust
@@ -1876,10 +1876,10 @@ fn code_body_is_html_escaped() {
     assert!(html.contains("println!(&quot;{count}&quot;);"));
     assert!(html.contains("let mut tokens = vec![];"));
 }
-@
+````
 A chunk is a foldable block, open by default, with its header in the summary so a
 collapsed chunk still shows which chunk a cross-reference landed on.
-<<chunks are collapsible and open by default>>=
+````chunk chunks are collapsible and open by default
 #[test]
 fn chunks_are_collapsible_and_open_by_default() {
     let html = hello_html();
@@ -1888,17 +1888,17 @@ fn chunks_are_collapsible_and_open_by_default() {
     // which chunk a cross-reference landed on.
     assert!(html.contains("<dfn>next char</dfn>&gt;&gt;=</span></summary>"));
 }
-@
+````
 Line numbers are source coordinates carried in an attribute, never text. Stripping
 the color leaves the coordinate and payload reading the same, and no number appears
 as a copyable text node.
-<<line numbers are nw coordinates in attributes>>=
+````chunk line numbers are nw coordinates in attributes
 #[test]
 fn line_numbers_are_nw_coordinates_in_attributes() {
     // Coloring nests inside each `.line`; strip it so the coordinate + payload
     // invariant reads the same whether or not the chunk highlights.
     let html = strip_tok(&hello_html());
-    // fixtures/hello.cob: `@<<next char@>>=` is line 22, its one body line 23.
+    // fixtures/hello.cob: the `next char` chunk opens at line 22, its one body line 23.
     assert!(html
         .contains("<span class=\"line\" data-line=\"23\">input.next().unwrap()</span></pre>"));
     // src/main.rs opens at line 28; `println!` is the fifth body line.
@@ -1907,10 +1907,10 @@ fn line_numbers_are_nw_coordinates_in_attributes() {
     // Numbers are never text, so they cannot be copied or quoted.
     assert!(!html.contains(">23 input"));
 }
-@
+````
 The Rust root colors its chunks — keywords and strings become tokens — while the
 chunk-use hole is spliced back verbatim and never wrapped in a color span.
-<<rust root chunks are highlighted and holes stay opaque>>=
+````chunk rust root chunks are highlighted and holes stay opaque
 #[test]
 fn rust_root_chunks_are_highlighted_and_holes_stay_opaque() {
     // hello.cob's root is `src/main.rs`, so tier-3 resolution colors it as Rust
@@ -1923,10 +1923,10 @@ fn rust_root_chunks_are_highlighted_and_holes_stay_opaque() {
     assert!(html.contains("<a href=\"#sec-8\">&lt;<i>next char</i>&gt;</a>"));
     assert!(!html.contains("tok-") || !html.contains("tok-\">&lt;<i>"));
 }
-@
+````
 A root whose name carries no known extension resolves to no language, so its body
 is plain escaped text and earns exactly one warning.
-<<a no-language chunk falls back to plain text>>=
+````chunk a no-language chunk falls back to plain text
 #[test]
 fn a_no_language_chunk_falls_back_to_plain_text_with_one_warning() {
     // A root whose name carries no known extension resolves to no language, so
@@ -1945,37 +1945,37 @@ fn a_no_language_chunk_falls_back_to_plain_text_with_one_warning() {
     assert_eq!(w104.len(), 1);
     assert!(w104[0].message.contains("notes.txt"));
 }
-@
+````
 The newline that terminates a chunk opens a line with no source line, so no empty
 trailing line is emitted.
-<<the chunk terminator adds no empty line>>=
+````chunk the chunk terminator adds no empty line
 #[test]
 fn chunk_terminator_adds_no_empty_line() {
     let html = hello_html();
     assert!(!html.contains("data-line=\"24\""));
     assert!(!html.contains("data-line=\"35\""));
 }
-@
+````
 The embed snippet passed to the render is injected into the page verbatim.
-<<an embed snippet is injected>>=
+````chunk an embed snippet is injected
 #[test]
 fn embed_snippet_is_injected() {
     let site = dev_render(&fixture(), "<script src=\"x.js\"></script>");
     assert!(site.all_html().contains("<script src=\"x.js\"></script>"));
 }
-@
+````
 Two renders of the same input produce byte-identical HTML.
-<<output is byte deterministic>>=
+````chunk output is byte deterministic
 #[test]
 fn output_is_byte_deterministic() {
     let a = dev_render(&book(), "");
     let b = dev_render(&book(), "");
     assert_eq!(a.all_html(), b.all_html());
 }
-@
+````
 The book splits into three pages at each top-level heading, and a chunk defined
 under one heading lands on that heading's page.
-<<the book splits into three pages>>=
+````chunk the book splits into three pages
 #[test]
 fn book_splits_into_three_pages_at_h1() {
     let site = dev_render(&book(), "");
@@ -1985,19 +1985,19 @@ fn book_splits_into_three_pages_at_h1() {
     assert!(site.pages[1].html.contains("data-chunk=\"lex a token\""));
     assert!(!site.pages[0].html.contains("data-chunk=\"lex a token\""));
 }
-@
+````
 A page-boundary heading becomes the page id and is stamped on the heading anchor.
-<<a page-boundary heading becomes the page id>>=
+````chunk a page-boundary heading becomes the page id
 #[test]
 fn page_boundary_h1_becomes_the_page_id() {
     let site = dev_render(&book(), "");
     assert!(site.pages[1].html.contains("<h1 id=\"parsing\">Parsing</h1>"));
     assert!(site.pages[0].html.contains("<h1 id=\"index\">Front matter</h1>"));
 }
-@
+````
 Each labelled float carries its frozen opaque id as an attribute and repeats it on
 the caption, with no sequential number anywhere; an opted-out equation keeps no id.
-<<floats are identified by opaque id only>>=
+````chunk floats are identified by opaque id only
 #[test]
 fn floats_are_identified_by_opaque_id_in_attributes_only() {
     let html = dev_render(&book(), "").all_html();
@@ -2026,10 +2026,10 @@ fn floats_are_identified_by_opaque_id_in_attributes_only() {
     assert!(html.contains("data-nonumber"));
     assert!(!html.contains("data-nonumber data-id"));
 }
-@
+````
 A cross-page reference names its target page in the href and gets generated text
 built from the target's opaque id, keeping author-supplied link text when present.
-<<cross-page refs are page qualified>>=
+````chunk cross-page refs are page qualified
 #[test]
 fn cross_page_refs_are_page_qualified_and_get_generated_text() {
     let site = dev_render(&book(), "");
@@ -2051,10 +2051,10 @@ fn cross_page_refs_are_page_qualified_and_get_generated_text() {
         .html
         .contains(&format!("href=\"parsing.html#fig-pipeline\">Figure {fig}</a>")));
 }
-@
+````
 A labelled section leads with an empty permalink anchor whose opaque id lives in an
 attribute, and a cross-page reference back to it reuses the very same id.
-<<a labelled section carries a clickable uid>>=
+````chunk a labelled section carries a clickable uid
 #[test]
 fn labelled_section_carries_a_clickable_opaque_uid() {
     let site = dev_render(&book(), "");
@@ -2080,10 +2080,10 @@ fn labelled_section_carries_a_clickable_opaque_uid() {
         "<a data-ref=\"sec:lexing\" href=\"parsing.html#sec-lexing\">Section {uid}</a>"
     )));
 }
-@
+````
 A chunk reference points at the chunk's defining section, a fragment link when the
 definition is on the same page.
-<<a chunk ref links into code>>=
+````chunk a chunk ref links into code
 #[test]
 fn chunk_ref_links_into_code() {
     let site = dev_render(&book(), "");
@@ -2093,10 +2093,10 @@ fn chunk_ref_links_into_code() {
         .html
         .contains("href=\"#sec-3\">lex a token</a>"));
 }
-@
+````
 The nav tree is emitted on every page, and a labelled heading's nav link follows
 its label anchor rather than its text slug.
-<<the nav tree is on every page>>=
+````chunk the nav tree is on every page
 #[test]
 fn nav_tree_is_emitted_on_every_page() {
     let site = dev_render(&book(), "");
@@ -2118,11 +2118,11 @@ fn nav_tree_is_emitted_on_every_page() {
         .html
         .contains("href=\"index.html\" aria-current=\"page\""));
 }
-@
+````
 The sitemap page lists every navigation target once. It is a single standalone page,
 so a nested link that lives on a child page still resolves through the same href the
 nav tree uses.
-<<the sitemap lists every page>>=
+````chunk the sitemap lists every page
 #[test]
 fn sitemap_lists_every_page() {
     let site = dev_render(&book(), "");
@@ -2134,12 +2134,12 @@ fn sitemap_lists_every_page() {
     // The footer of an ordinary page points at the sitemap.
     assert!(site.pages[0].html.contains("href=\"sitemap.html\""));
 }
-@
+````
 A citation marker lowers to the same link element everywhere, but its target depends
 on the page. A document page links into its own References list. A node page has no
 such list — its body is cut before the citation pass — so it links to the cited work's
 own page. Without this a citation inside any node was a dead, empty anchor.
-<<a cite lowers to the href its page wants>>=
+````chunk a cite lowers to the href its page wants
 #[test]
 fn a_cite_lowers_to_the_href_its_page_wants() {
     let mut ids = BTreeMap::new();
@@ -2154,11 +2154,11 @@ fn a_cite_lowers_to_the_href_its_page_wants() {
         "<p>x <a class=\"cite\" data-id=\"ab12\" href=\"ab12.html\"></a> y <a data-cite=\"nokey\"></a></p>"
     );
 }
-@
+````
 The archival JSON is the current schema, round-trips through the per-page narrowing,
 and hoists a sidenote into a margin entry — stripped from the JSON prose, shown on
 the woven page as an inline marker plus a footnote at the foot of the page.
-<<site json is current schema and hoists sidenotes>>=
+````chunk site json is current schema and hoists sidenotes
 #[test]
 fn site_json_is_current_schema_and_hoists_sidenotes() {
     let site = dev_render(&book(), "");
@@ -2186,10 +2186,10 @@ fn site_json_is_current_schema_and_hoists_sidenotes() {
     assert!(parsing.contains("<li id=\"sn-1\">"));
     assert!(parsing.contains("href=\"#fnref-1\""));
 }
-@
+````
 Footer pagination links each page's neighbours: the middle page has both, the first
 has no previous, and the last has no next.
-<<footer pagination links neighbours>>=
+````chunk footer pagination links neighbours
 #[test]
 fn footer_pagination_links_neighbours() {
     let site = dev_render(&book(), "");
@@ -2200,10 +2200,10 @@ fn footer_pagination_links_neighbours() {
     assert!(!site.pages[0].html.contains("rel=\"prev\""));
     assert!(!site.pages[2].html.contains("rel=\"next\""));
 }
-@
+````
 The Markdown dialect renders prose to HTML — emphasis and strong, not literal
 markup — and renders every math run, whether a fenced block or an inline run.
-<<the markdown dialect renders prose and fenced math>>=
+````chunk the markdown dialect renders prose and fenced math
 #[test]
 fn markdown_dialect_renders_prose_and_fenced_math() {
     let site = dev_render(&md(), "");
@@ -2220,11 +2220,11 @@ fn markdown_dialect_renders_prose_and_fenced_math() {
     assert!(html.contains("class=\"equation\""));
     assert!(html.contains("katex"));
 }
-@
+````
 A Markdown figure fence becomes a real figure with an anchored id and an opaque id
 on its caption; a table fence parses its pipe table; a labelled equation is
 identified; and every inline reference resolves to its float's anchor.
-<<markdown fenced floats are labelled and referenced>>=
+````chunk markdown fenced floats are labelled and referenced
 #[test]
 fn markdown_fenced_floats_are_labeled_and_referenced() {
     let site = dev_render(&md(), "");
@@ -2246,13 +2246,13 @@ fn markdown_fenced_floats_are_labeled_and_referenced() {
     assert!(html.contains("href=\"#fig-diagram\""));
     assert!(html.contains("href=\"#tbl-units\""));
 }
-@
-The transclusion fixture puts a title, an intro, and the source heading in one \code{@}
-chunk, then transcludes the source into a later section. The directive lowers to a
+````
+The transclusion fixture puts a title, an intro, and the source heading in one
+docs chunk, then transcludes the source into a later section. The directive lowers to a
 lazy \code{<cob-transclude>} pointing at the source's own \code{n/} page, with a link
 fallback — no server-side copy, so the body is not duplicated and its ids are not
 scoped (§10).
-<<transclusion cuts a heading node and scopes the copy>>=
+````chunk transclusion cuts a heading node and scopes the copy
 #[test]
 fn transclusion_lowers_to_a_lazy_element() {
     let site = dev_render(&tx(), "");
@@ -2274,12 +2274,12 @@ fn transclusion_lowers_to_a_lazy_element() {
     // The target resolves, so no transclusion lint fires.
     assert!(site.lints.iter().all(|l| l.code != "W105" && l.code != "W106"));
 }
-@
+````
 Every uid-bearing node earns a standalone page under \code{n/} (§10). The page carries
 the node body, a breadcrumb up to the document \code{h1}, a "read in context" link to
 the canonical anchor, and the backlinks that point at the node. The \code{h1} itself
 has no uid, so it earns no page.
-<<every node gets a standalone page with context and backlinks>>=
+````chunk every node gets a standalone page with context and backlinks
 #[test]
 fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
     let site = dev_render(&tx(), "");
@@ -2325,12 +2325,12 @@ fn every_node_gets_a_standalone_page_with_context_and_backlinks() {
         .expect("source page backlinks the reuse node page");
     assert_eq!(reuse_uid.len(), ID_LEN as usize);
 }
-@
+````
 A labelled float is a node too (§10). \code{\transclude{fig:…}} lowers to a lazy
 \code{<cob-transclude>} pointing at the figure's own page, with a link fallback naming
 the caption. The figure and the equation each earn a node page, and each leads with
 a node-page link in context.
-<<a float is a node with its own page and can be transcluded>>=
+````chunk a float is a node with its own page and can be transcluded
 #[test]
 fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
     let site = dev_render(&txf(), "");
@@ -2367,4 +2367,4 @@ fn a_float_is_a_node_with_its_own_page_and_can_be_transcluded() {
     let eqid = id_at(idx, "eq-demo");
     assert!(site.node_pages.iter().any(|(p, _)| p == &format!("n/{eqid}.html")));
 }
-@
+````

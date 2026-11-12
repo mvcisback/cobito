@@ -11,6 +11,7 @@ mod lsp;
 mod markdown;
 mod markup;
 mod math;
+mod migrate;
 mod model;
 mod noweb;
 mod prose;
@@ -51,6 +52,7 @@ USAGE:
     cob dump-model <file.cob>...   fold the IR into the document model, print it
     cob tangle <file.cob>...       tangle every root chunk
     cob untangle <file.cob>        patch the .cob from edits made to its tangled files (§11)
+    cob migrate <file.cob>...      rewrite noweb chunk syntax to the fence syntax (§4.3)
 
     cob --explain <CODE>         print the long form of a diagnostic (e.g. E014)
 
@@ -90,6 +92,7 @@ fn main() -> ExitCode {
         Some(("lsp", rest)) if rest.is_empty() => lsp_cmd(),
         Some(("tangle", args)) if !args.is_empty() => tangle_cmd(args),
         Some(("untangle", args)) if !args.is_empty() => untangle_cmd(args),
+        Some(("migrate", files)) if !files.is_empty() => migrate_cmd(files),
         Some(("--version" | "-V", _)) => {
             println!("cob {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -924,6 +927,40 @@ fn untangle_cmd(args: &[String]) -> ExitCode {
             eprintln!("{e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `cob migrate <file.cob>...`: rewrite noweb chunk syntax to the fence syntax.
+fn migrate_cmd(files: &[String]) -> ExitCode {
+    let mut failed = false;
+    for file in files {
+        let text = match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("error[E044]: could not read {file}: {e}");
+                failed = true;
+                continue;
+            }
+        };
+        match migrate::convert(&text) {
+            Ok(m) if m.text == text => println!("unchanged {file}"),
+            Ok(m) => match std::fs::write(file, &m.text) {
+                Ok(()) => println!("migrated {file} ({} chunks)", m.chunks),
+                Err(e) => {
+                    eprintln!("error[E044]: could not write {file}: {e}");
+                    failed = true;
+                }
+            },
+            Err(e) => {
+                eprintln!("error[E044]: {file}:{e}");
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 

@@ -1,4 +1,3 @@
-@
 # cobito — a web-first literate programming system
 
 This document is cobito's own specification, told as a literate program. cobito
@@ -21,12 +20,10 @@ cob has six goals.
    is not a v1 concern.
 2. Language-agnostic chunks. A \code{.cob} file's chunk syntax carries no language of
    its own, so a chunk can hold any language the project needs. This goal used to
-   read "noweb-compatible" — \code{<<name>>=} and bare \code{@} are noweb's own chunk
-   syntax, kept so \code{notangle} could once read a \code{.cob} file unchanged. M17 adds a
-   second, cob-only fence syntax for the same two jobs and begins retiring the
-   noweb spelling (§sec:fence-chunks in \code{markup.rs.cob}); once that retirement is
-   done, no external tool reads \code{.cob} syntax at all, and this goal is about the
-   chunk model staying language-agnostic, not about noweb compatibility.
+   read "noweb-compatible": \code{<<name>>=} and a bare \code{@} were noweb's own chunk syntax,
+   so \code{notangle} could read a \code{.cob} file unchanged. M17 retired that syntax. A chunk
+   is now a fence (§sec:fence-chunks in \code{markup.rs.cob}), and no external tool reads
+   \code{.cob} syntax at all. The goal is the chunk model, which stays language-agnostic.
 3. Static generator only. cob is the weaver and the tangler. It ships no server.
    Margin commenting is a separate tool with its own spec, \code{ANNOTATIONS.md}; cob's
    sole obligation to it is annotation-ready HTML (\code{rewrite.rs}).
@@ -58,7 +55,7 @@ cob has six goals.
 |---|---|
 | project | A directory with a \code{cob.toml}. It holds one or more documents. |
 | document | An ordered list of \code{.cob} files woven into one site with unified numbering. It has an id, used in URLs. |
-| chunk | noweb's unit: a docs chunk (prose) or a code chunk (named, tangleable). |
+| chunk | A docs chunk (prose) or a code chunk (named, tangleable). A code chunk is a fence. |
 | section | cob's unit of anchoring and rendering. One chunk makes one section. |
 | page | An output HTML file. It holds a contiguous run of sections. |
 | root | A code chunk that tangles to a file on disk. |
@@ -73,12 +70,13 @@ resolution are all document-wide.
 ## Architecture {#sec:8GfD}
 
 cob reads and tangles a \code{.cob} file with its own Rust code. It runs no external
-tool. The native reader (\code{src/markup.rs}) folds a \code{.cob} file into noweb's
-line-oriented IR — the same events noweb's \code{markup} makes — and cob owns
+tool. The native reader (\code{src/markup.rs}) folds a \code{.cob} file into a
+line-oriented IR — the event type that noweb's \code{markup} first made — and cob owns
 everything downstream. cob never used \code{noweave}: it makes prose-to-HTML itself,
 and the IR hands it the chunk structure as data, not as generated markup it must
 read back. noweb stays only as a test oracle: a frozen set of \code{markup} outputs
-proves the native reader right (§4.1, §15).
+proves the native reader right on every code chunk and every line of prose
+(§4.1, §15).
 
 ```verbatim
   PHASE 1 — static generator (no Python, no server)
@@ -118,6 +116,7 @@ Each module carries the specification for its own job. This is the reading order
 | Concern | Module |
 |---|---|
 | The native reader: a \code{.cob} file to the IR event stream | \code{src/markup.rs.cob} |
+| The migration tool: noweb chunk syntax to the fence syntax | \code{src/migrate.rs.cob} |
 | The IR event type and its parser; verified noweb behavior; the oracle | \code{src/noweb.rs.cob} |
 | The document model: chunk continuation, roots, line counting | \code{src/model.rs.cob} |
 | The project manifest, the prose dialect, config keys | \code{src/config.rs.cob} |
@@ -338,31 +337,41 @@ those goldens.
 
 ## Retiring the noweb chunk syntax (M17) {#sec:fence-milestone}
 
-M15 removed noweb as a running tool. M17 removes its chunk syntax from \code{.cob}
-files too — \code{<<name>>=} and bare \code{@} are the two remaining pieces noweb left
-behind, and nothing left depends on an external tool being able to read them.
+M15 removed noweb as a running tool. M17 removed its chunk syntax from \code{.cob}
+files too. \code{<<name>>=} and a bare \code{@} were the two pieces noweb left behind, and
+nothing depended on an external tool being able to read them. The slices, in order:
 
 - **A fence-based chunk syntax — done.** \code{markup.rs.cob} §sec:fence-chunks adds a
-  second spelling for the two jobs noweb's syntax did: a code chunk opens with
-  four or more backticks, the word \code{chunk}, and a name, and closes with a
-  backtick run at least that long. A chunk use (\code{<<name>>}) and its escape
-  (\code{@@<<}/\code{@@>>}) are unchanged either way; only the open/close delimiter moved.
-  Both spellings work side by side, even continuing the same chunk, so every
-  existing \code{.cob} file keeps reading.
-- **Migrate every \code{.cob} file — in progress.** This project's own corpus, written
-  before the fence syntax existed, still uses the noweb spelling throughout. A
-  converter rewrites it mechanically, chunk by chunk, with no change to a
-  section's content.
-- **Remove the noweb spelling — in progress.** Once the corpus reads clean, the
-  reader stops accepting \code{<<name>>=} and bare \code{@}. noweb's \code{markup} cannot read
-  the fence syntax, so \code{fixtures/*.markup} (the noweb-verified oracle, §15) is
-  frozen as a historical record rather than a live gate: the reader check that
-  diffs cob against it is retired, and a native equivalence test (the fence
-  syntax reading the same as the noweb syntax once did) takes its place.
+  spelling for the two jobs noweb's syntax did: a code chunk opens with four or more
+  backticks, the word \code{chunk}, and a name, and closes with a backtick run at least
+  that long. A chunk use (\code{<<name>>}) and its escape (\code{@@<<}/\code{@@>>}) did not
+  change. Only the open and close lines moved. The first release kept both
+  spellings side by side.
+- **A converter — done.** \code{cob migrate FILE...} (\code{migrate.rs.cob}) rewrites a file
+  from noweb's syntax to the fence syntax, chunk by chunk, with no change to a code
+  byte. It stops with E044 on a file it cannot convert without a guess.
+- **This project's corpus moved — done.** Every \code{.cob} file here went through the
+  converter. The tangled output of each file is the same, byte for byte. The prose
+  of each file is the same too. The one change is the divider between two
+  documentation chunks: noweb's syntax had one, and the new syntax has none, so
+  those chunks merged. A heading of the first level still starts a new chunk, so
+  a page boundary did not move (§sec:read-docs).
+- **The noweb spelling is removed — done.** The reader no longer accepts
+  \code{<<name>>=} or a bare \code{@}. A file that uses them gets E043, with the fix. The
+  \code{fixtures/*.markup} goldens (the noweb-verified oracle, §15) stay frozen. The fixtures
+  use the fence syntax, so noweb cannot read them again. The \code{reader} check
+  keeps the oracle useful for what it can still judge: it compares every code chunk and
+  every line of prose with the golden.
 
-This is a breaking release: a \code{.cob} file written before M17 finished needs the
-converter run on it once. \code{tree-sitter-cob} keeps both spellings indefinitely, so
-an editor can still open an unconverted file.
+This was a breaking release. A \code{.cob} file written before M17 needs \code{cob migrate} once.
+\code{tree-sitter-cob} still colors the old spelling, so an editor can open an
+unconverted file.
+
+The build seeds from a released \code{tangled} snapshot. So a source file must use only
+syntax that the pinned seed understands. This slice kept to that rule. The reader now
+tracks a Markdown fenced block (§sec:read-docs), but no source here shows a chunk line
+inside one, because the seed before this release does not know that rule.
+
 
 ## Open questions {#sec:QznE}
 
@@ -423,6 +432,8 @@ introduces a code, it claims the next free number in this registry.
 | E040 | a \code{\cite} names a key no bibliography has | \code{weave.rs} |
 | E041 | \code{cob backlinks} could not write a fragment | \code{backlinks.rs} |
 | E042 | a \code{custom} fence handler fails (unregistered, non-zero exit, script, bad envelope) | \code{custom.rs} |
+| E043 | a \code{.cob} file uses noweb's retired chunk syntax | \code{markup.rs} |
+| E044 | \code{cob migrate} cannot convert a file without a guess, or cannot read or write it | \code{migrate.rs} |
 | W102 | chunk defined but never used | \code{model.rs} |
 | W103 | figure or table without a caption | \code{resolve.rs} |
 | W104 | code chunk resolved to no known language | \code{weave.rs} |
@@ -437,12 +448,18 @@ introduces a code, it claims the next free number in this registry.
   Never add one speculatively.
 - No panics outside tests. Everything user-facing goes through the diagnostic format
   with a code.
-- Every noweb-boundary discovery gets a fixture. A minimal \code{.cob} plus regenerated
-  \code{.markup} pair and a test is how the verified-noweb prose stays true.
+- Every discovery about how a reader or tangler must behave gets a fixture and a test.
+  The test compares the native code with a frozen golden where one can still judge
+  the case.
 - noweb is gone from the run time. A native reader (\code{markup.rs}) replaced the
   \code{markup} process, and a native tangler (\code{tangle.rs}) replaced \code{notangle} (M15).
   noweb stays only as a test oracle — the frozen \code{markup} and \code{notangle} goldens.
-  Remake the affected golden when a fixture changes.
+  Both sets of goldens are frozen: noweb cannot read the fence syntax, so no new golden
+  can come from it. If a fixture must change its tangled text, the native tangler makes
+  the new golden, and a reviewer reads the diff.
+- A source file uses only syntax that the pinned \code{seed} (§13) already reads. The build
+  tangles every \code{.cob} with the seed first. A syntax change needs a release before
+  any source relies on it.
 - Determinism is a feature. No timestamps, and no HashMap iteration order in output —
   a \code{BTreeMap} or an explicit sort.
 - When a decision conflicts with observed reality, verification wins: probe the real
@@ -451,4 +468,3 @@ introduces a code, it claims the next free number in this registry.
 All \code{.cob} prose follows ASD-STE100 Simplified Technical English: short active
 present-tense sentences, one idea each, approved plain verbs, and the reason before
 the mechanism.
-@

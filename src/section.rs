@@ -195,10 +195,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cob-sec-md-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.cob");
-        std::fs::write(&path, "@ # Title\n\n## Lexing\nprose\n").unwrap();
+        std::fs::write(&path, "# Title\n\n## Lexing\nprose\n").unwrap();
         apply_anchors(&path, &[(3, "k3f9".into())]).unwrap();
         let got = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(got, "@ # Title\n\n## Lexing {#sec:k3f9}\nprose\n");
+        assert_eq!(got, "# Title\n\n## Lexing {#sec:k3f9}\nprose\n");
         std::fs::remove_dir_all(&dir).ok();
     }
 

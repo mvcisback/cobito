@@ -42,6 +42,7 @@ module.exports = grammar({
       optional($.code_body),
       $.fence_close,
       '\n',
+      repeat($.doc_line),
     ),
 
     fence_chunk_name: $ => /[^\n]+/,

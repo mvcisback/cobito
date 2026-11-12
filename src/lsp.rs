@@ -332,7 +332,7 @@ mod tests {
         // then ask for its tokens.
         s.handle(&json!({"method":"textDocument/didOpen","params":{"textDocument":{
             "uri":"file:///x/demo.cob",
-            "text":"@ # t\n\n<<src/main.rs>>=\nfn main() {}\n@\n"
+            "text":"# t\n\n````chunk src/main.rs\nfn main() {}\n````\n"
         }}}));
         let resp = s
             .handle(&json!({"jsonrpc":"2.0","id":2,

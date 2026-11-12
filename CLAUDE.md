@@ -2,11 +2,12 @@
 
 A web-first literate programming system (the command is `cob`, sources are
 `.cob`), originally built on noweb and now with a native Rust reader and tangler
-(noweb removed, M15). **The literate document
+(noweb removed, M15; noweb's chunk syntax retired, M17). **The literate document
 is the source of truth**: each spec section lives in the module that implements
 it, as spec-first prose before the code. Read `cobito.cob` (the top-level document:
-goals, architecture, the module map, milestones, error codes, conventions) and
-`src/noweb.rs.cob` (§4.2, verified noweb behavior) before writing code. Margin
+goals, architecture, the module map, milestones, error codes, conventions),
+`src/markup.rs.cob` (§4.1, the chunk syntax), and `src/noweb.rs.cob` (§4.2, verified
+noweb behavior) before writing code. Margin
 commenting is a **separate tool** specced in `ANNOTATIONS.md`; cob's only
 obligation to it is annotation-ready HTML (§9, in `src/rewrite.rs.cob`).
 
@@ -26,6 +27,7 @@ cargo run -- lock fixtures/book.cob       # mint ids; auto-anchor every unlabell
 cargo run -- rename-label k3f9 lexing    # give an auto section id a human sec: name (rewrites source + lock, keeps id)
 cargo run -- labels fixtures/book.cob     # list the file's label → id map from cob.lock
 cargo run -- tangle fixtures/hello.cob    # extract roots natively (--out, -R, --check)
+cargo run -- migrate old.cob              # rewrite retired noweb chunk syntax to fences, in place (§4.3)
 cargo run -- --explain E014              # long form of a diagnostic (§12)
 nix flake check                          # build + tests + drift + determinism + tangle
 nix build .#static                       # portable single static binary (musl, KaTeX embedded)
@@ -42,7 +44,7 @@ Flakes only see tracked files: a new non-ignored file is auto-tracked by jj on
 the next snapshot, but a generated/gitignored file is invisible to `nix` — that is
 why the build seeds them from the `tangled` branch. Do not commit unless asked.
 
-## Key facts (details in `src/noweb.rs.cob` §4.2)
+## Key facts (reader: `src/markup.rs.cob`; verified noweb behavior: `src/noweb.rs.cob` §4.2)
 
 - **cob is native: no noweb.** The reader (`src/markup.rs`, a `peg` grammar,
   `markup::read`) folds `.cob` into the `noweb::Event` IR, and the tangler
@@ -50,11 +52,29 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `src/noweb.rs` now only *parses* frozen `markup` IR text (for the goldens); it
   runs nothing. We never used `noweave`. §11 in `src/tangle.rs.cob` records why the
   native tangler replaced `notangle`.
+- **Chunk syntax (M17, `src/markup.rs.cob` §sec:fence-chunks).** A code chunk is a
+  fence: four or more backticks, `chunk`, the name; it closes at a line of backticks
+  at least as long. Everything else is a docs chunk. A body line that starts with
+  four or more backticks needs a longer fence (`cob migrate` picks the length). A
+  chunk use is still `<<name>>`, and `@<<`/`@>>` still escape a literal `<<`/`>>`. A
+  first-level heading (`# Title`, outside a Markdown fenced block, in a chunk that
+  already has text) starts a new docs chunk — that is how one file holds several
+  pages. The reader tracks CommonMark fenced blocks (``` and ~~~) in docs, so a
+  `# comment` in a code block is not a heading. noweb's syntax (`<<name>>=` … `@`,
+  `@ text`, `%def`) is **retired**: the reader gives E043 and `cob migrate FILE`
+  rewrites a file. There is no docs-to-docs divider: a deeper heading does not split.
 - `fixtures/*.markup` (reader) and `fixtures/tangled/` (tangler) are frozen
   goldens, never hand-edited — the hermetic oracle now that no live noweb runs.
-  Regenerate a `.markup` with `markup fixtures/NAME.cob > fixtures/NAME.markup`
-  (needs noweb installed ad hoc, e.g. `nix shell nixpkgs#noweb`); regenerate a
-  tangled golden with `notangle -R<root> fixtures/NAME.cob > fixtures/tangled/…`.
+  noweb cannot read the fence syntax, so **no new golden can be made**: the `.markup`
+  goldens were made from the fixtures' noweb-syntax originals, and the reader test and
+  the flake `reader` check compare only what both sides share (every code chunk and
+  every non-blank prose line). If a fixture must change its tangled text, the native
+  tangler makes the new `fixtures/tangled/` golden and a reviewer reads the diff.
+- **Bootstrap rule: a source file may use only syntax the pinned `seed` already
+  reads.** The build tangles every `.cob` with the seed first (`cobBootstrap`). So a
+  change to the chunk syntax needs a release first, then a source change. M17 kept
+  to this: e.g. no `.cob` shows a chunk line nested in a longer Markdown fence,
+  because the pre-M17 seed would read it as a real chunk.
 - Weave output must be byte-deterministic: no timestamps, no unordered maps.
 - Math renders at weave time; the archival **content needs no JavaScript**. The
   only script a page may carry is the inline `nav-spy` navigation aid in
@@ -83,7 +103,7 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
 - Transclusion (`src/transclude.rs.cob` §10) shows one **node** a second time in
   place. A node is a heading and the content under it, cut at the **markdown
   heading** boundary (the next heading at the same or a shallower level), never at
-  the `@`-chunk boundary — so one chunk can hold many nodes and a node can span
+  the chunk boundary — so one chunk can hold many nodes and a node can span
   chunks. `\transclude{sec:name}` (Markdown) lowers to an inert
   `<div class="transclusion" data-transclude=…>` island the weaver splices after
   section wrapping and before the page split. The copy keeps the canonical bytes,
@@ -125,8 +145,9 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   **cob reads and tangles `.cob` natively — no noweb at build or run time** (the M15
   removal; noweb is fully gone from the flake and the runtime closure). The build
   seeds from the **`tangled` release branch**, which *does* commit the generated
-  tree: the `seed` flake input pins it by tag on the forge (`v0.1.0`,
-  `git+ssh://gitea@git.chanlatte.casa/marcell/cobito.git?ref=…`), and
+  tree: the `seed` flake input pins it by tag on the public GitHub mirror
+  (`github:mvcisback/cobito/<tag>`; `git remote -v` shows `crgit` = the self-hosted
+  forge and `gh` = GitHub — push to both), and
   `builtins.pathExists src/main.rs` makes the one generated `flake.nix` adapt — on
   `tangled` it builds the tracked `.rs` directly, on `main` it seeds from the pinned
   snapshot. The flake still builds in **two stages**: `packages.cobBootstrap` (stage
@@ -135,13 +156,20 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `checks.selfhost` proves `cob tangle` reproduces `cobSource` byte-for-byte (cob is
   a fixed point of its own tangler). On a fresh `main` checkout the devShell
   `shellHook` seeds the `.rs`/`.css` from the pinned snapshot; then `cob tangle`
-  refreshes them. **Release procedure:** rebuild the orphan `tangled` snapshot from
-  `main` (generated tree tracked, `flake.nix` = the dist flake), **push `tangled` +
-  the new semantic-version tag to the forge**, bump the `seed` ref in `flake.nix.cob`
-  + `nix flake update seed` (fetches over ssh — needs your key), commit. A tangler
-  change needs a re-release before the seed catches up, or `selfhost` flags drift.
-  The correctness oracle is now frozen goldens — `fixtures/*.markup` (reader, via
-  `cob dump-ir --from-markup`) and `fixtures/tangled/` (tangler) — no live noweb.
+  refreshes them. **Release procedure:** `tangled` is a *linear* branch (each release
+  is a child of the last), not a fresh orphan. Make a worktree of `crgit/tangled`,
+  check out `main`'s tree over it, copy in the generated tree from
+  `nix build .#cobSource`, and **`git add -f` the generated files `.gitignore` hides**
+  (`src/*.rs`, `build.rs`, `templates/cob*.css`, `tree-sitter-cob/*` except the `.cob`)
+  — a plain `git add -A` silently skips them. Commit, tag the semantic version, run
+  `cargo test` there, then **push `tangled` + the tag to both remotes**, bump the
+  `seed` ref in `flake.nix.cob` + `cob tangle flake.nix.cob --out .` +
+  `nix flake update seed`, run `nix flake check`, commit, push `main`. This repo is
+  colocated with jj, so after a `git commit` also run `jj bookmark set main -r @-`.
+  A tangler or syntax change needs a re-release before the seed catches up, or
+  `selfhost` flags drift. The correctness oracle is frozen goldens —
+  `fixtures/*.markup` (reader, via `cob dump-ir --from-markup`) and
+  `fixtures/tangled/` (tangler) — no live noweb.
 - A labelled float's identity is a **frozen opaque id** (four base62 chars),
   minted once and stored in the committed `cob.lock` (keyed `file → label →
   {id, kind}`), never a sequential number — so a reference ("Figure k3f9")
@@ -182,7 +210,7 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   (a `\ref` inside a backtick span is a documented no-op). Raw HTML has one door,
   the `html-escape` fence — a sidenote `<aside>` is an `html-escape` fence.
   Markdown is a post-`markup` transform
-  (`src/markdown.rs`), so it is *not* noweb-boundary behavior — no §4.2 change.
+  (`src/markdown.rs`), so it is *not* reader behavior — no §4.2 change.
   `hello`/`book`/`md.cob` fixtures are all command Markdown.
 
 ## Conventions
@@ -201,5 +229,5 @@ why the build seeds them from the `tangled` branch. Do not commit unless asked.
   `cobito.cob` conventions section records the sequence to date).
 - No panics outside tests; user-facing errors use the diagnostic format
   (`src/diag.rs.cob` §12) and the error-code registry in `cobito.cob`.
-- New noweb-boundary behavior ⇒ new fixture pair + test, and update the verified-
-  noweb prose in `src/noweb.rs.cob` (§4.2).
+- New reader or tangler behavior ⇒ a fixture and a test. Keep `src/markup.rs.cob`'s
+  rules and grammar prose true. The `.markup` goldens are frozen (see above).

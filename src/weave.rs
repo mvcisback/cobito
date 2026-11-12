@@ -387,7 +387,7 @@ fn render_frags(
                         line: section.line,
                     });
                 }
-                // The `<<name>>=` line is `section.line`; the body opens after it.
+                // The chunk's open line is `section.line`; the body opens after it.
                 let runs = section_runs.and_then(|m| m.get(&i)).map(Vec::as_slice);
                 let body = render_code(name, *continues, spans, section.line + 1, doc, lang, runs);
                 frags.push(Frag::Code(body));
@@ -1530,7 +1530,7 @@ mod tests {
         // Coloring nests inside each `.line`; strip it so the coordinate + payload
         // invariant reads the same whether or not the chunk highlights.
         let html = strip_tok(&hello_html());
-        // fixtures/hello.cob: `<<next char>>=` is line 22, its one body line 23.
+        // fixtures/hello.cob: the `next char` chunk opens at line 22, its one body line 23.
         assert!(html
             .contains("<span class=\"line\" data-line=\"23\">input.next().unwrap()</span></pre>"));
         // src/main.rs opens at line 28; `println!` is the fifth body line.
