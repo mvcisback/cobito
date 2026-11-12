@@ -67,7 +67,7 @@ cycle — E035, reported, never a hang.
 The module is the error type, the recursive expander and its two helpers, the
 single-root entry point, two batch drivers (write to a directory, and check
 against it without writing), and the disk helpers those drivers share.
-<<src/tangle.rs>>=
+````chunk src/tangle.rs
 <<the module banner>>
 
 <<imports>>
@@ -95,10 +95,10 @@ against it without writing), and the disk helpers those drivers share.
 <<write one root if it changed>>
 
 <<the tests>>
-@
+````
 The banner records the inverse-of-weave relationship and the native-expansion
 rule: cob walks the model, and it never runs \code{notangle}.
-<<the module banner>>=
+````chunk the module banner
 //! `cob tangle`: extract compilable source from `.cob` files (§11).
 //!
 //! Tangling is the inverse of weaving — it pulls a root chunk (and everything
@@ -106,19 +106,19 @@ rule: cob walks the model, and it never runs \code{notangle}.
 //! the document model, joins each chunk's definitions in source order, and
 //! splices every `@<<use@>>` in place with the column indentation noweb uses. It
 //! never runs `notangle`, so a shipped binary needs no noweb on PATH.
-@
+````
 Paths for disk output, formatting for errors, and the model types the expander
 walks.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::model::{CodeSpan, DocModel, SectionKind};
-@
+````
 Two failures. A chunk that uses itself is a cycle (E035), reported with the chain
 so the author can find it. Or writing the result to disk failed (E028).
-<<the tangle error>>=
+````chunk the tangle error
 #[derive(Debug)]
 pub enum TangleError {
     /// A chunk uses itself, directly or through others — the chain of names.
@@ -145,13 +145,13 @@ impl fmt::Display for TangleError {
 }
 
 impl std::error::Error for TangleError {}
-@
+````
 The expander is the core. \code{group_defs} maps each chunk name to its definitions'
 spans, in source order, so a continuation keeps every definition. \code{expand} walks
 one chunk: text and newlines pass through, and a \code{@<<use@>>} recurses, drops the
 used chunk's one trailing newline, and indents every line after the first by the
 column of the use. A name already on the chain is a cycle.
-<<expand one chunk>>=
+````chunk expand one chunk
 /// Map each chunk name to its definitions' spans, in source order. A chunk
 /// defined more than once (a continuation) keeps every definition, so the
 /// expansion joins them the way `notangle` does.
@@ -227,11 +227,11 @@ fn splice_indented(out: &mut String, sub: &str, col: usize) {
         out.push_str(line);
     }
 }
-@
+````
 The one entry point for a single root. It groups the definitions once and expands
 from the root name. The root keeps its own trailing newline, so the file ends the
 way the source does.
-<<tangle one root>>=
+````chunk tangle one root
 /// Tangle a single root chunk to a string by walking the model (§11). No
 /// external process runs. A cycle is E035.
 pub fn tangle_root(doc: &DocModel, root: &str) -> Result<String, TangleError> {
@@ -239,7 +239,7 @@ pub fn tangle_root(doc: &DocModel, root: &str) -> Result<String, TangleError> {
     let mut chain = Vec::new();
     expand(&defs, root, &mut chain)
 }
-@
+````
 Highlighting a chunk in isolation is wrong — a chunk is a fragment, so a brace,
 string, or comment that crosses a chunk boundary mis-tokenizes (§5.5, #1). The fix
 is to tokenize the whole tangled file and map its tokens back onto each chunk. This
@@ -249,7 +249,7 @@ and whitespace never changes a token class for cob's grammars — and records, f
 each literal run, which section's source bytes it is and where they landed. The
 mapping is then one-to-one, so the weave can read each chunk's tokens straight out
 of the tangled file's token stream.
-<<provenance for highlighting>>=
+````chunk provenance for highlighting
 /// One provenance segment (§5.5, #1): `len` bytes of section `section`'s source
 /// (its holes-removed text, `\n` per newline), starting at `src_off`, appear at
 /// `tangled_off` in the root's tangled text.
@@ -349,7 +349,7 @@ fn expand_prov<'a>(
     chain.pop();
     Ok(())
 }
-@
+````
 A tangled file is what the compiler sees, so a traceback names a line in it, not in
 the `.cob` (#3). This located tangle is the real expansion — holes spliced with
 their column indentation, the trailing newline dropped, the same bytes as
@@ -358,7 +358,7 @@ from. A line is attributed to the chunk that emits its **first** content, so a
 hole's continuation lines map to the used chunk, which is what a traceback wants.
 This is the opposite direction from the highlighter's provenance, which maps the
 other way (source bytes into the tangled text), so it keeps its own pass.
-<<located tangle for source mapping>>=
+````chunk located tangle for source mapping
 /// A source location (#3): the `.cob` file, the 1-based source line, and the chunk
 /// whose body that line is in. The map `tangle_root_located` returns is a `Vec` of
 /// these, one per output line of the tangled file.
@@ -401,7 +401,7 @@ fn expand_located<'a>(
     let mut cur: Option<Loc> = None;
     for (sec_idx, spans) in defs.get(name).into_iter().flatten() {
         let sec = &doc.sections[*sec_idx];
-        // The body opens on the line after the `@<<name@>>=` def line.
+        // The body opens on the line after the chunk's open line.
         let mut line = sec.line + 1;
         let here = |line| Loc {
             file: sec.file.clone(),
@@ -473,11 +473,11 @@ fn splice_located(
         }
     }
 }
-@
+````
 The outcome of writing one root: created, updated, or left untouched because the
 bytes already matched. Unchanged matters — rewriting identical bytes would bump
 mtime and wake every file-watcher for nothing.
-<<the write outcome>>=
+````chunk the write outcome
 /// What happened to one root when writing a whole document to disk.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Wrote {
@@ -487,11 +487,11 @@ pub enum Wrote {
     /// quiet (noweb ships `cpif` for exactly this; §11).
     Unchanged,
 }
-@
+````
 Tangle every root and write each to \code{outdir}, skipping the ones already on disk.
 The report keeps the given order, so output is deterministic. The definitions are
 grouped once and reused across roots.
-<<tangle every root to a directory>>=
+````chunk tangle every root to a directory
 /// Tangle every root to `outdir`, skipping any whose content is unchanged.
 /// Returns `(root, outcome)` in the order given, for a deterministic report.
 pub fn tangle_to_dir(
@@ -509,20 +509,20 @@ pub fn tangle_to_dir(
     }
     Ok(report)
 }
-@
+````
 For \code{--check}: how one root disagrees with disk — missing, or present but different.
-<<the drift outcome>>=
+````chunk the drift outcome
 /// One root's disagreement with what is on disk, for `--check`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Drift {
     Missing,
     Differs,
 }
-@
+````
 The same walk as writing, but it compares instead of writing. An empty result means
 the tree is in sync — the self-hosting invariant of §13, and what \code{checks.selfhost}
 asserts on every module ported here.
-<<check every root against the directory>>=
+````chunk check every root against the directory
 /// Tangle every root and compare against `outdir` without writing anything.
 /// Returns `(root, drift)` for each root that does not match — empty means the
 /// tree is in sync (the CI / self-hosting invariant of §13).
@@ -542,10 +542,10 @@ pub fn check(
     }
     Ok(drift)
 }
-@
+````
 Split out from \code{check} so the comparison is unit-testable on its own. Identical is
 \code{None}; different is \code{Differs}; absent is \code{Missing}; any other read error is E028.
-<<compare one root to disk>>=
+````chunk compare one root to disk
 /// How `contents` differs from `path`, if at all. Split out so the comparison
 /// is unit-testable in isolation.
 fn compare_to_disk(contents: &str, path: &Path) -> Result<Option<Drift>, TangleError> {
@@ -559,12 +559,12 @@ fn compare_to_disk(contents: &str, path: &Path) -> Result<Option<Drift>, TangleE
         }),
     }
 }
-@
+````
 Write only on a real change, through a temp file and a rename so a watcher never
 sees a half-written source file. A root name is path-shaped, so parent directories
 are created as needed. The return distinguishes created from updated by whether a
 file was already there.
-<<write one root if it changed>>=
+````chunk write one root if it changed
 /// Write `contents` to `path` only if it differs, via a temp file and rename so
 /// a watcher never sees a half-written source file (§11). Parent dirs — a root
 /// name is path-shaped — are created as needed.
@@ -591,13 +591,13 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<Wrote, TangleError> {
         Wrote::Created
     })
 }
-@
+````
 The tests pin the native expander against a frozen \code{notangle} oracle, and the
 disk logic on its own. Each golden in \code{fixtures/tangled/<stem>/<root>} was made
 once by \code{notangle}; the expander must reproduce it byte for byte from the pinned
 \code{fixtures/<stem>.markup}. This is hermetic — no noweb on PATH — and it outlives
 noweb: the goldens are a record of the behavior, not a live dependency.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,11 +612,11 @@ mod tests {
 
     <<the disk-logic tests>>
 }
-@
+````
 The located tangle must produce the same bytes as `tangle_root`, and map each
 output line to the `.cob` line that wrote it — including a hole's continuation
 lines, which map to the used chunk.
-<<the located-tangle test>>=
+````chunk the located-tangle test
 #[test]
 fn located_tangle_maps_each_line_to_its_source_chunk() {
     use CodeSpan::*;
@@ -640,10 +640,10 @@ fn located_tangle_maps_each_line_to_its_source_chunk() {
     assert_eq!(map[0], Loc { file: "t.cob".into(), line: 6, chunk: "src/r.rs".into() });
     assert_eq!(map[1], Loc { file: "t.cob".into(), line: 12, chunk: "c".into() });
 }
-@
+````
 The differential builds the model from a pinned IR and compares each root's
 native expansion to its golden.
-<<the golden differential>>=
+````chunk the golden differential
 fn doc_from_markup(ir: &str) -> DocModel {
     model::build(&noweb::parse(ir).unwrap()).unwrap()
 }
@@ -692,11 +692,11 @@ fn native_tangle_matches_notangle_goldens() {
         include_str!("../fixtures/tangled/tx/demo.rs"),
     );
 }
-@
+````
 Two focused tests. One pins the indentation rule directly on a built model so a
 regression names the rule, not a whole fixture. One proves a self-referential
 chunk is E035, not a hang.
-<<the indentation and cycle tests>>=
+````chunk the indentation and cycle tests
 fn code_section(name: &str, spans: Vec<CodeSpan>) -> model::Section {
     model::Section {
         id: format!("sec-{name}"),
@@ -776,10 +776,10 @@ fn a_self_referential_chunk_is_a_cycle_not_a_hang() {
         other => panic!("expected a cycle, got {other:?}"),
     }
 }
-@
+````
 The disk logic is unit-tested on its own: writing creates, then reports unchanged,
 then updated; and the comparison tells missing, identical, and differing apart.
-<<the disk-logic tests>>=
+````chunk the disk-logic tests
 fn tmpdir(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("cob-tangle-test-{name}"));
     let _ = std::fs::remove_dir_all(&d);
@@ -816,4 +816,4 @@ fn compare_distinguishes_missing_identical_and_differing() {
     assert_eq!(compare_to_disk("x\n", &path).unwrap(), None);
     assert_eq!(compare_to_disk("y\n", &path).unwrap(), Some(Drift::Differs));
 }
-@
+````

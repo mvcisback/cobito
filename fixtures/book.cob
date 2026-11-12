@@ -1,10 +1,10 @@
-@ # Front matter
+# Front matter
 
 Everything before the first boundary is the index page, so this chunk
 lands on \code{index.html}. It refers forward to \ref{fig:pipeline} and to
 the cost bound in \ref{eq:cost}, both of which live on a later page.
 
-@ # Parsing
+# Parsing
 
 This chunk opens with an \code{h1}, so it starts a new page.
 
@@ -25,9 +25,10 @@ labelled so it can be linked with a stable id.
 <img src="pipeline.svg" alt="the weave pipeline">
 ```
 
-<<lex a token>>=
+````chunk lex a token
 tokens.push(next());
-@ ### Cost
+````
+### Cost
 
 A third-level heading. The bound is $O(n \log n)$.
 
@@ -39,7 +40,7 @@ T(n) = 2T(n/2) + O(n)
 \text{this one opts out of numbering}
 ```
 
-@ # Codegen
+# Codegen
 
 A third page, so pagination has a middle with both neighbours.
 See also \ref{fig:pipeline}, referenced twice, and
@@ -52,8 +53,8 @@ See also \ref{fig:pipeline}, referenced twice, and
 | nop |
 ```
 
-<<src/main.rs>>=
+````chunk src/main.rs
 fn main() {
     <<lex a token>>
 }
-@
+````

@@ -50,7 +50,7 @@ nothing for that file.
 
 The module is the result and error types, a line classifier, the chunk writer, the
 conversion loop, and the tests.
-<<src/migrate.rs>>=
+````chunk src/migrate.rs
 <<the migrate banner>>
 
 <<the migrate types>>
@@ -62,15 +62,15 @@ conversion loop, and the tests.
 <<convert a file>>
 
 <<the migrate tests>>
-@
+````
 The banner states the job and the one promise: the tool changes no code byte.
-<<the migrate banner>>=
+````chunk the migrate banner
 //! `cob migrate` (§4.3): rewrite a `.cob` file from noweb's chunk syntax to the
 //! fence syntax. Every code byte, chunk use, and escape stays as it was.
-@
+````
 A conversion gives back the new text and the number of chunks it wrote. An error
 names the line and the reason. The caller adds the file name.
-<<the migrate types>>=
+````chunk the migrate types
 use std::fmt;
 
 /// The converted text, and how many code chunks it holds.
@@ -98,13 +98,13 @@ struct Pending {
     name: String,
     body: Vec<String>,
 }
-@
+````
 The classifier sorts one line into three kinds. A \code{Def} carries the chunk name. An
 \code{At} carries the text after the marker, which can be empty. Everything else is
 \code{Plain}. A def line has the name, then the three characters that end a def, then
 only spaces and tabs. The classifier looks at the first end marker only, the same as
 the old reader did.
-<<classify a line>>=
+````chunk classify a line
 enum Kind<'a> {
     Def(&'a str),
     At(&'a str),
@@ -150,11 +150,11 @@ fn would_open_a_fence_chunk(line: &str) -> bool {
     rest.strip_prefix("chunk")
         .is_some_and(|r| r.starts_with([' ', '\t']))
 }
-@
+````
 The chunk writer turns an open chunk into three parts: the fence open line, the body,
 and the fence close line. It picks the fence length from the body, so that no body
 line can end the fence.
-<<write one chunk>>=
+````chunk write one chunk
 fn flush(open: &mut Option<Pending>, out: &mut Vec<String>) {
     if let Some(p) = open.take() {
         let widest = p
@@ -169,12 +169,12 @@ fn flush(open: &mut Option<Pending>, out: &mut Vec<String>) {
         out.push(ticks);
     }
 }
-@
+````
 The loop keeps the open chunk and one flag. The flag \code{after_index} is true right
 after an index line ended a chunk, so a second index line is legal there. A body line
 joins the open chunk. Any other line first ends the open chunk, then does its own
 work. A line of documentation is checked before it is written.
-<<convert a file>>=
+````chunk convert a file
 /// Convert noweb chunk syntax to fence syntax. Gives back the new text, or the
 /// first line the tool refuses.
 pub fn convert(text: &str) -> Result<Migrated, MigrateError> {
@@ -247,11 +247,11 @@ fn check_docs(line: &str, no: usize) -> Result<(), MigrateError> {
     }
     Ok(())
 }
-@
+````
 The tests cover each rule above, and each refusal. They write old syntax in a string,
 so a chunk use is \code{@<<b@>>} in this source, and a literal \code{@<<} escape is
 \code{@@<<}.
-<<the migrate tests>>=
+````chunk the migrate tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,4 +341,4 @@ mod tests {
         assert!(convert("a\n```verbatim\n").is_ok());
     }
 }
-@
+````

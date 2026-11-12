@@ -16,7 +16,7 @@ The front half of \code{weave}, \code{lock}, \code{language}, \code{tangle}, and
 the same: read the \code{.cob} files, fold the events into the document model. That shared
 front half is factored into \code{build_doc} where a command needs it, and inlined where
 it does not.
-<<src/main.rs>>=
+````chunk src/main.rs
 <<the module tree>>
 
 <<imports>>
@@ -64,10 +64,10 @@ it does not.
 <<dump the model>>
 
 <<dump the ir>>
-@
+````
 Every module in the crate is declared here, in one alphabetical block, because
 this is the crate root. Adding a module means adding one line.
-<<the module tree>>=
+````chunk the module tree
 mod backlinks;
 mod cite;
 mod config;
@@ -94,18 +94,18 @@ mod tangle;
 mod transclude;
 mod untangle;
 mod weave;
-@
+````
 The binary needs only two names from the standard library: a path type for the
 files it reads and writes, and the process exit code it returns.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-@
+````
 The usage banner is the help text. It prints when the command line makes no sense.
 It lists every subcommand and every option, so a reader who runs \code{cob} with no
 arguments learns the whole surface at once.
-<<the usage banner>>=
+````chunk the usage banner
 const USAGE: &str = "\
 cob — web-first literate programming (early scaffold)
 
@@ -143,14 +143,14 @@ OPTIONS:
     -R <name>                     tangle: write one chunk to stdout instead
     --check                       tangle: diff roots against disk, exit 1 on drift
 ";
-@
+````
 The dispatcher reads the argument vector once. It handles \code{--explain} first,
 because that flag is informational and may sit after any subcommand or stand
 alone. Then it matches the first argument against the known commands. Each arm
 guards on the argument count, so a command with the wrong number of arguments
 falls through to the usage arm rather than panicking. The catch-all prints the
 banner and exits with code 2.
-<<dispatch on the command line>>=
+````chunk dispatch on the command line
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // `--explain <CODE>` is informational and stage-independent (§12): it may
@@ -187,11 +187,11 @@ fn main() -> ExitCode {
         }
     }
 }
-@
+````
 The explain command turns a diagnostic code into its long form. A known code
 prints and succeeds. An unknown code fails. A missing code is a usage error, so it
 exits with code 2.
-<<explain a diagnostic>>=
+````chunk explain a diagnostic
 fn explain_cmd(code: Option<&str>) -> ExitCode {
     match code {
         Some(code) => match diag::explain(code) {
@@ -210,7 +210,7 @@ fn explain_cmd(code: Option<&str>) -> ExitCode {
         }
     }
 }
-@
+````
 The weave command is the main path. It parses its own options, reads the files,
 builds the model, loads config, resolves the highlighting language, then calls
 \code{weave::write_site}. Lints from the model and lints from the site are both
@@ -222,7 +222,7 @@ one place: the \code{files} list of the \code{[[document]]} table in \code{cob.t
 \code{document_files} gives the files named on the command line when there are any.
 With none, it gives that list, so \code{cob weave} and \code{cob lock} need no
 arguments, and the build, the review loop, and the docs all share one book order.
-<<the weave command>>=
+````chunk the weave command
 /// The document's source files: those named on the command line, else the
 /// `files` of the `[[document]]` table in `cob.toml`. An error names both ways to
 /// say it.
@@ -416,14 +416,14 @@ fn weave_cmd(args: &[String]) -> ExitCode {
         }
     }
 }
-@
+````
 The fetch and update commands pin remote imports (§13). Both load \code{cob.toml} and
 the lock, resolve each \code{git} import into the cache, write the grown lock, and
 report each pinned commit; they never weave, so they are the commands that may
 touch the network. \code{fetch} honors existing pins (resolving only what is new or
 changed); \code{update} re-resolves to the newest matching release — all imports, or one
 named alias. They share one worker.
-<<the fetch command>>=
+````chunk the fetch command
 fn fetch_cmd() -> ExitCode {
     run_fetch(fetch::Mode::Fetch)
 }
@@ -469,12 +469,12 @@ fn run_fetch(mode: fetch::Mode) -> ExitCode {
         }
     }
 }
-@
+````
 The backlinks command runs the forest-wide inversion (§16). It takes the built site
 directories, writes a reverse-backlink fragment per targeted node, and reports how
 many it wrote. It never weaves; it only reads each site's \code{cob-exports.json} and
 writes fragments beside its node pages.
-<<the backlinks command>>=
+````chunk the backlinks command
 fn backlinks_cmd(dirs: &[String]) -> ExitCode {
     let paths: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
     match backlinks::run(&paths) {
@@ -488,11 +488,11 @@ fn backlinks_cmd(dirs: &[String]) -> ExitCode {
         }
     }
 }
-@
+````
 \code{build_doc} is the shared front half of \code{lock}. It reads the files and builds the
 model. It prints its own diagnostics and carries the exit code in the \code{Err}, so the
 caller returns that code directly.
-<<build the document once>>=
+````chunk build the document once
 /// Read the `.cob` files + fold the IR into the model — the front half shared by
 /// `weave` and `lock`. Diagnostics are printed here; the `Err` carries the process
 /// exit code.
@@ -506,7 +506,7 @@ fn build_doc(files: &[String]) -> Result<model::DocModel, ExitCode> {
         ExitCode::FAILURE
     })
 }
-@
+````
 The lock command mints a frozen id for every label without rendering. It loads the
 lock file and records the count. First it mints an id for every float and every
 author \code{sec:} heading. Then it gives every unlabelled \code{h2}/\code{h3} heading an id too:
@@ -514,7 +514,7 @@ it mints one, records it, and writes a \code{sec:} anchor into the heading's sou
 (§7.1, \code{section.rs}). It saves the grown lock. Ids already present are left
 untouched, and an already anchored heading is skipped, so re-running is idempotent.
 The report shows how many were newly minted.
-<<the lock command>>=
+````chunk the lock command
 /// `cob lock`: mint a frozen id for every label into `cob.lock` without rendering
 /// (§7.1). It also gives every unlabelled `h2`/`h3` heading an id, anchored into the
 /// `.cob` source. Ids already present are left untouched; new ones are written back
@@ -573,7 +573,7 @@ fn lock_cmd(files: &[String]) -> ExitCode {
     );
     ExitCode::SUCCESS
 }
-@
+````
 The rename-label command gives an auto-anchored section id a human name. It takes
 the frozen id and a bare name, and never changes the id, so every reference and
 permalink still resolves. First it validates the name — letters, digits, hyphen, and
@@ -582,7 +582,7 @@ id belongs to, and refuses if the target name already exists in that file. It
 rewrites the source anchor from \code{sec:<id>} to \code{sec:<name>}, then rekeys the lock and
 saves it. The source edit runs before the lock save, so a write failure never leaves
 a lock that points at an anchor the source does not carry.
-<<the rename-label command>>=
+````chunk the rename-label command
 /// `cob rename-label <id> <name>`: give an auto section id a human `sec:` name
 /// (§7.1). The frozen id never changes, so every reference and permalink still
 /// resolves; only the source anchor and the lock key change.
@@ -640,11 +640,11 @@ fn rename_label_cmd(id: &str, name: &str) -> ExitCode {
     println!("renamed {old_label} → {new_label} ({id}) in {file}");
     ExitCode::SUCCESS
 }
-@
+````
 The labels command prints the file's label-to-id map from the lock file, in sorted
 order. The committed lock is the greppable source of truth, so this command just
 formats it.
-<<the labels command>>=
+````chunk the labels command
 /// `cob labels <file>`: print the file's `label → id (kind)` map from `cob.lock`,
 /// in sorted order (the committed lock is the greppable source of truth; §7.1).
 fn labels_cmd(file: &str) -> ExitCode {
@@ -660,10 +660,10 @@ fn labels_cmd(file: &str) -> ExitCode {
     }
     ExitCode::SUCCESS
 }
-@
+````
 The id command prints the frozen id for one label. A known label prints and
 succeeds. An unknown label fails, and the message points at \code{cob lock} as the fix.
-<<the id command>>=
+````chunk the id command
 /// `cob id <file> <label>`: print the frozen id for one label, or exit nonzero if
 /// the label is not in `cob.lock`.
 fn id_cmd(file: &str, label: &str) -> ExitCode {
@@ -685,7 +685,7 @@ fn id_cmd(file: &str, label: &str) -> ExitCode {
         }
     }
 }
-@
+````
 The find command is the reverse of \code{id}: given an id or a label name, it
 searches every file in \code{cob.lock}, not one named up front, because that is the
 whole point — you have the id from a woven page and do not yet know which file it
@@ -696,7 +696,7 @@ the point of definition, and neither ever appears at a \code{\\ref{name}} use si
 the first matching line is the definition, not a mention. A citation has no such
 line in any \code{.cob} — it lives in the bibliography — so that case prints the key
 instead of a file:line.
-<<the find command>>=
+````chunk the find command
 /// `cob find <id-or-label>`: given a frozen id or a label name, print the
 /// `.cob` file and line that defines it (§7.1) — the reverse of `cob id`, which
 /// needs the file already in hand. A citation has no defining line in any
@@ -746,13 +746,13 @@ fn find_cmd(needle: &str) -> ExitCode {
         }
     }
 }
-@
+````
 \code{lang_config} builds the resolved highlighting config from the \code{[weave]} table. It
 validates every language name — the document default and every per-chunk value.
 An unknown name is a config error (E033), not a silent fallback, so a typo is
 caught rather than ignored. The inner closure parses one name and reports where it
 came from.
-<<resolve the highlighting config>>=
+````chunk resolve the highlighting config
 /// Build the resolved highlighting config from `[weave]` (§5.5), validating every
 /// language id. An unknown name — in `lang` or any `[weave.chunk-lang]` value — is
 /// a config error (E033), not a silent fallback, so a typo is caught, not ignored.
@@ -774,13 +774,13 @@ fn lang_config(weave: &config::Weave) -> Result<highlight::LangConfig, String> {
     }
     Ok(highlight::LangConfig { default, chunk_lang })
 }
-@
+````
 The language command prints the highlighting language cob resolves for one chunk.
 It is the shared resolver an editor plugin agrees with, exposed on the command
 line. It builds the model, loads config, resolves the language config, then calls
 \code{highlight::resolve}. A resolved language prints and succeeds. No known language
 exits nonzero, so a build can gate on it.
-<<the language command>>=
+````chunk the language command
 /// `cob language <file> <chunk>`: print the highlighting language cob resolves for
 /// a chunk (§5.5) — the shared resolver the weaver and any editor plugin agree on.
 /// Exits nonzero when the chunk resolves to no known language, so a build can gate
@@ -826,14 +826,14 @@ fn language_cmd(file: &str, chunk: &str) -> ExitCode {
         }
     }
 }
-@
+````
 The where command maps a line in a tangled file back to its `.cob` source (§11,
 #3). A compiler or test names a line in `src/main.rs`, which cob tangled; `cob
 where src/main.rs.cob src/main.rs 42` prints the `.cob` file, line, and chunk that
 wrote it. It tangles the root with a line map (`tangle::tangle_root_located`) and
 reads the one entry. A line past the end, or a root with no definition, is an
 error, so a build script can rely on the exit code.
-<<the where command>>=
+````chunk the where command
 /// `cob where <file.cob> <root> <line>`: map a 1-based line of the tangled `root`
 /// back to the `.cob` source line that wrote it.
 fn where_cmd(file: &str, root: &str, line: &str) -> ExitCode {
@@ -870,13 +870,13 @@ fn where_cmd(file: &str, root: &str, line: &str) -> ExitCode {
         }
     }
 }
-@
+````
 The tokens command prints the whole-file semantic tokens (§5.5, #2), one per line
 as `<line>:<col> <len> <kind>`, with a zero-based column and a 1-based line. It is
 the testable core of the editor's semantic highlighting; `cob lsp` serves the same
 tokens over the Language Server Protocol. It loads config the same as `language`,
 because the token colors use the resolved grammar for each chunk.
-<<the tokens command>>=
+````chunk the tokens command
 /// `cob tokens <file.cob>`: print every semantic token of the document.
 fn tokens_cmd(file: &str) -> ExitCode {
     let doc = match build_doc(&[file.to_string()]) {
@@ -903,12 +903,12 @@ fn tokens_cmd(file: &str) -> ExitCode {
     }
     ExitCode::SUCCESS
 }
-@
+````
 The lsp command runs the editor language server (§5.5, #2). It loads the config the
 same as `tokens` — the token colors need the resolved grammar — then hands the
 language config to the server, which reads and writes LSP messages over stdio until
 the editor disconnects.
-<<the lsp command>>=
+````chunk the lsp command
 /// `cob lsp`: run the semantic-tokens language server over stdin and stdout.
 fn lsp_cmd() -> ExitCode {
     let cfg = match config::Config::load(Path::new(".")) {
@@ -927,7 +927,7 @@ fn lsp_cmd() -> ExitCode {
     };
     lsp::serve(lang_cfg)
 }
-@
+````
 The tangle command extracts root chunks. It parses \code{--out}, \code{-R}, and \code{--check}.
 Precedence for the output directory is explicit flag, then \code{cob.toml}, then the
 current directory.
@@ -939,7 +939,7 @@ redirects it. \code{--check} diffs each root against disk and reports drift; the
 mode writes each root and reports whether it was created, updated, or unchanged.
 The native tangler does not emit \code{-L} line pragmas yet, so a configured format
 gives a warning, not silent output (§11).
-<<the tangle command>>=
+````chunk the tangle command
 fn tangle_cmd(args: &[String]) -> ExitCode {
     let mut out: Option<String> = None;
     let mut single: Option<String> = None;
@@ -1076,7 +1076,7 @@ fn tangle_cmd(args: &[String]) -> ExitCode {
         }
     }
 }
-@
+````
 The untangle command is the reverse of tangle (§11, #2): it reads the edits made to
 the tangled files under \code{--out} (default the current directory) and prints a
 unified diff on the `.cob` source that reproduces them, so a quick fix to
@@ -1084,7 +1084,7 @@ unified diff on the `.cob` source that reproduces them, so a quick fix to
 an added or removed line, a line holding an expanded chunk-use, or a changed
 indentation — is reported on stderr and left out of the patch, never guessed. The
 patch goes to stdout, so a caller pipes it to `git apply`.
-<<the untangle command>>=
+````chunk the untangle command
 /// `cob untangle <file.cob> [--out dir]`: print a patch on the `.cob` source from
 /// edits made to its tangled files.
 fn untangle_cmd(args: &[String]) -> ExitCode {
@@ -1130,12 +1130,12 @@ fn untangle_cmd(args: &[String]) -> ExitCode {
         }
     }
 }
-@
+````
 The migrate command rewrites each named file in place, from noweb's chunk syntax to
 the fence syntax (§4.3). It converts every file it can and reports each one. A file
 it refuses (E044) stays as it was, and the exit code is 1. It does not read a file
 as a document, so it works on a file the reader would refuse.
-<<the migrate command>>=
+````chunk the migrate command
 /// `cob migrate <file.cob>...`: rewrite noweb chunk syntax to the fence syntax.
 fn migrate_cmd(files: &[String]) -> ExitCode {
     let mut failed = false;
@@ -1169,11 +1169,11 @@ fn migrate_cmd(files: &[String]) -> ExitCode {
         ExitCode::SUCCESS
     }
 }
-@
+````
 The dump-model command prints the folded document model for inspection. It reads
 the files, builds the model, prints its lints, then prints the files, roots, every
 section, and every chunk. It is a debugging window into the model stage.
-<<dump the model>>=
+````chunk dump the model
 fn dump_model(files: &[String]) -> ExitCode {
     let events = match markup::read(files) {
         Ok(events) => events,
@@ -1208,7 +1208,7 @@ fn dump_model(files: &[String]) -> ExitCode {
     }
     ExitCode::SUCCESS
 }
-@
+````
 The dump-ir command prints the raw markup events, one per line. It is the thinnest
 window in the tool: read the files, print what the reader returned. It is the first
 thing to reach for when the model looks wrong, because it shows the input the model
@@ -1219,7 +1219,7 @@ file instead of reading a \code{.cob}. This is the hermetic side of the \code{re
 check (§4.1): the native reader over a \code{.cob} must print the same events as
 \code{noweb::parse} over that file's pinned \code{.markup} golden, and no \code{markup} process
 runs. The pinned goldens are the reader's oracle now that cob spawns no noweb.
-<<dump the ir>>=
+````chunk dump the ir
 fn dump_ir(args: &[String]) -> ExitCode {
     // `--from-markup <file>` parses one frozen markup IR file; otherwise read
     // every `.cob` argument with the native reader.
@@ -1260,4 +1260,4 @@ fn print_events(events: Result<Vec<noweb::Event>, String>) -> ExitCode {
         }
     }
 }
-@
+````

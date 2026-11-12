@@ -25,7 +25,7 @@ writes \code{\transclude{sec:name}} (Markdown) or the raw island a dialect lower
 to (§6.4). A node is a heading and the content under it: the heading, its own
 text, and its child headings, up to the next heading at the same or a shallower
 level. cob cuts the node at these heading boundaries, not at the chunk
-boundaries, and puts the node where the directive sits. So one \code{@} chunk can hold
+boundaries, and puts the node where the directive sits. So one chunk can hold
 many nodes, and a node can run across several chunks.
 
 The copy is safe by construction, because the weaver never copies the body. A
@@ -164,7 +164,7 @@ selectors survive.
 
 The module is the placeholder shape, the node table, the context that expands a
 host body, the id-scoping helpers, and the per-node pages.
-<<src/transclude.rs>>=
+````chunk src/transclude.rs
 <<the module banner>>
 
 <<imports>>
@@ -186,10 +186,10 @@ host body, the id-scoping helpers, and the per-node pages.
 <<qualify links for a node page>>
 
 <<the tests>>
-@
+````
 The banner states the pass-through decision and the one guarantee a reader needs:
 a section with no directive is byte-unchanged.
-<<the module banner>>=
+````chunk the module banner
 //! Transclusion and the node model (§10).
 //!
 //! Runs in the weaver after every section is wrapped and before the page split
@@ -198,11 +198,11 @@ a section with no directive is byte-unchanged.
 //! untouched. A directive splices the named section's finished HTML in place,
 //! with scoped ids so two copies never collide, and context chrome that links
 //! back to the canonical place.
-@
+````
 Maps and sets for the node table and the scope set; the model's lint type, the
 resolver's plan, and the rewriter's \code{anchor_of} (a \code{:} in an id becomes a \code{-} in
 an anchor, the same rule the resolver uses).
-<<imports>>=
+````chunk imports
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::Lint;
@@ -210,26 +210,26 @@ use crate::prose;
 use crate::resolve::Resolution;
 use crate::rewrite::{anchor_of, strip_macros, Heading, Scan};
 use crate::site::{ForestEdge, ForestRef};
-@
+````
 A dialect lowers \code{\transclude{addr}} to one exact island: an empty \code{div} that
 carries the address. The expander scans for this exact opening and tail, so its own
 output — a \code{<cob-transclude>} element, or a \code{transclusion-missing} marker — is
 never rescanned as a placeholder.
-<<the placeholder shape>>=
+````chunk the placeholder shape
 /// The island a dialect lowers `\transclude{addr}` to (§6.4). The expander
 /// matches this exact opening and tail, so its own output — a `<cob-transclude>`
 /// element, or a `transclusion-missing` marker — is never rescanned as a
 /// placeholder.
 const OPEN: &str = "<div class=\"transclusion\" data-transclude=\"";
 const TAIL: &str = "\"></div>";
-@
+````
 A node is one addressable heading and its content: the heading text (the fallback
 link text), the page it lands on, and the rendered HTML of the node body. cob cuts
 the body once, at build time, from the final section bodies; the body feeds the
 node's own \code{n/} page, which every transclusion then references. The context holds
 each node keyed by its anchor, plus the anchor→id map a transclusion needs to name
 that page.
-<<a node and the context>>=
+````chunk a node and the context
 /// One addressable heading node: its heading text (the fallback link text), its
 /// canonical page, and the rendered HTML of the node body — the heading tag and
 /// the content under it, cut at the next heading of the same or a shallower level.
@@ -254,13 +254,13 @@ pub struct Context {
     /// `<cob-transclude src>` at that forest's own node page.
     imports: BTreeMap<String, ForestRef>,
 }
-@
+````
 A node page is the data the \code{node} template reads: the node's opaque id (its
 filename), its heading text, the node body with links fixed for the \code{n/}
 directory, a link back to the node in context, the breadcrumb of parents, and
 the two backlink lists. A \code{Link} is a title and an href — a breadcrumb step or a
 backlink both need only that.
-<<the node page>>=
+````chunk the node page
 /// A title and an href: one breadcrumb step or one backlink.
 pub struct Link {
     pub title: String,
@@ -296,7 +296,7 @@ pub struct RefNode {
     pub title: String,
     pub body: String,
 }
-@
+````
 Building the table walks the scanned headings in document order. A node runs from
 its own heading to the next heading at the same or a shallower level; a heading
 with nothing shallower after it runs to the end of the document. cob finds each
@@ -305,7 +305,7 @@ heading (§5.4), then cuts the body between the two heading tags — across sect
 bodies when the node spans more than one chunk. The anchor is the one the
 resolver already stamped for that heading, so a \code{\transclude{sec:name}} and a
 \code{\ref{sec:name}} name the very same place.
-<<build the node table>>=
+````chunk build the node table
 impl Context {
     /// Build the node table from the scan, the plan, and the final section
     /// bodies. A node runs from its heading to the next heading at the same or a
@@ -411,14 +411,14 @@ impl Context {
             imports: imports.clone(),
         }
     }
-@
+````
 Building the node pages walks the same headings. Only a heading with a frozen id
 gets a page — an \code{h1} is its own page, so it is skipped. Each page takes the node
 title and body, its breadcrumb of parents, and its two backlink lists. The
 bodies are raw at this point: \code{finish_node_pages} expands the directives inside
 them and rebases their links once the context exists, so a node that holds a
 directive shows the same inlined content its canonical page does.
-<<build the node pages>>=
+````chunk build the node pages
     /// One page per heading node (§10). A heading with no frozen id — an `h1`,
     /// which is already its own page — is skipped. Bodies are raw here;
     /// `finish_node_pages` expands and rebases them once the context exists.
@@ -536,7 +536,7 @@ directive shows the same inlined content its canonical page does.
     pub fn node_pages(&self) -> &[NodePage] {
         &self.node_pages
     }
-@
+````
 A \code{\transclude} island lowers to a lazy \code{<cob-transclude>} element (§10). The
 client fetches the node's own page into a shadow root, so the body is stored once
 and loaded on demand. The weaver copies no body: it resolves the address to the
@@ -544,7 +544,7 @@ node-page URL and title, and leaves a link fallback that works with no JavaScrip
 \code{prefix} is the path to the \code{n/} directory from the host page ("n/" from a
 document page, "" from a node page). An unknown target is W106, an inert marker; a
 cycle is now a client-side guard, not a build-time lint.
-<<expand islands into cob-transclude>>=
+````chunk expand islands into cob-transclude
     /// Replace every `\transclude` island in `html` with a lazy `<cob-transclude>`
     /// (§10): a link fallback plus the node-page `src` the client lifts into a
     /// shadow root. `prefix` is the path to `n/` from the host page. No body is
@@ -646,14 +646,14 @@ cycle is now a client-side guard, not a build-time lint.
         }
     }
 }
-@
+````
 Two helpers cut a heading node body. The first finds an element's opening tag in a
 final section body by the \code{id} that \code{apply} stamps on it (§5.4): the nearest \code{<}
 before that id is the tag start. The second joins the bytes between two heading
 tags; when the node spans more than one chunk, it takes the tail of the first
 section body, every whole body between, and the head of the last. A node with no
 shallower heading after it runs to the end of the last body.
-<<cut a node body from the section bodies>>=
+````chunk cut a node body from the section bodies
 /// The byte offset of an element's opening tag in the final section `body`, found
 /// by the `id` that `apply` stamps on every heading and labelled float (§5.4).
 /// The nearest `<` before that id is the tag start; `None` if the id is absent.
@@ -706,7 +706,7 @@ fn slice_body(bodies: &[String], start: (usize, usize), end: Option<(usize, usiz
     out.push_str(&bodies[es][..eo]);
     out
 }
-@
+````
 A float is one element, not a run between headings, so cob cuts it by balancing
 its tag. \code{cut_element} finds the element's opening tag by its \code{id}, reads the tag
 name, then walks the bytes counting nested opens and closes of that name until the
@@ -714,7 +714,7 @@ depth returns to zero — so a figure's inner \code{img} or an equation's KaTeX 
 not end the cut too soon. Working on bytes keeps the scan safe over the UTF-8 the
 body may hold; every match is on ASCII tag bytes, so the returned range always
 lands on a char boundary.
-<<cut a node body from the section bodies>>=
+````chunk cut a node body from the section bodies
 /// The byte range of the element whose opening tag carries `id="anchor"`, its
 /// nested same-name tags balanced. `None` if the id is not in `body`.
 fn cut_element(body: &str, anchor: &str) -> Option<(usize, usize)> {
@@ -851,7 +851,7 @@ fn strip_tags(html: &str) -> String {
     }
     out
 }
-@
+````
 The node-page helpers make the breadcrumb, the backlinks, and the link rebasing.
 A breadcrumb or a backlink is one link to a node — to its own node page, or, for
 an \code{h1}, to its document page. Backlinks come from one scan of the bodies: a
@@ -859,7 +859,7 @@ an \code{h1}, to its document page. Backlinks come from one scan of the bodies: 
 heading above the use is the node it sits in. Rebasing fixes a node body for the
 \code{n/} directory: a link inside the node stays a bare fragment; a link out of it
 becomes \code{../page.html#anchor}, so it lands on the right document page.
-<<qualify links for a node page>>=
+````chunk qualify links for a node page
 /// Anchor → document page filename, for every heading and every labelled float,
 /// so a link that leaves a node page can be made page-qualified.
 fn anchor_pages(heads: &[Heading], res: &Resolution) -> BTreeMap<String, String> {
@@ -1150,11 +1150,11 @@ fn rebase_href(v: &str, local: &BTreeSet<String>, link_pages: &BTreeMap<String, 
         format!("../{v}")
     }
 }
-@
+````
 The tests build a small context by hand — the node table and page files are the
 only inputs the expander reads — and exercise the happy path, the scoping rules,
 a cycle, and an unknown target.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1173,10 +1173,10 @@ mod tests {
 
     <<a float title reads its caption or its kind>>
 }
-@
+````
 The harness builds a context with one node, \code{sec:foo}, whose body is a heading, a
 margin slot, an in-copy link, and a link out of the copy, on a single page.
-<<a context over two sections>>=
+````chunk a context over two sections
 /// A context with one node `sec-foo`, on page 0 (`index.html`). The body is a
 /// heading, a margin slot that points at it, an in-copy link, and a link out of
 /// the copy — enough to exercise every scoping rule.
@@ -1215,12 +1215,12 @@ fn run(host: &str) -> (String, Vec<Lint>) {
     let out = c.expand(host, "n/", &mut lints, "t.cob", 1);
     (out, lints)
 }
-@
+````
 A transclusion lowers to a lazy \code{<cob-transclude>} whose \code{src} is the node's own
 page under \code{n/} and whose fallback link is the same page, so the content is
 reachable with no JavaScript (§10). The weaver copies no body and scopes no ids —
 the shadow root isolates them. The host's own text is kept around the element.
-<<a transclusion splices the node with chrome>>=
+````chunk a transclusion splices the node with chrome
 #[test]
 fn transclusion_lowers_to_a_lazy_element() {
     let (out, lints) = run(&host());
@@ -1236,10 +1236,10 @@ fn transclusion_lowers_to_a_lazy_element() {
     assert!(out.contains("host <cob-transclude"));
     assert!(out.contains("</cob-transclude> tail"));
 }
-@
+````
 A directive whose target is no known node is flagged W106 and replaced with an
 inert marker.
-<<an unknown target is flagged>>=
+````chunk an unknown target is flagged
 #[test]
 fn an_unknown_target_is_flagged() {
     let host = format!("<section id=\"sec-1\">{OPEN}sec:ghost{TAIL}</section>");
@@ -1249,13 +1249,13 @@ fn an_unknown_target_is_flagged() {
     assert!(out.contains("class=\"transclusion-missing\""));
     assert!(out.contains("data-transclude=\"sec:ghost\""));
 }
-@
+````
 A node page lives one level down, in \code{n/}, so \code{rebase_href} fixes each link by
 kind (see \code{qualify_hrefs}). A fragment to an id the body defines stays bare; a
 fragment to an id elsewhere gets its page and a \code{../} prefix; a sibling node-page
 link loses its \code{n/}; any other document-relative link gets \code{../}; an absolute
 link or a scheme is left alone.
-<<node-page links rebase for the n directory>>=
+````chunk node-page links rebase for the n directory
 #[test]
 fn node_page_links_rebase_for_the_n_directory() {
     let mut local = BTreeSet::new();
@@ -1289,10 +1289,10 @@ fn node_page_links_rebase_for_the_n_directory() {
     assert!(out.contains("<img src=\"../imgs/f.svg\">"));
     assert!(out.contains("<cob-transclude src=\"5QKY.html\">"));
 }
-@
+````
 \code{containing_head} finds the node a use sits in: the last heading at or before the
 use in document order. A use above every heading (a preamble) has no node.
-<<the containing head is the last at or above a use>>=
+````chunk the containing head is the last at or above a use
 #[test]
 fn the_containing_head_is_the_last_at_or_above_a_use() {
     // Headings at document positions (section, offset), in document order.
@@ -1306,11 +1306,11 @@ fn the_containing_head_is_the_last_at_or_above_a_use() {
     // A use on a later section sits in the last heading at or above it.
     assert_eq!(containing_head(&pos, (1, 99)), Some(2));
 }
-@
+````
 A float is one element, cut by balancing its tag. The cut must count nested tags
 of the same name — an equation's KaTeX \code{div}s, a figure's inner tags — so it does
 not end early, and must leave a float with a different anchor alone.
-<<a float element is cut by balancing its tag>>=
+````chunk a float element is cut by balancing its tag
 #[test]
 fn a_float_element_is_cut_by_balancing_its_tag() {
     // An equation wraps nested `div`s; the cut balances them, not stops at the
@@ -1347,10 +1347,10 @@ fn a_fence_heading_ends_at_the_innermost_fence() {
     // Outside every fence there is nothing to cap the heading.
     assert!(fence_close(body, body.len() - 1).is_none());
 }
-@
+````
 A float title reads the caption text, tags stripped, or falls back to the kind
 word when the float has none.
-<<a float title reads its caption or its kind>>=
+````chunk a float title reads its caption or its kind
 #[test]
 fn a_float_title_reads_its_caption_or_its_kind() {
     let fig = "<figure id=\"fig-y\"><figcaption data-id=\"ab\">A <em>tiny</em> map.\
@@ -1371,4 +1371,4 @@ fn a_float_title_reads_its_caption_or_its_kind() {
                     <p class=\"node-title\" data-taxon=\"theorem\"></p>\n<p>Body.</p></section>";
     assert_eq!(float_title(untitled, "section"), "Theorem");
 }
-@
+````

@@ -1,4 +1,4 @@
-@ # Transclusion fixture
+# Transclusion fixture
 
 A tiny document in the \emph{Markdown} dialect that exercises transclusion (§10). The
 title, an intro, and the source section all live in one \code{@} chunk, so the node
@@ -12,11 +12,12 @@ This section is the transclusion target. The title above it belongs to a
 shallower node, so the copy must start here and leave the \code{h1} out. It owns a
 small code chunk, so the transcluded copy must scope a code section's id too.
 
-<<demo.rs>>=
+````chunk demo.rs
 pub fn demo() -> u32 {
     7
 }
-@ ## The reuse {#sec:reuse}
+````
+## The reuse {#sec:reuse}
 
 The source section appears again here, transcluded in place:
 

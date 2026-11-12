@@ -19,7 +19,7 @@ renderer that walks the parse into a nested ordered list. The caller passes an
 `inline` closure — the Markdown inline renderer — so a line's text, a condition,
 or a comment is rendered in the document's own dialect, math and all.
 
-<<src/pseudocode.rs>>=
+````chunk src/pseudocode.rs
 //! §6.5 The `algorithm` fence: a native pseudocode renderer.
 //!
 //! The body uses the LaTeX `algorithmic` control words (the pseudocode.js
@@ -46,13 +46,13 @@ or a comment is rendered in the document's own dialect, math and all.
 <<the keyword tables>>
 
 <<pseudocode tests>>
-@
+````
 
 A token is a control word, a brace-balanced group, or a run of literal text. A
 `$…$` math span is kept whole inside a text token, so its braces and backslashes
 never look like groups or commands. An escaped character (`\{`, `\$`) is literal
 text.
-<<a pseudocode token>>=
+````chunk a pseudocode token
 enum Tok {
     /// A `\Word` control word, without the backslash, in its original case.
     Cmd(String),
@@ -61,11 +61,11 @@ enum Tok {
     /// A run of literal text, with any `$…$` math span kept whole.
     Text(String),
 }
-@
+````
 
 The tokenizer is one pass over the characters. It is UTF-8 safe: it builds each
 token by pushing characters, never by slicing on a byte offset.
-<<tokenize a body>>=
+````chunk tokenize a body
 fn tokenize(s: &str) -> Vec<Tok> {
     let mut toks = Vec::new();
     let mut text = String::new();
@@ -148,14 +148,14 @@ fn tokenize(s: &str) -> Vec<Tok> {
     flush(&mut text, &mut toks);
     toks
 }
-@
+````
 
 A parsed node is one rendered line or a block. A statement carries a keyword lead
 (empty for `\State`), its inline source, and an optional trailing comment. A
 conditional is a list of `(condition, body)` branches and an optional `else`. A
 loop is a header word, its inline header, a tail word (`do`), and a body. A
 repeat-until and a function/procedure round out the set.
-<<a parsed node>>=
+````chunk a parsed node
 enum Node {
     Stmt {
         lead: &'static str,
@@ -183,13 +183,13 @@ enum Node {
         body: Vec<Node>,
     },
 }
-@
+````
 
 The parser is recursive descent over the token slice. `parse_block` reads nodes
 until it meets a closing word in `stop` (which it leaves for the caller to
 consume) or the end. The leading command of each node decides its shape. An
 unknown leading command is an error, so a typo fails rather than renders wrong.
-<<parse a block>>=
+````chunk parse a block
 /// Parse a block of nodes from `toks[*pos..]`, stopping at (without consuming) a
 /// command whose lower-case name is in `stop`, or at the end.
 fn parse_block(toks: &[Tok], pos: &mut usize, stop: &[&str]) -> Result<Vec<Node>, String> {
@@ -395,14 +395,14 @@ fn group_inner(t: &Tok) -> Option<String> {
         _ => None,
     }
 }
-@
+````
 
 The renderer walks the parse into a nested ordered list. Each node is one `<li>`;
 a block nests an `<ol>` inside its opening line, so the CSS line counter runs
 unbroken down the listing and indentation shows the block. A keyword is a
 `<span class="kw">`, never part of the author's text, so it is not searchable or
 selectable as content. The inline closure renders each run of text.
-<<render a block>>=
+````chunk render a block
 type Inline<'a> = dyn FnMut(&str) -> Result<String, String> + 'a;
 
 /// Render a pseudocode body to a `<ol class="pseudocode">`. `inline` renders a
@@ -488,11 +488,11 @@ fn render_node(node: &Node, inline: &mut Inline, out: &mut String) -> Result<(),
     }
     Ok(())
 }
-@
+````
 
 The structural commands end a statement's inline run; the inline words map a
 control word to a rendered keyword.
-<<the keyword tables>>=
+````chunk the keyword tables
 const STRUCTURAL: &[&str] = &[
     "state", "return", "print", "require", "ensure", "input", "output", "if",
     "elif", "elsif", "else", "endif", "while", "endwhile", "for", "forall",
@@ -512,12 +512,12 @@ const INLINE_WORDS: &[(&str, &str)] = &[
     ("break", "break"),
     ("continue", "continue"),
 ];
-@
+````
 
 The tests cover a straight-line body, a conditional with an else, a loop, and a
 trailing comment. The inline closure here is the identity, so the assertions see
 the structure and keywords without a math round-trip.
-<<pseudocode tests>>=
+````chunk pseudocode tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,9 +534,9 @@ mod tests {
 
     <<an unknown command is an error>>
 }
-@
+````
 
-<<a straight-line body numbers each statement>>=
+````chunk a straight-line body numbers each statement
 #[test]
 fn straight_line_body() {
     let out = render("\\Require input $x$\n\\State $y \\gets x$\n\\Return $y$", &mut id).unwrap();
@@ -545,30 +545,30 @@ fn straight_line_body() {
     assert!(out.contains("<li>$y \\gets x$</li>"));
     assert!(out.contains("<span class=\"kw\">return</span> $y$"));
 }
-@
+````
 
-<<a conditional nests its branches>>=
+````chunk a conditional nests its branches
 #[test]
 fn conditional_nests_branches() {
     let out = render("\\If{$a$} \\State one \\Else \\State two \\EndIf", &mut id).unwrap();
     assert!(out.contains("<span class=\"kw\">if</span> $a$ <span class=\"kw\">then</span><ol><li>one</li></ol>"));
     assert!(out.contains("<span class=\"kw\">else</span><ol><li>two</li></ol>"));
 }
-@
+````
 
-<<a loop nests its body and a comment trails>>=
+````chunk a loop nests its body and a comment trails
 #[test]
 fn loop_and_comment() {
     let out = render("\\For{$i$} \\State step \\Comment{note} \\EndFor", &mut id).unwrap();
     assert!(out.contains("<span class=\"kw\">for</span> $i$ <span class=\"kw\">do</span><ol>"));
     assert!(out.contains("step <span class=\"comment\">\u{25B7} note</span>"));
 }
-@
+````
 
-<<an unknown command is an error>>=
+````chunk an unknown command is an error
 #[test]
 fn unknown_command_errors() {
     let err = render("\\Frobnicate x", &mut id).unwrap_err();
     assert!(err.contains("unknown algorithm command"));
 }
-@
+````

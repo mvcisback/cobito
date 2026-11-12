@@ -138,7 +138,7 @@ So the macros stay modular. There is no document-wide list.
 
 The module is the error type, the public render, the block loop, the block
 renderers, the inline grammar and its lowering, the fence helpers, and the tests.
-<<src/markdown.rs>>=
+````chunk src/markdown.rs
 <<the module banner>>
 
 <<imports>>
@@ -194,28 +194,28 @@ renderers, the inline grammar and its lowering, the fence helpers, and the tests
 <<the escape helpers>>
 
 <<the tests>>
-@
+````
 The banner states where the dialect sits and what it owns.
-<<the module banner>>=
+````chunk the module banner
 //! cob's prose dialect (§6.4). A line loop splits a docs chunk into blocks; a
 //! `peg` inline grammar tokenises each run into commands, math, and text; a
 //! lowering pass makes HTML. cob owns the whole surface — there is no CommonMark
 //! engine. Marks are commands (`\emph`, `\strong`, `\code`), so there is no
 //! emphasis flanking rule. Raw HTML has one door: the ```` ```html-escape ````
 //! fence.
-@
+````
 Formatting, the shared prose helpers, and the \code{peg} runtime.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::prose::{self, Math};
-@
+````
 Two failure classes. A prose or math syntax fault is \code{Syntax} (E022). A fence
 fault is \code{Fence}, which carries its code: a bad \code{\label}/\code{\caption}/\code{\lang}
 modifier is E030 (\code{fence_err}); a bare or unknown fence kind is E034
 (\code{kind_err}).
-<<the markdown error>>=
+````chunk the markdown error
 /// A prose dialect fault. `Syntax` is a parse or math fault (E022); `Fence` is a
 /// fence fault carrying its own code — a bad modifier (E030) or a bare/unknown
 /// kind (E034).
@@ -249,11 +249,11 @@ fn kind_err(message: impl Into<String>) -> MarkdownError {
         message: message.into(),
     }
 }
-@
+````
 The top level splits the reassembled prose into blocks, renders each in document
 order, and joins them. It appends any math it meets to \code{math}, so
 \code{substitute_math} resolves each placeholder by index later (§6.2).
-<<render a docs chunk>>=
+````chunk render a docs chunk
 /// Render one docs chunk's reassembled prose. Appends every formula it meets to
 /// `math` in document order; `substitute_math` resolves each placeholder by its
 /// own index later (§6.2), so the build order does not change the output.
@@ -327,10 +327,10 @@ fn render_ctx(
     }
     Ok(out.join("\n"))
 }
-@
+````
 A raw block is the line loop's output before inline rendering: a fence with its
 info and body, a heading with its level and text, a one-level list, or a paragraph.
-<<the raw block>>=
+````chunk the raw block
 enum RawBlock {
     Fence { info: String, body: String },
     Heading { level: usize, text: String },
@@ -344,13 +344,13 @@ enum RawBlock {
     /// A run of `>`-prefixed lines: a blockquote. The raw lines keep their markers.
     Quote(String),
 }
-@
+````
 The line loop. A blank line is a separator. A fence runs to its closing fence,
 blank lines included. A heading is one line. A list is a run of item lines; an indented
 line under an item continues it, so inline math can wrap. Every
 other run of non-blank lines is a paragraph, cut at the next fence, heading, or
 list.
-<<split into blocks>>=
+````chunk split into blocks
 fn split_blocks(input: &str, macros: bool) -> Vec<RawBlock> {
     let lines: Vec<&str> = input.split('\n').collect();
     let mut blocks = Vec::new();
@@ -480,10 +480,10 @@ fn is_macro_def_line(line: &str) -> bool {
             .is_some_and(|rest| !rest.chars().next().is_some_and(|c| c.is_ascii_alphabetic()))
     })
 }
-@
+````
 Three predicates recognise a fence line: the opening backtick count (three or more,
 no backtick in the info), the info string, and whether a line closes a fence.
-<<recognise a fence line>>=
+````chunk recognise a fence line
 fn fence_open(line: &str) -> Option<usize> {
     let t = line.trim_start();
     let ticks = t.chars().take_while(|&c| c == '`').count();
@@ -504,10 +504,10 @@ fn fence_close(line: &str, open_ticks: usize) -> bool {
     let ticks = t.chars().take_while(|&c| c == '`').count();
     !t.is_empty() && ticks == t.len() && ticks >= open_ticks
 }
-@
+````
 A heading line is one to six leading \code{#} and a space, then the text (which may end
 with a \code{{#sec:name}} id).
-<<recognise a heading line>>=
+````chunk recognise a heading line
 fn heading_line(line: &str) -> Option<(usize, String)> {
     let hashes = line.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) && line[hashes..].starts_with(' ') {
@@ -526,10 +526,10 @@ fn taxon_line(line: &str) -> Option<String> {
     }
     Some(inner.trim().to_string())
 }
-@
+````
 A list item is a bullet (\code{- }) or an ordered marker (\code{1. }). \code{list_item} is either;
 the split loop uses \code{ordered_item}/\code{bullet_item} to keep one list one kind.
-<<recognise a list item>>=
+````chunk recognise a list item
 fn bullet_item(line: &str) -> Option<String> {
     line.strip_prefix("- ").map(|s| s.to_string())
 }
@@ -546,10 +546,10 @@ fn ordered_item(line: &str) -> Option<String> {
 fn list_item(line: &str) -> Option<String> {
     bullet_item(line).or_else(|| ordered_item(line))
 }
-@
+````
 A heading renders its text as one inline run, with the optional id split off the
 tail. The id is source-anchored (§7.1), so \code{cob lock} writes \code{{#sec:<id>}} here.
-<<render a heading>>=
+````chunk render a heading
 /// A blockquote renders its `>`-stripped body through the same block renderer, so
 /// a quote holds paragraphs, emphasis, and an attribution line (§6.4).
 fn render_quote(
@@ -632,10 +632,10 @@ fn split_heading_attr(text: &str) -> (&str, Option<&str>) {
     }
     (t, None)
 }
-@
+````
 A list renders each item as one inline run inside an \code{<li>}, wrapped in \code{<ul>} or
 \code{<ol>}.
-<<render a list>>=
+````chunk render a list
 fn render_list(
     ordered: bool,
     items: &[String],
@@ -650,11 +650,11 @@ fn render_list(
     out.push_str(close);
     Ok(out)
 }
-@
+````
 A paragraph renders as one inline run inside a \code{<p>}. A paragraph that is only a
 \code{\transclude} makes the bare island instead, so the weaver's transclusion pass
 sees a block-level marker (§10).
-<<render a paragraph>>=
+````chunk render a paragraph
 fn render_paragraph(text: &str, math: &mut Vec<Math>) -> Result<String, MarkdownError> {
     let nodes = parse_inline(text)?;
     if let [Inline::Transclude(id)] = nodes.as_slice() {
@@ -667,12 +667,12 @@ fn render_paragraph(text: &str, math: &mut Vec<Math>) -> Result<String, Markdown
     lower(&nodes, math, &mut out);
     Ok(format!("<p>{out}</p>"))
 }
-@
+````
 A fence dispatches on its kind. \code{math} makes the equation div in place;
 \code{figure}/\code{table} make their float; \code{html-escape} passes its body through;
 \code{verbatim} makes an escaped code sample, with a \code{language-*} class when it carries
 a \code{\lang}.
-<<render a fence>>=
+````chunk render a fence
 fn render_fence(
     info: &str,
     body: &str,
@@ -727,11 +727,11 @@ fn render_fence(
         }
     }
 }
-@
+````
 A math fence makes the equation div, its bare-LaTeX body pushed as display math. A
 labelled fence gets its \code{id} and joins the numbering; an unlabelled one opts out
 with \code{data-nonumber}, because only a labelled float earns a stable id (§7.1).
-<<render a math fence>>=
+````chunk render a math fence
 fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String {
     let idx = math.len();
     math.push(Math {
@@ -746,7 +746,7 @@ fn render_math(label: Option<&str>, body: &str, math: &mut Vec<Math>) -> String 
         "<div class=\"equation\"{attr}><span data-cob-math=\"{idx}\"></span></div>"
     )
 }
-@
+````
 A run of \code{\def}/\code{\let} lines in a \code{macros} body does two things (§6.4). It
 records each definition in \code{defs} — name to expansion — which the math renderer
 feeds to KaTeX's \code{macros} option, so a macro expands in every formula and never
@@ -756,7 +756,7 @@ them is the exposition, where the macros are in scope. A \code{\def} may take fo
 named parameters (\code{\def\abs[x]{…\x…}}); cob maps each name to a KaTeX \code{#n} in
 order, replacing a whole control word only (so \code{\x} does not touch \code{\xi}). A
 malformed line is E022.
-<<render a macro definition>>=
+````chunk render a macro definition
 fn render_macro_def(
     src: &str,
     defs: &mut BTreeMap<String, String>,
@@ -811,11 +811,11 @@ fn replace_control_word(body: &str, name: &str, to: &str) -> String {
     out.push_str(rest);
     out
 }
-@
+````
 A figure fence takes an optional leading caption, then a raw-HTML body (an image or
 an SVG), and makes a real \code{<figure>}/\code{<figcaption>} so the numbering and ref
 machinery downstream is reused unchanged.
-<<render a figure fence>>=
+````chunk render a figure fence
 fn render_figure(
     label: Option<&str>,
     body: &str,
@@ -832,11 +832,11 @@ fn render_figure(
         id_attr(label)
     ))
 }
-@
+````
 A table fence takes an optional caption, then a pipe table. The first row is the
 head, the second is the delimiter, the rest are body rows; each cell is one inline
 run. The id and caption splice into the \code{<table>}.
-<<render a table fence>>=
+````chunk render a table fence
 fn render_table(
     label: Option<&str>,
     body: &str,
@@ -876,13 +876,13 @@ fn split_row(line: &str) -> Vec<String> {
         .map(|c| c.trim().to_string())
         .collect()
 }
-@
+````
 An algorithm fence takes an optional leading caption, then a pseudocode body in
 the `algorithmic` grammar (§6.5). It makes a `<figure class="algorithm">` — a
 distinct float kind the scanner numbers "Algorithm N" and the ref machinery
 resolves — with the listing from the `pseudocode` module. The caption renders
 first so the inline math closure can then borrow the math buffer for the body.
-<<render an algorithm fence>>=
+````chunk render an algorithm fence
 fn render_algorithm(
     label: Option<&str>,
     body: &str,
@@ -900,7 +900,7 @@ fn render_algorithm(
         id_attr(label)
     ))
 }
-@
+````
 A node fence (§10) is a small document that cob treats as if it were a separate file
 transcluded right here. Its first line is the node's own title, the line a file would
 open with: \code{# Title \taxon{definition} \label{def:x}}. The title is the text left
@@ -934,7 +934,7 @@ line, or a \code{\taxon} before an inner heading, is an error: nest a fence inst
 fence's element is a \code{section}, so the box around a definition ends with the fence. A titled fence puts the label on its heading as the id. An untitled one keeps an empty
 title paragraph, so the weaver has one place to put the node's permalink, and puts the
 label on the section.
-<<render a node fence>>=
+````chunk render a node fence
 /// What a node's title line carries (§10): the title text, and the optional taxon
 /// and label that were taken out of it.
 struct NodeHead {
@@ -1031,11 +1031,11 @@ fn take_node_command(text: &str, name: &str) -> Result<(Option<String>, String),
     }
     Ok((Some(value), rest))
 }
-@
+````
 A leading \code{\caption{…}} (brace-balanced, possibly multi-line) is peeled off a fence
 body by the grammar, which returns its raw source and the byte offset where the rest
 of the body starts. The remainder goes to the float renderer.
-<<peel a caption>>=
+````chunk peel a caption
 fn take_caption(body: &str) -> Result<(Option<String>, String), MarkdownError> {
     if !body.trim_start().starts_with("\\caption") {
         return Ok((None, body.to_string()));
@@ -1043,10 +1043,10 @@ fn take_caption(body: &str) -> Result<(Option<String>, String), MarkdownError> {
     let (cap, pos) = dialect::caption(body).map_err(|_| fence_err("malformed `\\caption{…}`"))?;
     Ok((Some(cap), body[pos..].to_string()))
 }
-@
+````
 A parsed fence is a float directive (each with its optional namespace-checked
 label), the \code{html-escape} door, or a \code{verbatim} block with an optional language.
-<<parse the fence info>>=
+````chunk parse the fence info
 enum Fence {
     Math(Option<String>),
     Figure(Option<String>),
@@ -1083,11 +1083,11 @@ enum Modifier {
     Label(String),
     Lang(String),
 }
-@
+````
 The kind is the leading word (letters, digits, \code{-}). The grammar parses the
 modifiers that follow, so a malformed one is an error, not a silent drop. A bare
 fence (empty kind) and an unknown kind are E034; a bad modifier is E030.
-<<parse the fence info>>=
+````chunk parse the fence info
 const KINDS: &str = "math, figure, table, algorithm, node, custom[name], macros, imports, html-escape, or verbatim";
 
 fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
@@ -1137,10 +1137,10 @@ fn parse_fence_info(info: &str) -> Result<Fence, MarkdownError> {
         other => Err(kind_err(format!("unknown fence kind `{other}`; use {KINDS}"))),
     }
 }
-@
+````
 The modifier validators enforce, per kind, which modifiers are legal and check a
 label's namespace against its float kind (E030).
-<<parse the fence info>>=
+````chunk parse the fence info
 fn label_of(mods: &[Modifier], kind: &str, prefix: &str) -> Result<Option<String>, MarkdownError> {
     let mut label = None;
     for m in mods {
@@ -1208,15 +1208,15 @@ fn reject_modifiers(mods: &[Modifier], kind: &str) -> Result<(), MarkdownError> 
         Err(fence_err(format!("a `{kind}` fence takes no modifiers")))
     }
 }
-@
+````
 The \code{id="…"} attribute for an optional label, escaped, or empty.
-<<an id attribute>>=
+````chunk an id attribute
 fn id_attr(label: Option<&str>) -> String {
     label
         .map(|l| format!(" id=\"{}\"", prose::escape(l)))
         .unwrap_or_default()
 }
-@
+````
 The grammar. \code{peg} builds it into a parser at compile time. \code{nodes} tokenises one
 prose run into commands, math, and literal text. A command body recurses through
 the same grammar, so \code{\strong{\emph{x}}} nests. A \code{\code{}} body is a slice with
@@ -1224,7 +1224,7 @@ balanced braces, captured whole, so any command inside it stays literal. Two mor
 public rules serve the fence header: \code{modifiers} reads the whole info-line tail
 after the kind, and \code{caption} peels a leading \code{\caption{…}} off a float body and
 reports where the rest begins.
-<<the inline grammar>>=
+````chunk the inline grammar
 peg::parser! {
     grammar dialect() for str {
         pub rule nodes() -> Vec<Inline> = node()*
@@ -1296,9 +1296,9 @@ peg::parser! {
         rule param() -> &'input str = "[" p:$(['a'..='z' | 'A'..='Z']+) "]" { p }
     }
 }
-@
+````
 The inline node the grammar makes.
-<<the inline node>>=
+````chunk the inline node
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Inline {
     Text(String),
@@ -1332,11 +1332,11 @@ enum MacroDef {
         target: String,
     },
 }
-@
+````
 Lowering walks the nodes and makes HTML. Text is escaped; a command wraps its
 lowered children; \code{\code} escapes its verbatim body; math pushes onto the shared
 list and leaves a placeholder the render pass fills (§6.2).
-<<lower inline nodes>>=
+````chunk lower inline nodes
 fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
     for node in nodes {
         match node {
@@ -1399,10 +1399,10 @@ fn lower(nodes: &[Inline], math: &mut Vec<Math>, out: &mut String) {
         }
     }
 }
-@
+````
 The two inline helpers: parse a run to nodes (a parse fault is E022), and render a
 run straight to HTML.
-<<render one inline run>>=
+````chunk render one inline run
 fn parse_inline(src: &str) -> Result<Vec<Inline>, MarkdownError> {
     dialect::nodes(src).map_err(|e| MarkdownError::Syntax(e.to_string()))
 }
@@ -1413,11 +1413,11 @@ fn render_inline(src: &str, math: &mut Vec<Math>) -> Result<String, MarkdownErro
     lower(&nodes, math, &mut out);
     Ok(out)
 }
-@
+````
 The escape helpers turn the grammar's escapes back into literals. A \code{\code} body
 only unescapes braces — \code{\{} and \code{\}} — and leaves everything else verbatim;
 text also unescapes the dollar escape \code{\$} and a doubled backslash.
-<<the escape helpers>>=
+````chunk the escape helpers
 fn unescape_braces(s: &str) -> String {
     if s.contains('\\') {
         s.replace("\\{", "{").replace("\\}", "}")
@@ -1436,12 +1436,12 @@ fn unescape_text(s: &str) -> String {
         s.to_string()
     }
 }
-@
+````
 The tests walk each §6.4 behavior: the command family, headings and lists, the
 \code{html-escape} door, verbatim code, each float directive, the ref and transclude
 lowering and their no-op inside code, the E030 namespace check, and a round trip
 through math substitution.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1501,13 +1501,13 @@ mod tests {
 
     <<a def line is inert in prose>>
 }
-@
+````
 A \code{macros} fence records its \code{\def}/\code{\let} in the macro table (name →
 expansion), shows them verbatim as a code block, and renders the prose between
 them. A definition is not typeset; forester named params map to KaTeX \code{#n}, and
 the translated \code{#n} form never appears in the rendered HTML — only in the table.
 The label is required (§6.4).
-<<a macros fence defines and typesets>>=
+````chunk a macros fence defines and typesets
 #[test]
 fn macros_fence_registers_and_shows_source() {
     let mut math = Vec::new();
@@ -1570,10 +1570,10 @@ fn sidenote_and_blockquote_render() {
     assert!(quote.contains("a quote"));
     assert!(quote.contains("someone"));
 }
-@
+````
 Outside a \code{macros} fence a \code{\def}/\code{\let} line is ordinary prose, so it adds
 nothing to the macro table.
-<<a def line is inert in prose>>=
+````chunk a def line is inert in prose
 #[test]
 fn def_line_is_inert_in_prose() {
     let mut math = Vec::new();
@@ -1582,9 +1582,9 @@ fn def_line_is_inert_in_prose() {
     assert!(defs.is_empty());
     assert!(html.contains("\\let\\R=\\RR here"));
 }
-@
+````
 The command family renders to the matching tags, and nests.
-<<command marks render>>=
+````chunk command marks render
 #[test]
 fn command_marks_render() {
     let (html, _) = run("plain with \\emph{em} and \\strong{strong} and \\code{span}.");
@@ -1594,9 +1594,9 @@ fn command_marks_render() {
     let (nested, _) = run("\\strong{bold \\emph{and italic}}");
     assert!(nested.contains("<strong>bold <em>and italic</em></strong>"));
 }
-@
+````
 A heading with an id, and a list.
-<<a heading and a list>>=
+````chunk a heading and a list
 #[test]
 fn heading_and_list() {
     let (html, _) = run("# Title {#sec:top}\n\n- one\n- two\n");
@@ -1612,28 +1612,28 @@ fn an_indented_line_continues_a_list_item() {
     assert_eq!(html.matches("<li>").count(), 3, "{html}");
     assert!(html.contains("second goes on") || html.contains("second\ngoes on"), "{html}");
 }
-@
+````
 An \code{html-escape} fence passes its body through verbatim — the one raw-HTML door.
-<<html escape passes through>>=
+````chunk html escape passes through
 #[test]
 fn html_escape_passes_through_verbatim() {
     let aside = "<aside id=\"sn:a\">A sidenote.</aside>";
     let (html, _) = run(&format!("text\n\n```html-escape\n{aside}\n```\n\nmore"));
     assert!(html.contains(aside));
 }
-@
+````
 Inline \code{\code} is verbatim and escaped, and balanced braces need no escape.
-<<code is verbatim>>=
+````chunk code is verbatim
 #[test]
 fn code_is_verbatim_and_escapes() {
     let (html, _) = run("see \\code{v[0] & <T>} and \\code{fn f() { x }}");
     assert!(html.contains("<code>v[0] &amp; &lt;T&gt;</code>"));
     assert!(html.contains("<code>fn f() { x }</code>"));
 }
-@
+````
 A labelled math fence becomes a display equation with its id (so it joins the
 numbering downstream); an unlabelled one opts out of numbering (§7.1).
-<<a fenced math is a numbered display>>=
+````chunk a fenced math is a numbered display
 #[test]
 fn fenced_math_is_a_display_equation() {
     let (html, math) =
@@ -1647,9 +1647,9 @@ fn fenced_math_is_a_display_equation() {
     let (html, _) = run("```math\nx\n```");
     assert!(html.contains("<div class=\"equation\" data-nonumber><span data-cob-math=\"0\"></span></div>"));
 }
-@
+````
 Inline math is extracted to a placeholder.
-<<inline math is extracted>>=
+````chunk inline math is extracted
 #[test]
 fn inline_math_is_extracted() {
     let (html, math) = run("the tail is $\\operatorname{slot}(n)$ here");
@@ -1658,18 +1658,18 @@ fn inline_math_is_extracted() {
     assert_eq!(math[0].source, "\\operatorname{slot}(n)");
     assert!(html.contains("<span data-cob-math=\"0\"></span>"));
 }
-@
+````
 A dollar inside a verbatim fence is not math.
-<<a dollar in a code fence is not math>>=
+````chunk a dollar in a code fence is not math
 #[test]
 fn dollar_inside_a_verbatim_fence_is_not_math() {
     let (html, math) = run("```verbatim\necho $HOME > $OUT\n```");
     assert!(math.is_empty());
     assert!(html.contains("<pre><code>echo $HOME &gt; $OUT</code></pre>"));
 }
-@
+````
 A labelled math fence carries its id onto the equation div.
-<<a labelled math fence carries its id>>=
+````chunk a labelled math fence carries its id
 #[test]
 fn labeled_math_fence_carries_its_id() {
     let (html, math) = run("```math \\label{eq:wrap}\nx = y\n```");
@@ -1678,9 +1678,9 @@ fn labeled_math_fence_carries_its_id() {
         "<div class=\"equation\" id=\"eq:wrap\"><span data-cob-math=\"0\"></span></div>"
     ));
 }
-@
+````
 A figure fence emits a figure with its caption.
-<<a figure fence emits a figure>>=
+````chunk a figure fence emits a figure
 #[test]
 fn figure_fence_emits_figure_with_caption() {
     let (html, _) = run(
@@ -1690,9 +1690,9 @@ fn figure_fence_emits_figure_with_caption() {
     assert!(html.contains("<img src=\"p.svg\">"));
     assert!(html.contains("<figcaption>The <em>pipeline</em> stages.</figcaption>"));
 }
-@
+````
 A table fence parses a pipe table and splices in the id and caption.
-<<a table fence splices id and caption>>=
+````chunk a table fence splices id and caption
 #[test]
 fn table_fence_parses_pipe_table_and_splices_id_and_caption() {
     let (html, _) = run(
@@ -1703,18 +1703,18 @@ fn table_fence_parses_pipe_table_and_splices_id_and_caption() {
     assert!(html.contains("<th>A</th>"));
     assert!(html.contains("<td>1</td>"));
 }
-@
+````
 A bare pipe row in prose stays literal, since a table lives only in a fence.
-<<a bare pipe row stays literal>>=
+````chunk a bare pipe row stays literal
 #[test]
 fn bare_pipe_row_in_prose_stays_literal() {
     let (html, _) = run("a | b | c\n");
     assert!(!html.contains("<table"));
     assert!(html.contains("<p>a | b | c</p>"));
 }
-@
+````
 A multi-line caption with nested braces and math balances.
-<<a multiline caption balances braces>>=
+````chunk a multiline caption balances braces
 #[test]
 fn multiline_caption_with_braces_is_balanced() {
     let (html, _) = run(
@@ -1724,11 +1724,11 @@ fn multiline_caption_with_braces_is_balanced() {
         "<figcaption>first line\nand <span data-cob-math=\"0\"></span> second</figcaption>"
     ));
 }
-@
+````
 A ref command lowers to a data-ref anchor. A second group is the author's link text,
 which a table of contents uses to name a chapter by its title; the resolver keeps that
 text and still sets the link. The text may hold other commands.
-<<a ref lowers to a data-ref>>=
+````chunk a ref lowers to a data-ref
 #[test]
 fn ref_lowers_to_a_data_ref() {
     let (html, _) = run("see \\ref{fig:p} and \\ref{eq:wrap}.");
@@ -1737,10 +1737,10 @@ fn ref_lowers_to_a_data_ref() {
     let (titled, _) = run("\\ref{ch:x}{The \\emph{Title}}");
     assert!(titled.contains("<a data-ref=\"ch:x\">The <em>Title</em></a>"));
 }
-@
+````
 A backtick span is literal inline code — commands inside it never lower — and an
 unmatched backtick is a literal character.
-<<a backtick span is literal inline code>>=
+````chunk a backtick span is literal inline code
 #[test]
 fn a_backtick_span_is_literal_inline_code() {
     // Commands inside a backtick span are text, like inside `\code{}`.
@@ -1758,9 +1758,9 @@ fn a_backtick_span_is_literal_inline_code() {
     let (lone, _) = run("a lone ` backtick");
     assert!(lone.contains("lone ` backtick") || lone.contains("lone `"));
 }
-@
+````
 A cite command lowers to one \code{data-cite} marker per key.
-<<a cite lowers to data-cite markers>>=
+````chunk a cite lowers to data-cite markers
 #[test]
 fn cite_lowers_to_one_data_cite_per_key() {
     // One key makes one marker; a comma list makes one per key (§14).
@@ -1774,9 +1774,9 @@ fn cite_lowers_to_one_data_cite_per_key() {
     assert!(code.contains("<code>\\cite{x}</code>"));
     assert!(!code.contains("data-cite=\"x\""));
 }
-@
+````
 A lone-transclude paragraph lowers to the bare island the weaver expands.
-<<a transclude lowers to a placeholder>>=
+````chunk a transclude lowers to a placeholder
 #[test]
 fn transclude_lowers_to_a_placeholder() {
     let (html, _) = run("before\n\n\\transclude{sec:lexing}\n\nafter");
@@ -1786,18 +1786,18 @@ fn transclude_lowers_to_a_placeholder() {
     assert!(cob.contains("<code>\\transclude{sec:x}</code>"));
     assert!(!cob.contains("data-transclude=\"sec:x\""));
 }
-@
+````
 A ref inside \code{\code} is literal, never lowered.
-<<a ref inside code is literal>>=
+````chunk a ref inside code is literal
 #[test]
 fn ref_inside_code_is_literal() {
     let (html, _) = run("write \\code{\\ref{fig:p}} then \\ref{fig:p} resolves");
     assert!(html.contains("<code>\\ref{fig:p}</code>"));
     assert!(html.contains("<a data-ref=\"fig:p\"></a>"));
 }
-@
+````
 A label whose namespace does not match its fence kind is E030.
-<<a mismatched namespace is e030>>=
+````chunk a mismatched namespace is e030
 #[test]
 fn mismatched_label_namespace_is_e030() {
     let mut math = Vec::new();
@@ -1806,7 +1806,7 @@ fn mismatched_label_namespace_is_e030() {
     assert!(matches!(err, MarkdownError::Fence { code: "E030", .. }));
     assert!(err.to_string().contains("fig:"));
 }
-@
+````
 A node fence (§10) is a small document, the same as a separate file transcluded right
 here. Its first line is its title with the taxon and the label on it. The node is a
 \code{section} that holds a real heading carrying the label as its id and the taxon (an
@@ -1814,7 +1814,7 @@ untitled node keeps an empty title paragraph and the label on the section). Ever
 is not: that is the reason the fence exists. The body is full command Markdown, so
 display math and a longer-fenced nested fence work inside it. The commands may sit in
 either order on the title line, and both are optional.
-<<a node fence is one typed node>>=
+````chunk a node fence is one typed node
 #[test]
 fn a_node_fence_is_one_typed_node() {
     let (html, math) = run(
@@ -1855,13 +1855,13 @@ fn a_node_fence_is_one_typed_node() {
     assert!(nested.contains("id=\"ex:n\""));
     assert!(nested.contains("<figure id=\"fig:inner\">"));
 }
-@
+````
 A node fence must open with a single-hash title line. Its label is in a node namespace;
 a float namespace is E030, because a float label would collide with the float it names.
 A second single-hash line, or a \code{\taxon} before an inner heading, is an error too.
 The info line is the bare word, so text there, or the old bracket form, is E030 with a
 message that says where the taxon goes.
-<<a node fence errors>>=
+````chunk a node fence errors
 #[test]
 fn a_node_fence_errors() {
     let mut math = Vec::new();
@@ -1898,11 +1898,11 @@ fn a_node_fence_errors() {
         assert!(is_e030(&err(bad)), "{bad}");
     }
 }
-@
+````
 A node holds headings, and they are real headings. Each is one level deeper than the one
 above, counted from the heading the fence sits under. A nested titled fence sits one
 level under the heading it follows, and an untitled one takes no level.
-<<a node fence holds headings>>=
+````chunk a node fence holds headings
 #[test]
 fn a_node_fence_holds_headings() {
     let mut math = Vec::new();
@@ -1931,10 +1931,10 @@ fn a_node_fence_holds_headings() {
     let bare = render("```node\n# \\taxon{remark}\n## Aside\n\nx\n```", &mut math, &mut BTreeMap::new()).unwrap();
     assert!(bare.contains("<h2 data-rel=\"1\">Aside</h2>"));
 }
-@
+````
 A verbatim fence with a \code{\lang{}} modifier keeps a language class. A bare
 fence and an unknown kind are both E034, so a typo fails fast.
-<<a code fence with a language>>=
+````chunk a code fence with a language
 #[test]
 fn verbatim_lang_modifier_adds_a_language_class() {
     let (html, _) = run("```verbatim \\lang{rust}\nlet x = 1;\n```");
@@ -1952,9 +1952,9 @@ fn a_bare_or_unknown_fence_is_e034() {
     let misplaced = render("```math \\lang{rust}\nx\n```", &mut math, &mut BTreeMap::new()).unwrap_err();
     assert!(matches!(misplaced, MarkdownError::Fence { code: "E030", .. }));
 }
-@
+````
 Both math placeholders resolve by index through the substitution pass.
-<<round trip through math substitution>>=
+````chunk round trip through math substitution
 #[test]
 fn round_trips_through_math_substitution() {
     let mut math = Vec::new();
@@ -1969,4 +1969,4 @@ fn round_trips_through_math_substitution() {
     assert!(out.contains("<INLINE/>"));
     assert!(out.contains("<div class=\"equation\" id=\"eq:y\"><DISPLAY/></div>"));
 }
-@
+````

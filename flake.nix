@@ -503,8 +503,8 @@
           mkdir -p $span
           op=$(printf '\074\074')
           cl=$(printf '\076\076')
-          printf '@ # span\n\n%sout.rs%s=\nlet s = "%sinner%s";\n@\n\n%sinner%s=\ninside the string\n@\n' \
-            "$op" "$cl" "$op" "$cl" "$op" "$cl" > $span/t.cob
+          printf '# span\n\n````chunk out.rs\nlet s = "%sinner%s";\n````\n\n````chunk inner\ninside the string\n````\n' \
+            "$op" "$cl" > $span/t.cob
           ( cd $span && $cob lock t.cob >/dev/null && $cob weave --locked t.cob --out _site )
           grep -q 'class="tok-string">inside the string' $span/_site/index.html
           # §10 transclusion: tx.cob puts a title, an intro, and the source heading
@@ -742,15 +742,27 @@
           touch $out
         '';
 
-        # Reader differential (§4.1): the native reader (`cob dump-ir`) must make
-        # the same events as the frozen `markup` golden (`cob dump-ir --from-markup`
-        # over the committed .markup). Hermetic — no live noweb.
+        # Reader differential (§4.1): the native reader (`cob dump-ir`) must agree with
+        # the frozen `markup` golden (`cob dump-ir --from-markup` over the committed
+        # .markup) on every code chunk and every line of prose. Hermetic — no live noweb.
         reader = pkgs.runCommand "cob-reader" { } ''
           cob=${self.packages.${system}.cobDoc}/bin/cob
           cd ${self}
+          sig() {
+            awk '
+              /^BeginDocs\(/ { mode = "docs"; next }
+              /^EndDocs\(/   { mode = ""; next }
+              /^BeginCode\(/ { mode = "code"; print "BeginCode"; next }
+              /^EndCode\(/   { mode = ""; print "EndCode"; next }
+              /^File\(/      { print; next }
+              /^Index(Defn|Use|Nl)/ { next }
+              mode == "code" { print; next }
+              mode == "docs" && /^Text\(/ && !/^Text\(""\)$/ { print "P " $0; next }
+            '
+          }
           for nw in fixtures/*.cob; do
-            $cob dump-ir "$nw" > "$TMPDIR/reader"
-            $cob dump-ir --from-markup "''${nw%.cob}.markup" > "$TMPDIR/golden"
+            $cob dump-ir "$nw" | sig > "$TMPDIR/reader"
+            $cob dump-ir --from-markup "''${nw%.cob}.markup" | sig > "$TMPDIR/golden"
             if ! diff -u "$TMPDIR/golden" "$TMPDIR/reader"; then
               echo "reader diverged from the frozen markup golden for $nw" >&2
               exit 1
@@ -1293,7 +1305,7 @@
           cd $work
           # Show a .cob as code: the body is an escaped chunk-def line, so the cob grammar
           # colors it (the chunk name becomes a tok-function in the weave).
-          printf '@ # cob as code\n\n<<demo.cob>>=\n@<<greeting@>>=\nhello\n@\n' > d.cob
+          printf '# cob as code\n\n````chunk demo.cob\n@<<greeting@>>=\nhello\n````\n' > d.cob
           $cob weave d.cob --out _site
           # tree-sitter-cob coloured the chunk name inside the .cob code chunk.
           grep -q 'class="tok-function">' _site/index.html

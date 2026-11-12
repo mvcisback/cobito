@@ -25,7 +25,7 @@ in its own file, \code{cob-syntax.css}, which the main sheet imports with a CSS
 \code{@import} at the top. The CSS spec permits a \code{@layer} ordering statement before
 \code{@import}, so the layer order is declared first; the import comes second, before any
 style rule with a block.
-<<templates/cob.css>>=
+````chunk templates/cob.css
 <<the layer order and design tokens>>
 
 <<the grid page frame>>
@@ -53,7 +53,7 @@ style rule with a block.
 <<tables>>
 
 <<phone refinements>>
-@
+````
 The base layer holds the design tokens and the body. The \code{@layer} line at the top
 names the four layers in order, once, so every block below joins a named layer and
 the cascade reads top to bottom. The tokens are grouped: the layout measures and the
@@ -62,7 +62,7 @@ is a warm cream page. The \code{prefers-color-scheme} rule holds the whole dark 
 gives each colour token a dark value, and no rule below hard-codes a colour, so the
 two themes stay in one place. \code{color-scheme} tells the browser to match its own parts
 — the scrollbar and the form controls — to the page.
-<<the layer order and design tokens>>=
+````chunk the layer order and design tokens
 @layer base, layout, components, syntax;
 @import url('cob-syntax.css') layer(syntax);
 
@@ -139,7 +139,7 @@ two themes stay in one place. \code{color-scheme} tells the browser to match its
     text-wrap: pretty;
   }
 }
-@
+````
 The page is a grid. Named line boundaries mark a \code{content} track — the reading
 column — and, to its right, a \code{margin} track for the annotation slots. The two
 outer \code{1fr} tracks centre the whole content-plus-margin group, so the reading
@@ -153,7 +153,7 @@ where they are, so a heading needs no sticky band of its own — and two sticky
 headings never fight as one section leaves and the next arrives. A jump to an anchor
 lands below the sticky bar, not under it, so every section, heading, and float
 reserves that much scroll margin at the top.
-<<the grid page frame>>=
+````chunk the grid page frame
 @layer layout {
   body {
     display: grid;
@@ -193,20 +193,20 @@ reserves that much scroll margin at the top.
     scroll-margin-top: 3.5rem;
   }
 }
-@
+````
 Every section is a positioning context for its margin slot.
-<<the section box>>=
+````chunk the section box
 @layer layout {
   section {
     position: relative;
     margin-bottom: 1.5rem;
   }
 }
-@
+````
 The margin column holds the annotation slot. A float — not a grid cell — keeps the
 slot beside the point it marks, so an overlay note lines up with its anchor in the
 prose, not with a grid row.
-<<the margin column>>=
+````chunk the margin column
 @layer layout {
   /* --- Margin column: annotation slot ----------------------------------- */
 
@@ -216,7 +216,7 @@ prose, not with a grid row.
     width: 0;
   }
 }
-@
+````
 A sidenote reads as a footnote: an inline marker at its point, and the note at the
 foot of the page. The marker is a superscript number the CSS draws from a counter,
 so the digit is never a text node and copy, paste, and the annotation layer's quote
@@ -224,7 +224,7 @@ selectors survive (§5.4). The counter resets per page because each page is one 
 document. The footnotes list numbers itself with the ordered-list marker, which runs
 in the same order, so the two numbers agree without a second counter. The note links
 back to its marker.
-<<the footnotes>>=
+````chunk the footnotes
 @layer components {
   /* --- Footnote markers + the page-foot notes --------------------------- */
 
@@ -257,11 +257,11 @@ back to its marker.
   .footnotes li { margin: 0.4rem 0; }
   .fn-back { margin-left: 0.3rem; text-decoration: none; }
 }
-@
+````
 A float's number is generated content drawn from its data-id, so it is never
 selectable. A figure and a table caption lead with their kind and id; an equation's
 id sits in the right margin of its centred block.
-<<generated numbering>>=
+````chunk generated numbering
 @layer components {
   /* --- Numbering (generated, never selectable) -------------------------- */
 
@@ -416,12 +416,12 @@ id sits in the right margin of its centred block.
     }
   }
 }
-@
+````
 A resolved cross-reference is navigation, not prose, so it reads in a warm sans
 accent distinct from both the serif body and ordinary links. A labelled section
 leads with a clickable permalink whose opaque id is generated content, never a text
 node, so it stays out of selections and quote selectors.
-<<internal cross-references>>=
+````chunk internal cross-references
 @layer components {
   /* --- Internal cross-references (§7) ------------------------------------ */
 
@@ -548,7 +548,7 @@ node, so it stays out of selections and quote selectors.
     }
   }
 }
-@
+````
 A transcluded node (§10) is one part of the document shown a second time in
 another place. A reader must see that the text is a copy, and must be able to go
 to the canonical place. So the copy gets a soft inset card with a left rule, and a
@@ -556,7 +556,7 @@ small header that names the node and links back to it. The two fault markers —
 unknown target and a cycle — get the same card in a warm error tone, so a broken
 directive is visible but never an error. The card draws only from classes, so it
 adds no text a copy-paste or a quote selector would pick up (§9.2).
-<<transcluded nodes>>=
+````chunk transcluded nodes
 @layer components {
   /* --- Transcluded nodes (§10) ------------------------------------------- */
 
@@ -610,13 +610,13 @@ adds no text a copy-paste or a quote selector would pick up (§9.2).
     color: #c0392b;
   }
 }
-@
+````
 A node page (§10) shows one node on its own, the way a forester wiki shows one
 tree. Three parts frame the node body: a breadcrumb of the parents above it, a
 link to the node in context, and the backlinks below it — the nodes that
 transclude it and the nodes that refer to it. All three read in the quiet sans
 accent and sit off the body text, so the node body stays the center of the page.
-<<node pages>>=
+````chunk node pages
 @layer components {
   /* --- Per-node pages (§10) --------------------------------------------- */
 
@@ -703,7 +703,7 @@ accent and sit off the body text, so the node body stays the center of the page.
     }
   }
 }
-@
+````
 The table of contents is a sticky bar across the top of the page — the one fixed
 landmark, in place of the old sticky headings. It spans the full width and holds a
 single horizontal, scrollable run of section links: each list, top level and nested,
@@ -716,7 +716,7 @@ soft pill and scrolls the bar to keep it in view. The mark is progressive
 enhancement: the page reads fully without it. The bar carries the band treatment — a
 hair off the page shade, a thin bottom rule, a soft lower shadow. The footer
 pagination sits in the content track as a two-end row with a sitemap link between.
-<<navigation and pagination>>=
+````chunk navigation and pagination
 @layer components {
   /* --- Navigation and pagination ---------------------------------------- */
 
@@ -806,11 +806,11 @@ pagination sits in the content track as a two-end row with a sitemap link betwee
     }
   }
 }
-@
+````
 A code chunk is a foldable block with a monospace header and body. Each line is its
 own block, and its number is generated content drawn from data-line, so it stays out
 of copies and quote selectors.
-<<the code-chunk layout>>=
+````chunk the code-chunk layout
 @layer components {
   /* --- Code chunks (§5.4) ----------------------------------------------- */
 
@@ -863,7 +863,7 @@ of copies and quote selectors.
     }
   }
 }
-@
+````
 The highlight palette lives in \code{cob-syntax.css} and is composed into the \code{syntax}
 layer by the \code{@import} above. Splitting it out lets authors swap the whole palette
 without touching the page chrome, and it shows how one CSS document can import
@@ -873,7 +873,7 @@ survive. A chunk-use hole is never wrapped in one of these. Each class draws its
 colour from a \code{--tok-*} variable, so the light and the dark theme both set the palette
 in the base block of \code{cob.css}; a plain identifier keeps the default ink so it reads
 as prose, not decoration.
-<<templates/cob-syntax.css>>=
+````chunk templates/cob-syntax.css
 @layer syntax {
   /* --- Syntax highlighting (§5.5) --------------------------------------- *
    * Pure classes over the existing bytes: no injected text, no <script>, so the
@@ -900,13 +900,13 @@ as prose, not decoration.
   /* .tok-variable stays --ink: the default text color, so plain identifiers read
      as prose, not decoration. */
 }
-@
+````
 Inline code in prose keeps the same monospace face on a faint background. A fenced
 code block in prose — not a chunk, but a plain \code{```} block such as the architecture
 diagram — is a \code{pre} with no chunk class. It scrolls sideways on its own, so a wide
 line (an ASCII diagram) never widens the page on a narrow screen. The \code{code} inside it
 drops the inline background and padding, which would otherwise tile behind every line.
-<<inline code>>=
+````chunk inline code
 @layer components {
   code {
     font-family: var(--mono);
@@ -932,12 +932,12 @@ drops the inline background and padding, which would otherwise tile behind every
     }
   }
 }
-@
+````
 A table from a \code{table} fence (§6.4) reads in the Tufte style: no vertical rules,
 one rule under the header, one under the last row, and generous cell padding. The
 caption sits above. A wide table does not push the page wide — the element scrolls
 sideways on its own when the viewport is narrow.
-<<tables>>=
+````chunk tables
 @layer components {
   /* --- Tables (from a `table` fence, §6.4) ------------------------------ */
 
@@ -967,7 +967,7 @@ sideways on its own when the viewport is narrow.
     border-bottom: 1px solid var(--rule);
   }
 }
-@
+````
 The rules above already adapt to a narrow viewport: the grid collapses to one column,
 and a wide code chunk or table scrolls on its own. This
 last block tunes a phone. The reading gutter gets smaller so the column uses more of
@@ -975,7 +975,7 @@ the screen, the block spacing tightens, the scrolling nav gives each link a tall
 target, a long previous or next title wraps instead of overlapping its neighbour, and
 the code face shrinks a step so more of a line shows before it scrolls. The break is
 34rem — about a large phone in portrait.
-<<phone refinements>>=
+````chunk phone refinements
 @layer layout {
   @media (max-width: 34rem) {
     main {
@@ -1032,4 +1032,4 @@ the code face shrinks a step so more of a line shows before it scrolls. The brea
     }
   }
 }
-@
+````

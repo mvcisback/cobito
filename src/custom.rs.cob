@@ -28,7 +28,7 @@ LaTeX, but the handler owns the rest (§8).
 The module is the error, the JSON contract, the content-hash cache key, the
 placeholder expander, and the single-handler runner.
 
-<<src/custom.rs>>=
+````chunk src/custom.rs
 //! §6.6 The `custom[NAME]` fence: a `cob.toml`-registered CLI renders the body.
 //!
 //! cob emits a `<cob-custom>` placeholder from the Markdown pass; the weaver
@@ -57,11 +57,11 @@ use std::process::{Command, Stdio};
 <<unescape attribute text>>
 
 <<custom tests>>
-@
+````
 
 A fault names its E042 code and a message; weave turns it into a diagnostic at
 the fence's \code{file:line}.
-<<the custom error>>=
+````chunk the custom error
 /// A custom-fence fault (E042): a missing handler, a non-zero exit, a `<script>`
 /// in the output, or malformed envelope JSON.
 #[derive(Debug)]
@@ -74,13 +74,13 @@ impl CustomError {
         CustomError { message: message.into() }
     }
 }
-@
+````
 
 The blob cob sends (\code{Input}) and the envelope it reads back (\code{Output}). \code{assets}
 maps a site-relative published path to a file the handler wrote under \code{outdir};
 cob copies each into the site. An \code{Asset} is one such file, read into memory so it
 survives the cache.
-<<the custom contract types>>=
+````chunk the custom contract types
 /// The JSON blob sent to a handler on stdin (§6.6).
 #[derive(serde::Serialize)]
 struct Input<'a> {
@@ -114,13 +114,13 @@ pub struct Asset {
     pub path: String,
     pub bytes: Vec<u8>,
 }
-@
+````
 
 The cache key is FNV-1a over the serialized \code{Input} — body, caption, label,
 macros, config, and the handler argv folded in. It is stable across toolchains
 (\code{DefaultHasher} is not), so a cache entry does not silently rot (§6.4 math
 cache). The handler argv is part of the key: change the command, re-render.
-<<the custom cache key>>=
+````chunk the custom cache key
 fn hash(cmd: &[String], input_json: &str) -> String {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut byte = |b: u8| {
@@ -134,7 +134,7 @@ fn hash(cmd: &[String], input_json: &str) -> String {
     input_json.bytes().for_each(&mut byte);
     format!("{h:016x}")
 }
-@
+````
 
 \code{expand} rewrites every \code{<cob-custom>} placeholder in one rendered docs body. It
 runs before the float scan, so a returned \code{<figure>} is numbered normally. The
@@ -142,7 +142,7 @@ placeholder carries the handler, the label, and the (escaped) caption and body t
 Markdown pass peeled; \code{expand} adds the macros, the config, and a writable output
 directory, then runs the handler and splices the HTML. Each handler's assets are
 returned for the weaver to write into the site.
-<<expand custom placeholders>>=
+````chunk expand custom placeholders
 /// Expand every `<cob-custom>` placeholder in `html`. `cache_root` is the
 /// optional `.cob-cache` dir; when it cannot be written (the read-only Nix
 /// sandbox) the handler simply runs each time, so it must be deterministic (§8).
@@ -210,13 +210,13 @@ fn cob_toml_json(root: &Path) -> serde_json::Value {
         Err(_) => serde_json::Value::Null,
     }
 }
-@
+````
 
 \code{render_one} resolves the handler, builds the JSON blob, consults the cache, runs
 the command on a miss, and checks the result. A missing handler, a non-zero exit
 (its stderr becomes the message), a \code{<script>} in the HTML, or malformed JSON is
 E042. On a cache hit it reads the stored HTML and assets and runs nothing.
-<<run one handler>>=
+````chunk run one handler
 #[allow(clippy::too_many_arguments)]
 fn render_one(
     handler: &str,
@@ -345,24 +345,24 @@ fn run(cmd: &[String], root: &Path, input: &str) -> std::io::Result<std::process
     let _ = writer.join();
     out
 }
-@
+````
 
 The placeholder stores the caption and body as text escaped by \code{prose::escape}
 (\code{& < > "}); this reverses it. \code{&amp;} is restored last so a literal \code{&lt;} in the
 source round-trips.
-<<unescape attribute text>>=
+````chunk unescape attribute text
 fn unescape(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&amp;", "&")
 }
-@
+````
 
 The tests cover the unescape round-trip, the cache key folding the command, and —
 with a tiny shell handler — a happy path, a missing handler, a non-zero exit, and
 the \code{<script>} rejection.
-<<custom tests>>=
+````chunk custom tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,12 +379,12 @@ mod tests {
 
     <<a script in the output is rejected>>
 }
-@
+````
 
 The harness writes a one-line shell script as the handler and points a `Config`
 at it. The script echoes a fixed envelope, so the test is deterministic and needs
 no real tool.
-<<a tiny shell handler>>=
+````chunk a tiny shell handler
 use std::fs;
 
 /// A `fences` map whose `name` handler is a shell script running `script`.
@@ -409,17 +409,17 @@ fn placeholder(handler: &str, label: &str, body: &str) -> String {
         crate::prose::escape(body)
     )
 }
-@
+````
 
-<<unescape reverses prose escape>>=
+````chunk unescape reverses prose escape
 #[test]
 fn unescape_reverses_prose_escape() {
     let raw = "a <b> & \"c\"";
     assert_eq!(unescape(&crate::prose::escape(raw)), raw);
 }
-@
+````
 
-<<a custom fence runs its handler>>=
+````chunk a custom fence runs its handler
 #[test]
 fn custom_fence_runs_its_handler() {
     let tmp = std::env::temp_dir().join(format!("cob-custom-test-{}", std::process::id()));
@@ -431,9 +431,9 @@ fn custom_fence_runs_its_handler() {
     assert_eq!(out, "<figure id=\"fig:x\">ok</figure>");
     assert!(assets.is_empty());
 }
-@
+````
 
-<<the macros in scope reach the handler>>=
+````chunk the macros in scope reach the handler
 #[test]
 fn the_macros_in_scope_reach_the_handler() {
     let tmp = std::env::temp_dir().join(format!("cob-custom-defs-{}", std::process::id()));
@@ -452,8 +452,8 @@ fn the_macros_in_scope_reach_the_handler() {
     let (out, _) = expand(&html, &defs, &cfg, &tmp, None, "t.cob", 1).unwrap();
     assert_eq!(out, "<p>saw-spec</p>");
 }
-@
-<<a missing handler is an error>>=
+````
+````chunk a missing handler is an error
 #[test]
 fn missing_handler_is_an_error() {
     let html = placeholder("nope", "", "x");
@@ -461,9 +461,9 @@ fn missing_handler_is_an_error() {
         .unwrap_err();
     assert!(err.message.contains("no handler registered"));
 }
-@
+````
 
-<<a script in the output is rejected>>=
+````chunk a script in the output is rejected
 #[test]
 fn a_script_in_the_output_is_rejected() {
     let tmp = std::env::temp_dir().join(format!("cob-custom-script-{}", std::process::id()));
@@ -473,4 +473,4 @@ fn a_script_in_the_output_is_rejected() {
     let err = expand(&html, &BTreeMap::new(), &cfg, &tmp, None, "t.cob", 1).unwrap_err();
     assert!(err.message.contains("<script>"));
 }
-@
+````

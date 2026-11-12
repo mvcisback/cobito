@@ -1,4 +1,4 @@
-@ # Markdown fixture
+# Markdown fixture
 
 A tiny document authored in the \emph{Markdown} dialect. It exercises the
 post-\code{markup} prose transform: paragraphs and \strong{emphasis} become HTML, and the
@@ -26,8 +26,8 @@ E = mc^2
 The inline tail $O(1)$ still renders. The code lives in
 \ref{chunk:src/answer.rs}.
 
-<<src/answer.rs>>=
+````chunk src/answer.rs
 pub fn answer() -> u32 {
     42
 }
-@
+````

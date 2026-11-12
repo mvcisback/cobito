@@ -35,7 +35,7 @@ later slice; the point now is that the identity is the node, not the formatting.
 
 The module is the reference model, the error, the loader, the person and year
 helpers, and the formatter.
-<<src/cite.rs>>=
+````chunk src/cite.rs
 <<the module banner>>
 
 <<imports>>
@@ -53,30 +53,30 @@ helpers, and the formatter.
 <<format a reference>>
 
 <<the tests>>
-@
+````
 The banner states the one idea: a cited work is a node, so this module only reads
 and formats works; identity, pages, and backlinks are the node model's job.
-<<the module banner>>=
+````chunk the module banner
 //! Citations and the bibliography (§14). A cited work is a node (§10): it earns a
 //! frozen opaque id and a node page, and `\cite{key}` is a reference to it. This
 //! module only reads a BibTeX file into plain `Reference`s and formats one; the
 //! node model gives it identity, a page, and "Cited by" backlinks.
-@
+````
 The loader needs a path and the `biblatex` parser; the formatter escapes its
 output for HTML.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use biblatex::{Bibliography, ChunksExt, DateValue, PermissiveType};
 
 use crate::prose;
-@
+````
 A `Reference` is cob's own plain record of one work, extracted from the parser so
 the rest of cob never sees a `biblatex` type. The authors are display names
 (given then family); the container is the journal, booktitle, or publisher,
 whichever the entry has.
-<<a reference>>=
+````chunk a reference
 /// One bibliography entry as cob keeps it (§14): the parser's types are extracted
 /// into this plain record, so nothing else in cob depends on `biblatex`.
 #[derive(Debug, Clone, Default)]
@@ -91,10 +91,10 @@ pub struct Reference {
     pub container: String,
     pub year: Option<i32>,
 }
-@
+````
 A `Bib` is the loaded bibliography: key → reference. It is read once per weave and
 answers whether a cited key exists and what it says.
-<<the bibliography>>=
+````chunk the bibliography
 /// A loaded bibliography (§14): `key → Reference`. Read once per weave; a cited
 /// key that is absent is the caller's E040, not this module's concern.
 #[derive(Debug, Default)]
@@ -108,9 +108,9 @@ impl Bib {
         self.entries.get(key)
     }
 }
-@
+````
 One error, E039: the bibliography file could not be read or parsed.
-<<the cite error>>=
+````chunk the cite error
 /// E039 — the bibliography file could not be read or parsed (§14).
 #[derive(Debug)]
 pub enum CiteError {
@@ -132,11 +132,11 @@ impl std::fmt::Display for CiteError {
 }
 
 impl std::error::Error for CiteError {}
-@
+````
 Loading reads the file and parses it, then extracts one `Reference` per entry. A
 read or parse failure is E039; a malformed field inside an entry is not — it just
 leaves that part of the reference empty.
-<<load the bibliography>>=
+````chunk load the bibliography
 /// Read and parse a BibTeX file into a `Bib` (§14). A read or parse failure is
 /// E039; a missing field within an entry is tolerated (left empty).
 pub fn load(path: &Path) -> Result<Bib, CiteError> {
@@ -155,11 +155,11 @@ pub fn load(path: &Path) -> Result<Bib, CiteError> {
     }
     Ok(Bib { entries })
 }
-@
+````
 Extracting turns one parser entry into cob's plain `Reference`. Each field uses the
 parser's typed accessor and falls back to empty, so a sparse entry still yields a
 usable record.
-<<extract one reference>>=
+````chunk extract one reference
 /// One `biblatex` entry → cob's plain `Reference`. Every field is best-effort: a
 /// missing or unparsable field is left empty rather than failing the load.
 fn extract(entry: &biblatex::Entry) -> Reference {
@@ -207,11 +207,11 @@ fn year_of(entry: &biblatex::Entry) -> Option<i32> {
         PermissiveType::Chunks(_) => None,
     }
 }
-@
+````
 Formatting makes one HTML line for a reference: the authors, the title, the
 container in italics, then the year. Every text part is HTML-escaped. Empty parts
 are skipped, so a sparse entry still reads cleanly.
-<<format a reference>>=
+````chunk format a reference
 /// One reference as an HTML line (§14): `Authors. Title. <em>Container</em>, Year.`
 /// Empty parts are skipped and every text part is escaped.
 pub fn format_html(r: &Reference) -> String {
@@ -257,11 +257,11 @@ pub fn short_title(r: &Reference) -> String {
         (None, None) => r.key.clone(),
     }
 }
-@
+````
 The tests parse a small bibliography and check the extraction and the formatting:
 an article with two authors and a journal, a book with a publisher and TeX in the
 title, a sparse entry, and an unknown key.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,4 +335,4 @@ mod tests {
         assert!(bib().get("ghost").is_none());
     }
 }
-@
+````

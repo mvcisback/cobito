@@ -36,7 +36,7 @@ consumer nor linked back to.
 
 The module is the error, the loaded-forest record, the pure inversion, the fragment
 renderer, and the IO driver.
-<<src/backlinks.rs>>=
+````chunk src/backlinks.rs
 <<the module banner>>
 
 <<imports>>
@@ -52,25 +52,25 @@ renderer, and the IO driver.
 <<run the pass>>
 
 <<the tests>>
-@
+````
 The banner states the one idea: invert the forest's outgoing edges, so each node
 learns who points at it.
-<<the module banner>>=
+````chunk the module banner
 //! `cob backlinks` (§16): invert several forests' outgoing cross-forest edges
 //! (`cob-exports.json`) into reverse-backlink fragments (`n/<id>.backlinks.html`),
 //! which node pages fetch lazily. The reverse direction needs a forest-wide view
 //! no single weave has, so it is a separate pass.
-@
+````
 The pass reads `cob-exports.json` through `site::read_exports`, so a forest with a
 newer major schema is the same E038 a weave would raise.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::site::{self, ForestEdge};
-@
+````
 One error code, E041: a backlink fragment could not be written.
-<<the backlinks error>>=
+````chunk the backlinks error
 /// E041 — `cob backlinks` could not write a fragment (§16).
 #[derive(Debug)]
 pub enum BacklinksError {
@@ -86,11 +86,11 @@ impl std::fmt::Display for BacklinksError {
 }
 
 impl std::error::Error for BacklinksError {}
-@
+````
 One incoming edge, as a target node records it: the kind (so the fragment groups
 "Cited by" apart from "Referenced by"), and the source node's forest url, id, and
 title, so the backlink links back to its node page.
-<<an incoming edge>>=
+````chunk an incoming edge
 /// One edge pointing at a node, from the target's point of view (§16): the edge
 /// kind and the source node (its forest url, id, and title), so a backlink links to
 /// `<from_url>/n/<from_id>.html`.
@@ -101,12 +101,12 @@ struct Incoming {
     from_id: String,
     from_title: String,
 }
-@
+````
 Inverting walks every forest's edges once. An edge from forest `C` to `(to_url,
 to_id)` becomes an incoming edge on the forest whose url is `to_url`, naming `C` as
 the source. The result is keyed by target forest url, then by target node id. An
 edge with no source or target url is skipped — it cannot be linked.
-<<invert the edges>>=
+````chunk invert the edges
 /// Invert outgoing edges into incoming backlinks (§16): `to_url → to_id →
 /// [incoming]`. Each forest is `(own_url, its outgoing edges)`.
 fn invert(forests: &[(String, Vec<ForestEdge>)]) -> BTreeMap<String, BTreeMap<String, Vec<Incoming>>> {
@@ -133,12 +133,12 @@ fn invert(forests: &[(String, Vec<ForestEdge>)]) -> BTreeMap<String, BTreeMap<St
     }
     out
 }
-@
+````
 A fragment is one `<section>` with a list per kind, in a fixed order so the output
 is deterministic. The incoming edges are deduplicated and sorted, so the same
 source cited twice makes one backlink. Each link points at the source node's own
 page in its forest. The section is inert HTML a node page fetches and shows (§16).
-<<render a fragment>>=
+````chunk render a fragment
 /// The `n/<id>.backlinks.html` fragment for one targeted node (§16): a `<section>`
 /// with a deduplicated, sorted list per kind ("Transcluded by", "Referenced by",
 /// "Cited by"), each a link to the source node's page.
@@ -169,13 +169,13 @@ fn render_fragment(mut links: Vec<Incoming>) -> String {
     out.push_str("</section>\n");
     out
 }
-@
+````
 Running the pass loads each forest's `cob-exports.json` (skipping a directory that
 has none, so a non-forest path is harmless), inverts the edges, and writes one
 fragment per targeted node into that forest's `n/` directory. It returns how many
 fragments it wrote. A directory's own url comes from its exports, so the pass needs
 only the built sites, nothing else.
-<<run the pass>>=
+````chunk run the pass
 /// Invert the edges of the forests in `dirs` and write a `n/<id>.backlinks.html`
 /// fragment for every targeted node (§16). A directory with no `cob-exports.json`
 /// is skipped. Returns the number of fragments written.
@@ -211,11 +211,11 @@ pub fn run(dirs: &[PathBuf]) -> Result<usize, BacklinksError> {
     }
     Ok(written)
 }
-@
+````
 The tests cover the inversion (an edge becomes an incoming backlink on its target,
 keyed by url and id; a url-less forest is skipped) and the fragment (grouped by
 kind, deduplicated, linking to the source node page).
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,4 +283,4 @@ mod tests {
         }
     }
 }
-@
+````

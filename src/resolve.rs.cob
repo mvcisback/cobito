@@ -69,7 +69,7 @@ second page. The attribute holds the globally-assigned id instead — which unde
 
 The module is the label-id map, the error type, the resolution's data types, a
 slug-uniquifier, the \code{plan} entry point (walked in phases), and the nav builder.
-<<src/resolve.rs>>=
+````chunk src/resolve.rs
 <<the module banner>>
 
 <<imports>>
@@ -91,9 +91,9 @@ slug-uniquifier, the \code{plan} entry point (walked in phases), and the nav bui
 <<build the nav tree>>
 
 <<the tests>>
-@
+````
 The banner states what planning produces and why pages do not affect references.
-<<the module banner>>=
+````chunk the module banner
 //! Document-global planning: turn the raw scan (§6.2 step 4 inputs)
 //! into everything the second rewrite pass and the templates need — page
 //! assignment, the nav tree, the label table, and one resolved target per
@@ -102,26 +102,26 @@ The banner states what planning produces and why pages do not affect references.
 //! This is where "numbering is document-global" (§7) actually lives: pages are
 //! a presentation split applied *after* numbers and anchors are fixed, so a
 //! reference reads the same regardless of which page its target landed on.
-@
+````
 Maps, formatting, the model types, and the rewrite scan this planner consumes.
-<<imports>>=
+````chunk imports
 use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::model::{DocModel, Lint};
 use crate::rewrite::{anchor_of, slug, Kind, ResolvedRef, Scan};
 use crate::site::ForestRef;
-@
+````
 The label-id map carries every labelled float's human label to its frozen opaque
 id (§7.1). Weave builds it from \code{cob.lock} before planning.
-<<the label id map>>=
+````chunk the label id map
 /// Human label → frozen opaque id (§7.1), covering every labelled float in the
 /// document. Weave builds this from `cob.lock` before planning.
 pub type LabelIds = BTreeMap<String, String>;
-@
+````
 Two failures: the same label id defined twice (E014), and a \code{data-ref} whose
 target is no known label (E015).
-<<the resolve error>>=
+````chunk the resolve error
 #[derive(Debug)]
 pub enum ResolveError {
     /// E014 — the same label id defined twice.
@@ -144,11 +144,11 @@ impl fmt::Display for ResolveError {
 }
 
 impl std::error::Error for ResolveError {}
-@
+````
 \code{PageMeta} is one output page's id, title, and filename. \code{NavNode} is one
 table-of-contents entry: its \code{site.json} id, level, title, link href, and
 children.
-<<page and nav metadata>>=
+````chunk page and nav metadata
 #[derive(Debug, Clone)]
 pub struct PageMeta {
     pub id: String,
@@ -165,12 +165,12 @@ pub struct NavNode {
     pub href: String,
     pub children: Vec<NavNode>,
 }
-@
+````
 \code{Label} is a resolved label as the §8 table records it — a page index, an anchor,
 a kind, and (for a float) its opaque id. \code{Resolution} is the whole plan: the
 pages, each section's page, the nav, the label table, the per-heading anchors and
 their optional opaque ids, one resolved ref per site, and the lints.
-<<a resolved label and the resolution>>=
+````chunk a resolved label and the resolution
 /// A resolved label, as `site.json`'s `labels` table records it (§8). Chunk
 /// targets are excluded — they have their own `chunks` section.
 #[derive(Debug, Clone)]
@@ -201,10 +201,10 @@ pub struct Resolution {
     pub refs: Vec<ResolvedRef>,
     pub lints: Vec<Lint>,
 }
-@
+````
 \code{LabelInfo} is the planner's private working record for one label: its page,
 anchor, kind, opaque id, and the link text to use when the author gave none.
-<<internal label info>>=
+````chunk internal label info
 struct LabelInfo {
     page: usize,
     anchor: String,
@@ -214,10 +214,10 @@ struct LabelInfo {
     /// Link text when the author supplied none.
     text: String,
 }
-@
+````
 Slugs must be unique within a page, so this suffixes a repeat with \code{-2}, \code{-3},
 and so on; an empty base becomes \code{x}.
-<<make a slug page-unique>>=
+````chunk make a slug page-unique
 /// A per-page set that turns a slug into a page-unique one by suffixing.
 fn uniquify(used: &mut BTreeMap<String, u32>, base: &str) -> String {
     let base = if base.is_empty() { "x".to_string() } else { base.to_string() };
@@ -251,12 +251,12 @@ fn heading_ref_word(taxon: Option<&str>, label: &str, level: u8) -> String {
         _ => Kind::Section.word().to_string(),
     }
 }
-@
+````
 \code{plan} runs in five phases. It first indexes the h1 text per section, then assigns
 each section to a page (Pass A), stamps heading anchors and builds the nav, fills
 the label table from floats, headings, and chunk targets, resolves every ref to an
 href and display text, and finally collects lints and assembles the result.
-<<plan the document>>=
+````chunk plan the document
 /// `first_tags[i]` is the tag a docs section opens with, or `None` for code
 /// sections; it is the sole page-boundary signal (§5.3).
 pub fn plan(
@@ -286,10 +286,10 @@ pub fn plan(
 
 <<collect lints and assemble the resolution>>
 }
-@
+````
 The first page is always \code{index}, whatever it opens with. After that, each h1
 starts a new page whose slug is derived from its title and made unique.
-<<pass a: assign each section to a page>>=
+````chunk pass a: assign each section to a page
     // --- Pass A: page assignment ------------------------------------------
     let default_title = doc
         .files
@@ -322,12 +322,12 @@ starts a new page whose slug is derived from its title and made unique.
         }
         *slot = cur;
     }
-@
+````
 An h1 anchors to its page id; a deeper heading gets a page-unique slug unless the
 author pinned an id. A pinned id in a node namespace (§10) makes the heading a
 referenceable node: it is recorded for the label table with its taxon, and its
 opaque id is carried out so \code{apply} can stamp the permalink and node link.
-<<stamp heading anchors and build the nav>>=
+````chunk stamp heading anchors and build the nav
     // --- Heading anchors + nav --------------------------------------------
     // An h1 anchors to its page id; deeper headings get a page-unique slug,
     // unless the author pinned an id (which a `sec:` ref may target).
@@ -375,13 +375,13 @@ opaque id is carried out so \code{apply} can stamp the permalink and node link.
     }
 
     let nav = build_nav(&pages, &nav_flat);
-@
+````
 The label table draws from three sources: scanned float labels (each with its
 kind-and-opaque-id display text), heading section labels (which render as a
 kind-qualified opaque id, not the rot-prone heading text), and synthetic \code{chunk:}
 targets that point at a chunk's first defining section so prose can link into
 code. A repeat id is E014.
-<<fill the label table>>=
+````chunk fill the label table
     // --- Label table ------------------------------------------------------
     let mut labels: BTreeMap<String, LabelInfo> = BTreeMap::new();
     let mut insert = |id: String, info: LabelInfo| -> Result<(), ResolveError> {
@@ -464,7 +464,7 @@ code. A repeat id is E014.
             },
         )?;
     }
-@
+````
 Each ref resolves to an href — a bare fragment when the target is on the same
 page, page-qualified when it crosses — and to display text, kept from the author
 if present, otherwise the label's own text. An unknown target is E015.
@@ -475,7 +475,7 @@ deployed page \code{<url>/<page>.html#<anchor>}, and the display text is the kin
 and the target's frozen opaque id, the same shape a local ref shows. An unknown
 alias or an unknown label in a known forest is E015, the same as any other
 undefined reference.
-<<resolve every ref>>=
+````chunk resolve every ref
     // --- Resolve refs -----------------------------------------------------
     let mut refs = Vec::with_capacity(scan.refs.len());
     for r in &scan.refs {
@@ -525,11 +525,11 @@ undefined reference.
             text: if r.has_text { None } else { Some(info.text.clone()) },
         });
     }
-@
+````
 An uncaptioned figure or table cannot be numbered meaningfully, so it is W103. The
 public §8 label table then keeps everything but the synthetic chunk targets, which
 the \code{chunks} section already represents.
-<<collect lints and assemble the resolution>>=
+````chunk collect lints and assemble the resolution
     // --- Lints ------------------------------------------------------------
     // A figure or table without a caption cannot be numbered meaningfully (§7).
     let mut lints = Vec::new();
@@ -571,12 +571,12 @@ the \code{chunks} section already represents.
         refs,
         lints,
     })
-@
+````
 The nav builder folds the flat heading list into a tree: h1s are roots, and each deeper
 heading nests under the latest heading above it in level, at any depth (a `node` fence
 can reach h6), with a graceful fallback when a level is skipped. An h1's href is the page file; a deeper heading's is a fragment within
 it.
-<<build the nav tree>>=
+````chunk build the nav tree
 /// Put `node` under the latest node above it in level, at any depth, else beside it.
 fn nest(nodes: &mut Vec<NavNode>, node: NavNode) {
     match nodes.last_mut() {
@@ -611,12 +611,12 @@ fn build_nav(pages: &[PageMeta], flat: &[(usize, u8, String, String)]) -> Vec<Na
     }
     roots
 }
-@
+````
 The tests build resolutions from raw prose fragments and assert the plan: pages
 open on h1, the first page is always \code{index}, nav nests, refs cross pages or stay
 fragments, chunk refs target the defining section, author ref text wins, and the
 E014/E015/W103 diagnostics fire.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,20 +653,20 @@ mod tests {
 
     <<an uncaptioned figure is w103>>
 }
-@
+````
 A readable stand-in id lets tests assert generated link text without the RNG.
-<<a readable fake id>>=
+````chunk a readable fake id
 /// A readable stand-in id for a label, so tests can assert generated link
 /// text without depending on the RNG (which `lock.rs` tests cover). E.g.
 /// `fig:p` → `figp`.
 fn fake_id(label: &str) -> String {
     label.replace(':', "")
 }
-@
+````
 The harness mirrors what weave feeds in: prose or code fragments paired with a
 section id and line, scanned for labels and refs, with every float label given a
 readable opaque id.
-<<resolve prose fragments>>=
+````chunk resolve prose fragments
 /// Build a resolution from raw prose fragments paired with their section id
 /// and source line, mirroring what weave feeds in. Every scanned float label
 /// is assigned a readable opaque id via `fake_id`.
@@ -738,9 +738,9 @@ fn resolve(frags: &[(&str, bool)]) -> (DocModel, Resolution) {
     let res = plan(&doc, &sc, &first_tags, &label_ids, &BTreeMap::new()).unwrap();
     (doc, res)
 }
-@
+````
 An h1 starts a page; a code section inherits the page open when it appeared.
-<<h1 sections start pages, code inherits>>=
+````chunk h1 sections start pages, code inherits
 #[test]
 fn h1_sections_start_pages_code_inherits() {
     let (_, r) = resolve(&[
@@ -754,19 +754,19 @@ fn h1_sections_start_pages_code_inherits() {
     // The code section belongs to the page open when it appeared.
     assert_eq!(r.section_page, vec![0, 0, 1]);
 }
-@
+````
 The first page is \code{index} even when it opens with a heading, taking the heading's
 text as its title.
-<<the first page is index even with a heading>>=
+````chunk the first page is index even with a heading
 #[test]
 fn first_page_is_index_even_with_a_heading() {
     let (_, r) = resolve(&[("<h1>Front matter</h1>", false)]);
     assert_eq!(r.pages[0].id, "index");
     assert_eq!(r.pages[0].title, "Front matter");
 }
-@
+````
 h2 and h3 nest under their h1 in the nav tree.
-<<nav nests h2 and h3 under h1>>=
+````chunk nav nests h2 and h3 under h1
 #[test]
 fn nav_nests_h2_and_h3_under_h1() {
     let (_, r) = resolve(&[(
@@ -782,14 +782,14 @@ fn nav_nests_h2_and_h3_under_h1() {
     assert_eq!(r.nav[0].children[0].href, "index.html#lexing");
     assert_eq!(r.nav[0].children[0].children[0].title, "Cost");
 }
-@
+````
 A ref to a target on another page is page-qualified; a ref to a target on the same
 page is a bare fragment. The link text is the kind-qualified opaque id.
 A heading with a non-float label in any namespace is a node (§10): it earns an
 opaque id, so a \code{\ref} to it resolves, and the link text takes the node's
 taxon as its word — "Definition", not "Section" — while a plain labelled heading
 stays "Section".
-<<a taxon heading is a node and its ref is typed>>=
+````chunk a taxon heading is a node and its ref is typed
 #[test]
 fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
     let (_, r) = resolve(&[(
@@ -805,12 +805,12 @@ fn a_taxon_heading_is_a_node_and_its_ref_is_typed() {
     assert_eq!(r.refs[1].href, "#sec-s");
     assert_eq!(r.refs[1].text.as_deref(), Some("Section secs"));
 }
-@
+````
 A node fence (§10) is a labelled typed node that is not a heading. Its label is any
 node namespace, and its taxon names the word a \code{\ref} to it reads. It is an element, so
 it earns an opaque id like a float but adds no heading uid, and its anchor is the
 colon-free label.
-<<a node fence is a labelled typed node>>=
+````chunk a node fence is a labelled typed node
 #[test]
 fn a_node_fence_is_a_labelled_typed_node() {
     let (_, r) = resolve(&[(
@@ -825,12 +825,12 @@ fn a_node_fence_is_a_labelled_typed_node() {
     // A node fence is not a heading: it adds no heading uid.
     assert!(r.heading_uids.iter().all(|u| u.is_none()));
 }
-@
+````
 A page heading (an h1) with a \code{ch:} or \code{part:} label is a target for \code{\ref}: the
 thesis refers to its chapters and parts about sixty times. The ref reads "Chapter" or
 "Part" with the frozen id, and links to the chapter's page. But a page is not a node,
 so the heading earns no permalink uid and no \code{n/} page.
-<<a labelled page heading is a ref target but not a node>>=
+````chunk a labelled page heading is a ref target but not a node
 #[test]
 fn a_labelled_page_heading_is_a_ref_target_but_not_a_node() {
     let (_, r) = resolve(&[
@@ -853,8 +853,8 @@ fn a_labelled_page_heading_is_a_ref_target_but_not_a_node() {
     let uids: Vec<bool> = r.heading_uids.iter().map(|u| u.is_some()).collect();
     assert_eq!(uids, vec![false, false, true, false]);
 }
-@
-<<cross-page refs qualify, same-page refs are fragments>>=
+````
+````chunk cross-page refs qualify, same-page refs are fragments
 #[test]
 fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
     let (_, r) = resolve(&[
@@ -876,11 +876,11 @@ fn cross_page_ref_is_page_qualified_same_page_is_a_fragment() {
     // The third ref is on the same page as eq:c.
     assert_eq!(r.refs[2].href, "#eq-c");
 }
-@
+````
 A \code{label@alias} ref resolves against the imported forest's label index: the href
 lands on the deployed page, and the text is the kind word with the frozen opaque
 id. An unknown alias (or an unknown label in a known forest) is E015.
-<<a cross-document ref targets the imported forest>>=
+````chunk a cross-document ref targets the imported forest
 #[test]
 fn a_cross_document_ref_targets_the_imported_forest() {
     use crate::site::{ForestIndex, ForestLabel, ForestRef};
@@ -931,10 +931,10 @@ fn a_cross_document_ref_targets_the_imported_forest() {
     let err = plan(&doc, &sc2, &[Some("h1".into())], &LabelIds::new(), &imports).unwrap_err();
     assert!(err.to_string().starts_with("error[E015]"));
 }
-@
+````
 A \code{chunk:} ref points at the chunk's defining section, with the chunk name as
 text.
-<<chunk refs target the defining section>>=
+````chunk chunk refs target the defining section
 #[test]
 fn chunk_refs_target_the_defining_section() {
     let (_, r) = resolve(&[
@@ -944,10 +944,10 @@ fn chunk_refs_target_the_defining_section() {
     assert_eq!(r.refs[0].href, "#sec-2");
     assert_eq!(r.refs[0].text.as_deref(), Some("lex a token"));
 }
-@
+````
 When the author supplied ref text, the resolver keeps it (leaving the generated
 text \code{None}).
-<<author ref text is kept>>=
+````chunk author ref text is kept
 #[test]
 fn author_ref_text_is_kept() {
     let (_, r) = resolve(&[(
@@ -957,9 +957,9 @@ fn author_ref_text_is_kept() {
     )]);
     assert_eq!(r.refs[0].text, None);
 }
-@
+````
 Two floats with the same label id are E014.
-<<a duplicate label is e014>>=
+````chunk a duplicate label is e014
 #[test]
 fn duplicate_label_is_e014() {
     let mut sc = Scan::default();
@@ -984,9 +984,9 @@ fn duplicate_label_is_e014() {
         .unwrap_err();
     assert!(err.to_string().starts_with("error[E014]"));
 }
-@
+````
 A ref to a label that does not exist is E015.
-<<an unknown ref is e015>>=
+````chunk an unknown ref is e015
 #[test]
 fn unknown_ref_is_e015() {
     let mut sc = Scan::default();
@@ -1005,13 +1005,13 @@ fn unknown_ref_is_e015() {
         .unwrap_err();
     assert!(err.to_string().starts_with("error[E015]"));
 }
-@
+````
 An uncaptioned figure is W103.
-<<an uncaptioned figure is w103>>=
+````chunk an uncaptioned figure is w103
 #[test]
 fn uncaptioned_figure_is_w103() {
     let (_, r) = resolve(&[("<h1>I</h1><figure id=\"fig:a\"><img src=\"x\"></figure>", false)]);
     assert_eq!(r.lints.len(), 1);
     assert_eq!(r.lints[0].code, "W103");
 }
-@
+````

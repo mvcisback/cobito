@@ -9,7 +9,13 @@ cob reads and tangles a \code{.cob} file with its own code now (§4.1, §11). It
 no noweb tool. This parser stays for one job: it decodes the frozen
 \code{fixtures/*.markup} goldens, so a test can compare the native reader with real
 noweb output (§15). noweb's \code{markup} stage made those goldens. \code{markup} writes
-one tagged line per token. A short example:
+one tagged line per token.
+
+The goldens come from the time when cob read noweb's own chunk syntax. cob dropped that
+syntax in M17 (§sec:fence-chunks in \code{markup.rs.cob}), and noweb cannot read the syntax
+that replaced it. So the test compares what both sides still share: every code chunk
+and every line of prose. The facts in this module are facts about noweb, and the
+goldens keep them true. A short example of the IR:
 
 ```verbatim
 @file lexer.cob
@@ -71,7 +77,7 @@ parser encodes these facts (§4.2):
 
 The module is the event type and a line parser that folds \code{markup} IR text into
 events.
-<<src/noweb.rs>>=
+````chunk src/noweb.rs
 <<the module banner>>
 
 <<imports>>
@@ -85,10 +91,10 @@ events.
 <<parse one line>>
 
 <<the tests>>
-@
+````
 The banner records the noweb version and the three empirical quirks the parser must
 respect.
-<<the module banner>>=
+````chunk the module banner
 //! Parser for noweb's `markup` pipeline format.
 //!
 //! cob reads `.cob` files with the native reader (`markup::read`, §4.1); this
@@ -97,16 +103,16 @@ respect.
 //! reader's oracle. Verified against noweb 2.13 (nixpkgs); see §4.2 for the
 //! findings this encodes, notably: empty text lines arrive as `@text ` with a
 //! trailing space, and an `@fatal` event marks a markup error.
-@
+````
 Only formatting — this module parses \code{markup} IR text into events. It runs no
 process; the native reader (\code{markup::read}, §4.1) reads \code{.cob} files at run time.
-<<imports>>=
+````chunk imports
 use std::fmt;
-@
+````
 Every line of markup IR maps to one \code{Event}. An unknown tag is not an error: it
 becomes \code{Other}, so a future noweb version surfaces as a failing test rather than a
 panic.
-<<the event type>>=
+````chunk the event type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     File(String),
@@ -132,11 +138,11 @@ pub enum Event {
         arg: String,
     },
 }
-@
+````
 A line the parser cannot read is E001. It carries the line number and the offending
 text, because the usual cause is a noweb version whose IR shape cob was not built
 against.
-<<the parse error>>=
+````chunk the parse error
 #[derive(Debug)]
 pub struct ParseError {
     pub line_no: usize,
@@ -155,10 +161,10 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
-@
+````
 Parse the whole IR line by line, numbering from one so an error points at a real
 line.
-<<parse the whole ir>>=
+````chunk parse the whole ir
 pub fn parse(input: &str) -> Result<Vec<Event>, ParseError> {
     input
         .lines()
@@ -172,12 +178,12 @@ pub fn parse(input: &str) -> Result<Vec<Event>, ParseError> {
         })
         .collect()
 }
-@
+````
 One line to one event. Strip the leading \code{@}, split off the tag, then dispatch.
 \code{begin} and \code{end} carry a \code{docs|code N} argument; \code{index} has its own sub-grammar;
 everything unrecognized falls through to \code{Other} rather than failing, so version
 drift is visible but never fatal.
-<<parse one line>>=
+````chunk parse one line
 fn parse_line(line: &str) -> Result<Event, String> {
     let rest = line
         .strip_prefix('@')
@@ -229,10 +235,10 @@ fn parse_line(line: &str) -> Result<Event, String> {
     };
     Ok(event)
 }
-@
+````
 The tests are the executable half of §4.2: they pin real \code{markup} output and the
 parser's handling of each event shape.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,10 +253,10 @@ mod tests {
 
     <<unknown tags survive>>
 }
-@
+````
 The pinned \code{hello.markup} fixture parses, its code-chunk numbers and defn/use names
 come out as expected, and nothing degrades to \code{Other}.
-<<parsing the pinned fixture>>=
+````chunk parsing the pinned fixture
 #[test]
 fn parses_pinned_markup_output() {
     let events = parse(HELLO).expect("pinned fixture must parse");
@@ -289,10 +295,10 @@ fn parses_pinned_markup_output() {
     assert!(events.contains(&Event::IndexDefn("c".to_string())));
     assert!(!events.iter().any(|e| matches!(e, Event::Other { .. })));
 }
-@
+````
 Empty text is \code{@text } with a trailing space, but the parser is liberal and also
 accepts a bare \code{@text}. Spaces inside content are significant.
-<<text forms>>=
+````chunk text forms
 #[test]
 fn text_forms() {
     // Empty text arrives as `@text ` (trailing space); be liberal about `@text`.
@@ -305,9 +311,9 @@ fn text_forms() {
     );
     assert_eq!(parse_line("@nl").unwrap(), Event::Nl);
 }
-@
+````
 The structural tags — begin/end, index, defn — parse to their typed events.
-<<structural lines>>=
+````chunk structural lines
 #[test]
 fn structural_lines() {
     assert_eq!(parse_line("@begin docs 0").unwrap(), Event::BeginDocs(0));
@@ -322,10 +328,10 @@ fn structural_lines() {
         Event::Defn("lex a token".to_string())
     );
 }
-@
+````
 An unknown tag becomes \code{Other} rather than an error, and a line without a leading
 \code{@} is rejected.
-<<unknown tags survive>>=
+````chunk unknown tags survive
 #[test]
 fn unknown_tags_are_preserved_not_fatal() {
     assert_eq!(
@@ -337,4 +343,4 @@ fn unknown_tags_are_preserved_not_fatal() {
     );
     assert!(parse_line("no at sign").is_err());
 }
-@
+````

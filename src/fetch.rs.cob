@@ -73,7 +73,7 @@ a remote import with a local checkout.
 
 The module is the error type, the fetched-import record, the single-import fetch,
 the whole-config run, and the weave-time index resolver.
-<<src/fetch.rs>>=
+````chunk src/fetch.rs
 <<the module banner>>
 
 <<imports>>
@@ -89,19 +89,19 @@ the whole-config run, and the weave-time index resolver.
 <<resolve an import's index directory>>
 
 <<the tests>>
-@
+````
 The banner states the one guarantee: the network is touched here and nowhere else,
 so a weave stays offline.
-<<the module banner>>=
+````chunk the module banner
 //! `cob fetch` (§13): pin each remote forest import to a commit and cache its
 //! `cob-exports.json`, so a later weave resolves cross-document refs and macros
 //! offline and a build is reproducible by the pinned commit SHA. This is the one
 //! place cob touches the network; a weave never does.
-@
+````
 The fetch needs a git client (`gix`, pure-Rust for the protocol, pack, and object
 store; the `file://` transport is pure-Rust and the `ssh://` transport runs the
 system `ssh`), the config's import table, and the lock's pin type.
-<<imports>>=
+````chunk imports
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -109,11 +109,11 @@ use semver::{Version, VersionReq};
 
 use crate::config::{Config, Import};
 use crate::lock::{FetchPin, LockFile};
-@
+````
 One error code, E037, covers every fetch fault: a git operation that failed, a ref
 with no `cob-exports.json`, a cache read/write failure, and a `git` import a weave met
 with no pin.
-<<the fetch error>>=
+````chunk the fetch error
 /// Every `cob fetch` fault is E037 (§13): a git operation failed, the ref has no
 /// `cob-exports.json`, the cache could not be written, or a weave met a `git` import
 /// with no pin.
@@ -220,10 +220,10 @@ pub enum Mode {
     Fetch,
     Update(Option<String>),
 }
-@
+````
 One fetched import: its alias, the commit it pinned to, and the cache path its
 index now lives at. `cob fetch` returns a list of these for its report.
-<<a fetched import>>=
+````chunk a fetched import
 /// One import `cob fetch` resolved: its alias, the pinned commit SHA, and the
 /// cache path its `cob-exports.json` now lives at.
 pub struct Fetched {
@@ -231,13 +231,13 @@ pub struct Fetched {
     pub sha: String,
     pub cached: PathBuf,
 }
-@
+````
 Fetching one import clones its ref into a scratch bare repo, resolves the request
 to one commit (the highest tag matching a semver requirement, or a raw ref used
 as-is), reads `cob-exports.json` from that commit's tree root, checks its schema,
 and writes it to the commit-keyed cache. The scratch clone is removed after the
 one file is read, so the cache holds only the index, not a whole repository.
-<<fetch one import>>=
+````chunk fetch one import
 /// The highest semver tag in `tags` that satisfies `req` — the tag name and its
 /// parsed version. A tag may lead with `v`. This is the pure selection step, kept
 /// out of the git plumbing so it is unit-testable (§13).
@@ -345,7 +345,7 @@ fn tag_names(repo: &gix::Repository) -> Result<Vec<String>, String> {
     }
     Ok(out)
 }
-@
+````
 Running `cob fetch`/`cob update` walks the config's import table and resolves every
 import that has a `git` URL. The mode decides whether an existing pin is honored or
 re-resolved (§13): `Fetch` keeps a pin that still matches the author's request and
@@ -353,7 +353,7 @@ whose cache is present, so a routine fetch is reproducible and does not drift;
 `Update` re-resolves (all imports, or one named alias) to the highest matching
 release. A `path`-only import is local and skipped. On a re-resolve, a released
 version whose tag moved is an error, so a published version stays immutable.
-<<run fetch over the config>>=
+````chunk run fetch over the config
 /// Resolve every `[import.<alias>]` that has a `git` URL, recording each pin in the
 /// lock (§13). `mode` decides whether an up-to-date pin is honored or re-resolved.
 /// A `path`-only import is local and skipped. Returns what was (re)fetched.
@@ -404,12 +404,12 @@ pub fn run(
     }
     Ok(out)
 }
-@
+````
 A weave resolves an import to the directory holding its `cob-exports.json`. A local
 `path` wins. A `git` import resolves through its lock pin to the commit-keyed
 cache; with no pin it is `Unpinned`, so the weave tells the author to fetch first.
 An import with neither source yields `None` and is simply not loaded.
-<<resolve an import's index directory>>=
+````chunk resolve an import's index directory
 /// The directory holding an import's `cob-exports.json` (§13). A local `path` wins; a
 /// `git` import resolves through its lock pin to `<cache_root>/imports/<sha>`; a
 /// `git` import with no pin is `Unpinned`. An import with no source is `None`.
@@ -432,11 +432,11 @@ pub fn index_dir(
     }
     Ok(None)
 }
-@
+````
 The tests cover the pure resolver and the error text; the real git fetch is
 exercised hermetically by the `fetch` flake check against a local `file://` repo
 (§13), which needs no network.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,4 +521,4 @@ mod tests {
         assert!(want("a", &i).is_err());
     }
 }
-@
+````

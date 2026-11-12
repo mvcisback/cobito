@@ -1,9 +1,9 @@
-@ # tree-sitter-cob: a grammar for the editor
+# tree-sitter-cob: a grammar for the editor
 
 This document is the tree-sitter grammar for `.cob` files. An editor (neovim,
 Helix, Zed) parses a buffer with a tree-sitter grammar and colors it from a
 query. cob is language-agnostic, so this grammar colors the literate *structure*
-— the chunk definitions, the chunk uses, and the control lines — and hands the
+— the chunk fences, the chunk uses, and the escapes — and hands the
 code and the prose to other grammars through **injection** queries (§5.5, Tier 1
 of the editor track). It is also a cob grammar like any other, so cob's own web
 highlighter can color a `.cob` shown as code.
@@ -13,22 +13,19 @@ This grammar tangles to five files: the grammar `grammar.js`, the external scann
 `tree-sitter.json`. Edit this `.cob` and re-tangle (`cob tangle
 tree-sitter-cob/tree-sitter-cob.cob --out .`), never the generated files.
 
-@ ## The surface syntax
+## The surface syntax {#sec:5FQr}
 
-A `.cob` file is a list of chunks. A code chunk opens with a `<<name>>=` line at
-column 0 and runs to the next `@` line or the next def. A documentation chunk
-opens with an `@ ` line and continues on bare lines; its prose is Markdown. The
-file may open with bare prose, because noweb starts an implicit documentation
-chunk. Inside code, a `<<name>>` is a chunk use (a hole), and `@<<` or `@>>` is a
-literal `<<` or `>>`.
+A `.cob` file is a list of chunks. A code chunk opens with a fence open line: four
+or more backticks, the word `chunk`, and a name. It runs to a fence close line, a
+line of backticks at least as long as the open line's run. A documentation chunk
+is every other line; its prose is Markdown. Inside code, a `<<name>>` is a chunk
+use (a hole), and `@<<` or `@>>` is a literal `<<` or `>>`. Three backticks stay
+free for an ordinary fence in prose, so this grammar never confuses the two.
 
-A code chunk has a second spelling (`markup.rs.cob` §sec:fence-chunks, cobito.cob
-M17): a fence of four or more backticks, the word `chunk`, and a name opens it;
-a fence of backticks at least that long, alone on its line, closes it. Three
-backticks stay free for an ordinary illustrative fence inside prose, so this
-grammar never confuses the two. Both spellings work in the same file, even for
-the same chunk reopened — a milestone, not a permanent fork, because the plan is
-to retire the first one once every `.cob` file has moved off it.
+The grammar also reads noweb's old chunk syntax: a `<<name>>=` line at column 0
+that opens a chunk, and an `@` line that ends it (`markup.rs.cob` §sec:fence-chunks).
+The reader now refuses that syntax (E043). The grammar keeps it so that an editor can
+still color a file that `cob migrate` has not converted yet.
 
 Four facts need lookahead, so the grammar keeps them in an external scanner
 (`src/scanner.c`): a def and a use both start with `<<`, so the scanner tells them
@@ -39,7 +36,15 @@ a string stays code; and a fence open or close needs to count backticks and, for
 a close, remember how many the matching open used — the one piece of state this
 scanner carries across lines.
 
-@ ## The grammar
+The grammar does not model two rules of the reader (`markup.rs.cob` §sec:read-docs).
+It does not know that a first-level heading starts a new documentation chunk, and it
+does not know a Markdown fenced block. Suppose an author shows a chunk line as an
+example inside a longer fence. The reader takes it as plain text, but this grammar
+still colors it as a chunk. That is a mistake in color only. The `treesitter` check
+parses every `.cob` in the repository, and none of them shows such an example.
+
+
+## The grammar {#sec:I9DM}
 
 `grammar.js` lists the rules. The external tokens are the five the scanner owns.
 The one conflict is after a chunk definition, where an `@` can be an index line
@@ -47,10 +52,11 @@ The one conflict is after a chunk definition, where an `@` can be an index line
 apart, so GLR explores both. The escape rule is the one place the code needs the
 `@<<` / `@>>` form in its own text, so it reads `@@<<` / `@@>>` in this source.
 `fence_chunk` carries no `index_line`: `%def` is noweb-only bookkeeping, dead in
-every real `.cob` file already (`markup.rs.cob` confirms it), so the fence
-spelling never grew it.
+every real `.cob` file already, so the fence chunk never grew it. The prose lines
+after a fence close line belong to the `fence_chunk`, as the prose lines after a
+control line belong to a `doc_chunk`.
 
-<<tree-sitter-cob/grammar.js>>=
+````chunk tree-sitter-cob/grammar.js
 // tree-sitter-cob — the .cob surface syntax (generated from tree-sitter-cob.cob).
 module.exports = grammar({
   name: 'cob',
@@ -95,6 +101,7 @@ module.exports = grammar({
       optional($.code_body),
       $.fence_close,
       '\n',
+      repeat($.doc_line),
     ),
 
     fence_chunk_name: $ => /[^\n]+/,
@@ -140,7 +147,8 @@ module.exports = grammar({
     doc_line: $ => seq(field('text', /[^\n]*/), '\n'),
   }
 });
-@ ## The external scanner
+````
+## The external scanner {#sec:s6Z1}
 
 The scanner owns the four lookahead decisions. It acts only at column 0 for the
 `@`, def, and fence markers; the use marker may come anywhere on a line. For `<<`
@@ -157,7 +165,7 @@ scanner is the one piece of this grammar that carries state across lines. It
 clamps to a `u8` and serializes that one byte; no real `.cob` file opens a fence
 with 255 backticks, and a byte is enough even if an adversarial one tried.
 
-<<tree-sitter-cob/src/scanner.c>>=
+````chunk tree-sitter-cob/src/scanner.c
 #include "tree_sitter/parser.h"
 #include <stdlib.h>
 
@@ -276,7 +284,8 @@ bool tree_sitter_cob_external_scanner_scan(void *payload, TSLexer *lexer, const 
 
   return false;
 }
-@ ## The highlights query
+````
+## The highlights query {#sec:WAeo}
 
 This query colors the literate scaffolding. The chunk name is a `@function`
 (definition or reference), the `<<`/`>>`/`>>=` openers and closers are
@@ -287,7 +296,7 @@ control line, not prose or code. The fence spelling's name gets the same
 noweb markers they stand in for — one meaning, two spellings, one color. Code
 and prose get their color from the injected grammars.
 
-<<tree-sitter-cob/queries/highlights.scm>>=
+````chunk tree-sitter-cob/queries/highlights.scm
 ; tree-sitter-cob highlights (generated from tree-sitter-cob.cob).
 
 (chunk_definition
@@ -309,7 +318,8 @@ and prose get their color from the injected grammars.
 
 (at) @keyword
 (index_line "%def" @keyword)
-@ ## The injections query
+````
+## The injections query {#sec:hLDV}
 
 This query hands the prose to Markdown and each code body to a language grammar.
 The language comes from the def-name extension (§5.5, tier 3): a name ending in
@@ -318,7 +328,7 @@ extension, like `<<lex a token>>=` — gets no injection and stays plain; the LS
 tier (Tier 2) runs cob's full resolver for those. Add a language by copying one
 pattern with a new extension.
 
-<<tree-sitter-cob/queries/injections.scm>>=
+````chunk tree-sitter-cob/queries/injections.scm
 ; tree-sitter-cob injections (generated from tree-sitter-cob.cob).
 
 ; Documentation prose is Markdown, combined so multi-line constructs hold together.
@@ -365,7 +375,8 @@ pattern with a new extension.
   (#match? @_n "\\.(sh|bash)$") (#set! injection.language "bash"))
 ((fence_chunk name: (fence_chunk_name) @_n (code_body) @injection.content)
   (#match? @_n "\\.css$") (#set! injection.language "css"))
-@ ## The verbatim `\lang{}` override
+````
+## The verbatim `\lang{}` override {#sec:gL53}
 
 A `verbatim \lang{name}` fence (§6.1, the `markdown.rs.cob` fenced-float rules)
 keeps a language class at weave time, but an editor's own markdown grammar does
@@ -399,7 +410,7 @@ before trusting the fixed-width skip. Anything else (no `\lang{}`, extra
 whitespace, a second modifier, `\lang{}` not last) fails that check and falls
 through to no injection: an uncolored body, same as today, never a wrong one.
 
-<<tree-sitter-cob/markdown-ext/injections.scm>>=
+````chunk tree-sitter-cob/markdown-ext/injections.scm
 ;; extends
 
 ; The one shape this rule knows: `verbatim \lang{name}`, one space, nothing
@@ -412,12 +423,13 @@ through to no injection: an uncolored body, same as today, never a wrong one.
   (code_fence_content) @injection.content)
   (#match? @injection.language "\\m^verbatim \\\\lang{[^}]\\+}$")
   (#offset! @injection.language 0 15 0 -1))
-@ ## The package manifest
+````
+## The package manifest {#sec:5vYN}
 
 `tree-sitter.json` is the package metadata the tree-sitter CLI reads. The scope and
 the file type let an editor match `.cob` to this grammar.
 
-<<tree-sitter-cob/tree-sitter.json>>=
+````chunk tree-sitter-cob/tree-sitter.json
 {
   "grammars": [
     {
@@ -444,7 +456,8 @@ the file type let an editor match `.cob` to this grammar.
     "kotlin": false
   }
 }
-@ ## Using it in neovim
+````
+## Using it in neovim {#sec:B7g1}
 
 neovim (0.9 and later) reads a tree-sitter grammar and its queries from the
 runtime path. The flake ships the compiled parser as a package, built from a
@@ -499,4 +512,3 @@ To check the setup without opening neovim at all: `nix flake check` runs this
 grammar against every `.cob` file in the repo (`checks.treesitter`, §5.5) and
 fails on the first `ERROR`/`MISSING` node — the same pass/fail signal neovim's
 highlighter would hit, just without a UI.
-@

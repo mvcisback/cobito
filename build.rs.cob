@@ -29,7 +29,7 @@ The script reads the manifest, compiles each grammar's C with the `cc` crate, an
 writes `grammars_generated.rs` into `OUT_DIR`: one FFI declaration per grammar and a
 `generated()` function returning their registry entries, which `highlight.rs`
 includes and merges into its registry.
-<<build.rs>>=
+````chunk build.rs
 use std::{env, fs, path::Path};
 
 fn main() {
@@ -64,12 +64,12 @@ fn main() {
     let code = format!("{externs}\nfn generated() -> Vec<Grammar> {{ vec![{entries}] }}\n");
     fs::write(&generated, code).expect("write generated grammars");
 }
-@
+````
 Each grammar is a `parser.c` plus an optional external scanner (`scanner.c`, or
 `scanner.cc` for a C++ one). cc compiles them into a static library cob links, so
 the grammar's `tree_sitter_<name>` symbol resolves. Warnings are off — a generated
 parser is not ours to lint.
-<<compile one grammar's C>>=
+````chunk compile one grammar's C
 println!("cargo:rerun-if-changed={root}");
 let src = Path::new(root).join("src");
 let mut build = cc::Build::new();
@@ -82,12 +82,12 @@ if scanner_c.exists() {
     build.cpp(true).file(scanner_cc);
 }
 build.compile(&format!("cobgrammar_{id}"));
-@
+````
 The registry entry mirrors a builtin (§5.5): an FFI declaration for the grammar's
 entry point, then a `Grammar` whose `language` wraps that symbol with
 `LanguageFn::from_raw`, and whose `highlights` is the query baked in with
 `include_str!`. A grammar with no highlights query gets an empty one (plain text).
-<<emit the registry entry>>=
+````chunk emit the registry entry
 externs.push_str(&format!("extern \"C\" {{ fn {symbol}() -> *const (); }}\n"));
 let ext_lits: Vec<String> = exts
     .split(',')
@@ -106,4 +106,4 @@ entries.push_str(&format!(
      highlights: {highlights} }},\n",
     ext_lits.join(", "),
 ));
-@
+````

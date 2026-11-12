@@ -5,29 +5,29 @@ hole, so the weaver colors both grammars *and* splices a chunk-use back
 inside the coloring (§5.5). The language is resolved out of band from
 each root's file extension — no per-chunk annotation.
 
-<<greeting>>=
+````chunk greeting
 "hello from a literate program"
-@
+````
 
-<<src/demo.rs>>=
+````chunk src/demo.rs
 fn main() {
     let msg = <<greeting>>;
     println!("{msg}");
 }
-@
+````
 
 The Nix side is a tiny flake, so cob can eventually present its own `flake.nix`
 as a literate document and self-host.
 
-<<packages>>=
+````chunk packages
 [ pkgs.hello pkgs.ripgrep ]
-@
+````
 
-<<flake.nix>>=
+````chunk flake.nix
 {
   description = "a tiny flake";
   outputs = { self, nixpkgs }: {
     packages.x86_64-linux.default = <<packages>>;
   };
 }
-@
+````

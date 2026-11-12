@@ -52,7 +52,7 @@ HTML escaper, step 1 (reassembly), and the step-5 substitution that puts
 rendered math back. The Markdown render (step 2) is the markdown module; the
 rewrite (steps 3–4) is the rewrite module; step 5's KaTeX call is the math
 module.
-<<src/prose.rs>>=
+````chunk src/prose.rs
 <<the module banner>>
 
 <<imports>>
@@ -66,29 +66,29 @@ module.
 <<step 5: substitute math>>
 
 <<the tests>>
-@
+````
 The banner states the two shared ends of the pipeline this module owns.
-<<the module banner>>=
+````chunk the module banner
 //! The shared ends of the prose pipeline (§6.2): reassemble docs spans into
 //! prose (step 1), and substitute rendered math back into the serialized HTML
 //! (step 5). The Markdown render in between, which extracts math, is the
 //! markdown module.
-@
+````
 The \code{ProseSpan} the model hands us.
-<<imports>>=
+````chunk imports
 use crate::model::ProseSpan;
-@
+````
 One extracted formula: its source and whether it renders in display mode.
-<<extracted math>>=
+````chunk extracted math
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Math {
     pub source: String,
     pub display: bool,
 }
-@
+````
 Escape for HTML text — four characters only. Prose is authored HTML by a trusted
 author (§6.2), so this exists to make quoted code inert, not to sanitize.
-<<the html escaper>>=
+````chunk the html escaper
 /// Escape for HTML text context. `&<>"` only — prose is authored HTML and the
 /// author is trusted (§6.2); this exists to make quoted code inert, not to
 /// sanitize.
@@ -105,11 +105,11 @@ pub fn escape(s: &str) -> String {
     }
     out
 }
-@
+````
 Step 1. Concatenate the text and newline spans into one prose string. Inline code
 is \code{\code{…}} now (§6.4), lowered later by the Markdown pass, so reassembly is a
 plain join.
-<<step 1: reassemble>>=
+````chunk step 1: reassemble
 /// Step 1. `@text`/`@nl` spans concatenated into one prose string.
 pub fn reassemble(spans: &[ProseSpan]) -> String {
     let mut out = String::new();
@@ -121,11 +121,11 @@ pub fn reassemble(spans: &[ProseSpan]) -> String {
     }
     out
 }
-@
+````
 Step 5. Walk the serialized HTML, replacing each numbered placeholder with its
 rendered fragment. A placeholder whose number has no rendered entry, or a malformed
 one, is left as-is rather than dropped.
-<<step 5: substitute math>>=
+````chunk step 5: substitute math
 /// Step 5. Substitute rendered math back into the serialized HTML.
 pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     let mut out = String::with_capacity(html.len());
@@ -155,10 +155,10 @@ pub fn substitute_math(html: &str, rendered: &[String]) -> String {
     out.push_str(&html[i..]);
     out
 }
-@
+````
 The tests walk this module's two behaviors: reassembling spans into prose, and
 math substitution back into serialized HTML.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,10 +167,10 @@ mod tests {
 
     <<substitution round-trips>>
 }
-@
+````
 Reassembly joins the text and newline spans verbatim; inline code is \code{\code{…}}
 now, lowered later by the Markdown pass, so reassembly does no escaping.
-<<reassembly joins spans>>=
+````chunk reassembly joins spans
 #[test]
 fn reassembly_joins_text_and_newlines() {
     let spans = vec![
@@ -180,14 +180,14 @@ fn reassembly_joins_text_and_newlines() {
     ];
     assert_eq!(reassemble(&spans), "a `b`\nc");
 }
-@
+````
 Rendered fragments substitute back into their placeholders by index; a
 placeholder with no rendered entry is left as-is.
-<<substitution round-trips>>=
+````chunk substitution round-trips
 #[test]
 fn substitution_round_trips() {
     let html = "a <span data-cob-math=\"0\"></span> b <span data-cob-math=\"1\"></span>";
     let out = substitute_math(html, &["<X/>".to_string(), "<Y/>".to_string()]);
     assert_eq!(out, "a <X/> b <Y/>");
 }
-@
+````

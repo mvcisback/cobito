@@ -80,7 +80,7 @@ construction.
 The module is the error and kind types, the anchor and slug helpers, the scan's
 input and state types, the rewriter runner, the two passes, and the plan cursor
 between them.
-<<src/rewrite.rs>>=
+````chunk src/rewrite.rs
 <<the module banner>>
 
 <<imports>>
@@ -110,9 +110,9 @@ between them.
 <<strip the macros islands>>
 
 <<the tests>>
-@
+````
 The banner states the two-pass discipline and the attribute-not-text rule.
-<<the module banner>>=
+````chunk the module banner
 //! Steps 3–5 of the prose pipeline (§6.2): parse the (now math-free)
 //! prose, rewrite it, serialize.
 //!
@@ -127,9 +127,9 @@ The banner states the two-pass discipline and the attribute-not-text rule.
 //! cross-reference *link text* is generated as real text, because a link with no
 //! text is no link at all. §9.2 explains why the distinction matters to the
 //! annotation layer.
-@
+````
 Standard library plus lol_html, the streaming HTML rewriter both passes drive.
-<<imports>>=
+````chunk imports
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -138,14 +138,14 @@ use std::rc::Rc;
 
 use lol_html::html_content::ContentType;
 use lol_html::{element, text, ElementContentHandlers, HtmlRewriter, Selector, Settings};
-@
+````
 A \code{Handler} pairs a selector with its content handlers — the unit both passes
 assemble into lol_html settings.
-<<the handler type>>=
+````chunk the handler type
 type Handler<'h, 's> = (Cow<'s, Selector>, ElementContentHandlers<'h>);
-@
+````
 Any rewrite failure is E026, wrapping lol_html's own message.
-<<the rewrite error>>=
+````chunk the rewrite error
 #[derive(Debug)]
 pub struct RewriteError(String);
 
@@ -156,11 +156,11 @@ impl fmt::Display for RewriteError {
 }
 
 impl std::error::Error for RewriteError {}
-@
+````
 \code{Kind} is a reference namespace. It maps to a display word, a lowercase
 \code{site.json} name, and — going the other way — from a label's prefix. An id with no
 known prefix is simply not a target.
-<<reference kinds>>=
+````chunk reference kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -238,11 +238,11 @@ impl Kind {
             )
     }
 }
-@
+````
 A label's rendered anchor swaps the colon for a dash, because a colon is legal in
 an HTML id but needs escaping in every CSS selector. The slug helper lowercases
 and dash-joins arbitrary text for use in an anchor or filename.
-<<anchors and slugs>>=
+````chunk anchors and slugs
 /// `fig:pipeline` → `fig-pipeline`. Colons are legal in HTML ids but need
 /// escaping in every CSS selector that touches them, so the rendered anchor
 /// uses a dash and §8's `labels` table records it.
@@ -274,13 +274,13 @@ pub fn slug(s: &str) -> String {
     }
     out
 }
-@
+````
 The scan's outputs. A \code{Heading} records its section, level, text, and any
 author-given id. A \code{LabelDef} is one labelled float. A \code{RefSite} is one
 cross-reference, noting whether the author wrote link text. \code{Scan} accumulates all
 three across the document, plus each section's opening tag and the sections whose
 floats never got a caption.
-<<the scan outputs>>=
+````chunk the scan outputs
 #[derive(Debug, Clone)]
 pub struct Heading {
     pub section: usize,
@@ -334,12 +334,12 @@ pub struct Scan {
 pub fn fence_level(base: u8, rel: u8) -> u8 {
     base.saturating_add(rel).clamp(2, 6)
 }
-@
+````
 \code{ScanState} is the per-section working state. Headings and refs accumulate
 incrementally — text arrives in pieces across nested tags — so each is flushed
 lazily when the next one starts or the section ends, which keeps the walk off
 lol_html's end-tag handlers.
-<<the scan state>>=
+````chunk the scan state
 #[derive(Default)]
 struct ScanState {
     first_tag: Option<String>,
@@ -379,10 +379,10 @@ impl ScanState {
         }
     }
 }
-@
+````
 Both passes funnel through one runner: fold the handlers into settings, stream the
 bytes through lol_html, and return the serialized result.
-<<run the rewriter>>=
+````chunk run the rewriter
 fn run(html: &str, handlers: Vec<Handler>) -> Result<String, RewriteError> {
     let settings = handlers
         .into_iter()
@@ -394,12 +394,12 @@ fn run(html: &str, handlers: Vec<Handler>) -> Result<String, RewriteError> {
     rw.end().map_err(|e| RewriteError(e.to_string()))?;
     String::from_utf8(out).map_err(|e| RewriteError(e.to_string()))
 }
-@
+````
 Pass 1 walks a section and records its structure: the first tag (a page-boundary
 signal), every heading, every labelled float, every ref site, and a caption tally
 so uncaptioned floats surface. It mints no ids — that happens later — so it keeps
 no counter. Results append to the document-wide \code{Scan}.
-<<pass 1: scan>>=
+````chunk pass 1: scan
 /// Pass 1. Accumulates into `out` across sections. Records every labelled
 /// figure/table/equation so weave can mint/resolve its opaque id (§7.1); the id
 /// itself is assigned later, so this pass keeps no counter.
@@ -595,10 +595,10 @@ pub fn scan(html: &str, section: usize, out: &mut Scan) -> Result<(), RewriteErr
     out.refs.append(&mut st.refs);
     Ok(())
 }
-@
+````
 A \code{ResolvedRef} is what pass 1 concluded about one ref site: the href and, unless
 the author supplied their own, the link text to fill in.
-<<a resolved ref>>=
+````chunk a resolved ref
 /// What pass 1 concluded about one `data-ref` site, in document order.
 #[derive(Debug, Clone)]
 pub struct ResolvedRef {
@@ -606,11 +606,11 @@ pub struct ResolvedRef {
     /// `None` when the author supplied their own link text.
     pub text: Option<String>,
 }
-@
+````
 \code{Plan} is the cursor carried across \code{apply} calls so the per-site heading and ref
 indices keep advancing section to section. It holds the resolved anchors, the
 section opaque ids, the resolved refs, and the float id map.
-<<the plan cursor>>=
+````chunk the plan cursor
 /// Cursor shared across `apply` calls so per-site indices keep advancing.
 pub struct Plan<'a> {
     pub heading_anchors: &'a [String],
@@ -644,14 +644,14 @@ impl<'a> Plan<'a> {
         }
     }
 }
-@
+````
 Pass 2 rewrites one section against the plan: it stamps heading anchors (and a
 clickable permalink prefix on a labelled section), sets a float's \code{data-id} and
 carries it to the caption where CSS can draw the label, and fills each ref's href
 and generated text. The float id rides the caption because CSS \code{attr()} reads only
 an element's own attributes. The plan's cursors are written back so the next
 section continues where this one left off.
-<<pass 2: apply>>=
+````chunk pass 2: apply
 /// Pass 2.
 pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     let heading_idx = RefCell::new(plan.heading);
@@ -829,26 +829,26 @@ pub fn apply(html: &str, plan: &mut Plan) -> Result<String, RewriteError> {
     plan.reference = ref_idx.into_inner();
     Ok(out)
 }
-@
+````
 A \code{def:} node is homeless (§10): once the node table cuts its \code{macros} island,
 the weaver drops the island from the reading flow, so the exposition shows only on
 its own page and where it is transcluded. \code{strip_macros} removes every canonical
 \code{.macros} island from a body. The weaver runs it before the transclusion pass, so
 no transcluded copy exists yet — every island it sees is canonical.
-<<strip the macros islands>>=
+````chunk strip the macros islands
 pub fn strip_macros(html: &str) -> Result<String, RewriteError> {
     run(html, vec![element!(".macros", |el| {
         el.remove();
         Ok(())
     })])
 }
-@
+````
 The tests pin both passes: slugging, what scan collects (headings, first tag,
 labels in order, numbered vs unnumbered equations, ref text, uncaptioned floats),
 and what apply stamps (ids into attributes not text, unlabelled floats left alone,
 refs filled while author text is kept, heading anchors in order, a clickable
 section uid, and author markup outside the handlers left untouched).
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -883,27 +883,27 @@ mod tests {
 
     <<author markup outside handlers is untouched>>
 }
-@
+````
 A one-shot scan of a single fragment.
-<<scan one fragment>>=
+````chunk scan one fragment
 fn scan_one(html: &str) -> Scan {
     let mut s = Scan::default();
     scan(html, 0, &mut s).unwrap();
     s
 }
-@
+````
 Slugs lowercase, dash-join, trim, and drop non-alphanumerics.
-<<slugs are url-safe and trimmed>>=
+````chunk slugs are url-safe and trimmed
 #[test]
 fn slugs_are_url_safe_and_trimmed() {
     assert_eq!(slug("Front matter"), "front-matter");
     assert_eq!(slug("  A/B testing! "), "a-b-testing");
     assert_eq!(slug("Ünïcode"), "n-code");
 }
-@
+````
 Headings carry their level, trimmed text (including nested-element text), and any
 author id.
-<<scan collects headings>>=
+````chunk scan collects headings
 #[test]
 fn scan_collects_headings_with_text_and_level() {
     let s = scan_one("<h1>Parsing</h1><p>x</p><h2 id=\"sec:lex\">Lex<em>ing</em></h2>");
@@ -932,10 +932,10 @@ fn a_fence_heading_takes_its_level_from_the_enclosing_heading() {
     assert_eq!(fence_level(5, 4), 6);
     assert_eq!(fence_level(0, 1), 2);
 }
-@
+````
 The first tag is the opening element, so an h1 marks a page boundary but a buried
 h1 does not.
-<<the first tag marks a page boundary>>=
+````chunk the first tag marks a page boundary
 #[test]
 fn first_tag_identifies_a_page_boundary() {
     let s = scan_one("<h1>Parsing</h1><p>x</p>");
@@ -943,9 +943,9 @@ fn first_tag_identifies_a_page_boundary() {
     let s = scan_one("<p>x</p><h1>Buried</h1>");
     assert_eq!(s.first_tag[0].as_deref(), Some("p"));
 }
-@
+````
 Labels accumulate in document order across sections, each tagged with its section.
-<<scan collects labels in order>>=
+````chunk scan collects labels in order
 #[test]
 fn scan_collects_labels_in_document_order() {
     let mut s = Scan::default();
@@ -960,9 +960,9 @@ fn scan_collects_labels_in_document_order() {
     // The second figure was collected on a later section.
     assert_eq!(s.labels[2].section, 1);
 }
-@
+````
 An equation marked \code{data-nonumber} is not labelled; a labelled one is.
-<<numbered and unnumbered equations>>=
+````chunk numbered and unnumbered equations
 #[test]
 fn nonumber_equations_are_not_labelled_but_labelled_ones_are() {
     let s = scan_one(
@@ -972,9 +972,9 @@ fn nonumber_equations_are_not_labelled_but_labelled_ones_are() {
     assert_eq!(s.labels.len(), 1);
     assert_eq!((s.labels[0].id.as_str(), s.labels[0].kind), ("eq:one", Kind::Equation));
 }
-@
+````
 A ref site records whether the author wrote link text.
-<<ref sites record author text>>=
+````chunk ref sites record author text
 #[test]
 fn ref_sites_record_whether_the_author_wrote_text() {
     let s = scan_one(
@@ -983,9 +983,9 @@ fn ref_sites_record_whether_the_author_wrote_text() {
     let got: Vec<(&str, bool)> = s.refs.iter().map(|r| (r.target.as_str(), r.has_text)).collect();
     assert_eq!(got, vec![("fig:a", false), ("eq:c", true)]);
 }
-@
+````
 A float with no caption is reported; a captioned one is not.
-<<uncaptioned figures are reported>>=
+````chunk uncaptioned figures are reported
 #[test]
 fn uncaptioned_figures_are_reported() {
     let s = scan_one("<figure id=\"fig:a\"><img src=\"x\"></figure>");
@@ -993,17 +993,17 @@ fn uncaptioned_figures_are_reported() {
     let s = scan_one("<figure><figcaption>ok</figcaption></figure>");
     assert!(s.uncaptioned.is_empty());
 }
-@
+````
 A small helper to build the label-to-id map apply needs.
-<<a label-to-id map for apply>>=
+````chunk a label-to-id map for apply
 /// Build a `label → opaque id` map from `(label, id)` pairs for `apply`.
 fn ids(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs.iter().map(|(l, i)| (l.to_string(), i.to_string())).collect()
 }
-@
+````
 apply stamps the opaque id onto the float and its caption as attributes, and never
 as text.
-<<apply stamps ids into attributes>>=
+````chunk apply stamps ids into attributes
 #[test]
 fn apply_stamps_ids_into_attributes_never_text() {
     let anchors: Vec<String> = vec![];
@@ -1024,9 +1024,9 @@ fn apply_stamps_ids_into_attributes_never_text() {
     ));
     assert!(!out.contains("Figure k3f9"));
 }
-@
+````
 An unlabelled float gets no id.
-<<apply leaves an unlabelled float alone>>=
+````chunk apply leaves an unlabelled float alone
 #[test]
 fn apply_leaves_an_unlabelled_float_without_an_id() {
     let anchors: Vec<String> = vec![];
@@ -1036,9 +1036,9 @@ fn apply_leaves_an_unlabelled_float_without_an_id() {
     let out = apply("<figure><figcaption>Anon.</figcaption></figure>", &mut plan).unwrap();
     assert!(!out.contains("data-id"));
 }
-@
+````
 apply fills an empty ref's href and text, and leaves an author-written ref's text.
-<<apply fills refs and keeps author text>>=
+````chunk apply fills refs and keeps author text
 #[test]
 fn apply_fills_empty_refs_and_preserves_author_text() {
     let anchors: Vec<String> = vec![];
@@ -1058,9 +1058,9 @@ fn apply_fills_empty_refs_and_preserves_author_text() {
     assert!(out.contains("href=\"parsing.html#eq-c\""));
     assert!(out.contains(">the bound</a>"));
 }
-@
+````
 Heading anchors are assigned in scan order.
-<<apply assigns heading anchors in order>>=
+````chunk apply assigns heading anchors in order
 #[test]
 fn apply_assigns_heading_anchors_in_order() {
     let anchors = vec!["parsing".to_string(), "lexing".to_string()];
@@ -1071,10 +1071,10 @@ fn apply_assigns_heading_anchors_in_order() {
     assert!(out.contains("<h1 id=\"parsing\">"));
     assert!(out.contains("<h2 id=\"lexing\">"));
 }
-@
+````
 A labelled section gets a clickable permalink prefix carrying its opaque id, and
 the id never appears as text.
-<<apply prepends a clickable section uid>>=
+````chunk apply prepends a clickable section uid
 #[test]
 fn apply_prepends_a_clickable_uid_to_a_labelled_section() {
     let anchors = vec!["parsing".to_string(), "sec-lexing".to_string()];
@@ -1090,9 +1090,9 @@ fn apply_prepends_a_clickable_uid_to_a_labelled_section() {
     ));
     assert!(!out.contains(">k3f9<"));
 }
-@
+````
 Markup the handlers do not select passes through byte-for-byte.
-<<author markup outside handlers is untouched>>=
+````chunk author markup outside handlers is untouched
 #[test]
 fn author_markup_outside_handlers_is_untouched() {
     let anchors: Vec<String> = vec![];
@@ -1102,4 +1102,4 @@ fn author_markup_outside_handlers_is_untouched() {
     let src = "<p class='x'>a &amp; b <br> <span data-cob-math=\"0\"></span></p>";
     assert_eq!(apply(src, &mut plan).unwrap(), src);
 }
-@
+````

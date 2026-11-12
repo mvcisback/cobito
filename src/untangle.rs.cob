@@ -1,4 +1,4 @@
-@ # Untangle: a patch from tangled edits back to source (§11, #2/D)
+# Untangle: a patch from tangled edits back to source (§11, #2/D)
 
 cob tangles a `.cob` document to the plain source files a compiler reads. This
 module runs the other way: given edits made to a tangled file, it emits a patch on
@@ -18,12 +18,12 @@ hole, or that changes the splice indentation, is reported as a **conflict** and
 left out of the patch, never guessed. The reverse map that would resolve those
 exactly (source byte spans per span) is a later change.
 
-@ ## The module {#sec:a908}
+## The module {#sec:a908}
 
 The module is the conflict type, the per-line rewrite (the one piece of logic, so
 it is unit-tested on its own), the unified-diff writer, and the entry point that
 walks every root.
-<<src/untangle.rs>>=
+````chunk src/untangle.rs
 <<imports>>
 
 <<the conflict>>
@@ -35,25 +35,28 @@ walks every root.
 <<the patch entry point>>
 
 <<the tests>>
-@ The module pulls in the model, the located tangle, and a sorted map for the
+````
+The module pulls in the model, the located tangle, and a sorted map for the
 per-file edits.
-<<imports>>=
+````chunk imports
 use crate::model::DocModel;
 use crate::tangle::{self, TangleError};
 use std::collections::BTreeMap;
 use std::path::Path;
-@ ## The conflict {#sec:byjB}
+````
+## The conflict {#sec:byjB}
 
 A conflict is a tangled-file edit the module will not map back: it names the root,
 the 1-based tangled line (0 for a whole-file structural change), and why.
-<<the conflict>>=
+````chunk the conflict
 /// A tangled-file edit that could not be mapped back to source.
 pub struct Conflict {
     pub root: String,
     pub line: usize,
     pub reason: &'static str,
 }
-@ ## Rewriting one line {#sec:nj26}
+````
+## Rewriting one line {#sec:nj26}
 
 The one piece of logic, kept pure so a test drives it directly. A tangled line of a
 chunk used on its own line is `indent + source_line`, where `indent` is the splice
@@ -61,7 +64,7 @@ whitespace and `source_line` is the chunk's own text. So the edit maps back by
 stripping that same `indent` from the edited line. If the tangled line does not end
 with its source text, the line holds an expanded hole or an escape, and the edit
 cannot map back cleanly.
-<<rewrite one line>>=
+````chunk rewrite one line
 /// Map an edited tangled line back to its source line, or say why it cannot.
 /// `orig` is the original tangled line, `edited` the new one, `src` the source
 /// line the map points at.
@@ -81,13 +84,14 @@ fn rewrite_line(orig: &str, edited: &str, src: &str) -> Result<String, &'static 
     }
     Ok(edited[indent.len()..].to_string())
 }
-@ ## The unified diff {#sec:cU8i}
+````
+## The unified diff {#sec:cU8i}
 
 A minimal unified diff for a file whose only changes are line replacements (same
 line count). Changed line indices group into hunks with three lines of context,
 and each hunk lists context, removed, and added lines, so `git apply` and `patch`
 both take it.
-<<the unified diff>>=
+````chunk the unified diff
 /// A unified diff for `path` from `old` with `changed` (0-based line → new text),
 /// three lines of context. Empty when nothing changed.
 fn unified_diff(path: &str, old: &[&str], changed: &BTreeMap<usize, String>) -> String {
@@ -126,14 +130,15 @@ fn unified_diff(path: &str, old: &[&str], changed: &BTreeMap<usize, String>) -> 
     }
     out
 }
-@ ## The entry point {#sec:m2DE}
+````
+## The entry point {#sec:m2DE}
 
 `patch` walks every root in a deterministic order. For each it tangles with the
 line map, reads the edited file under `outdir`, and — when the line counts match —
 maps each changed line back to a source line through `rewrite_line`. It collects
 the per-`.cob`-file line replacements, then writes one unified diff per file. A
 file is read once and cached.
-<<the patch entry point>>=
+````chunk the patch entry point
 /// Compute a patch on the `.cob` source(s) reproducing edits made to the tangled
 /// files under `outdir`. Returns the patch text (empty if nothing maps) and the
 /// edits that could not be mapped.
@@ -201,12 +206,13 @@ pub fn patch(doc: &DocModel, outdir: &Path) -> Result<(String, Vec<Conflict>), T
     }
     Ok((out, conflicts))
 }
-@ ## Tests {#sec:EWzC}
+````
+## Tests {#sec:EWzC}
 
 The rewrite covers the three cases: an indented chunk-expansion line maps back by
 stripping the indent, a line holding a hole is a conflict, and an edit that touches
 the indentation is a conflict. The diff writer gets one small replacement.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,4 +249,4 @@ mod tests {
         assert!(d.contains("@@ -1,3 +1,3 @@"));
     }
 }
-@
+````

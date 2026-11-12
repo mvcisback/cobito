@@ -119,7 +119,7 @@ its home is the \code{.bib} file, not a \code{.cob} — so it prints the key ins
 
 The module holds the id alphabet, the on-disk types, the error, a minter, the
 base62 speller, and the lock operations.
-<<src/lock.rs>>=
+````chunk src/lock.rs
 <<the module banner>>
 
 <<imports>>
@@ -145,10 +145,10 @@ base62 speller, and the lock operations.
 <<the lock file operations>>
 
 <<the tests>>
-@
+````
 The banner explains why the id is random and persisted rather than derived, and
 why the map nests by file.
-<<the module banner>>=
+````chunk the module banner
 //! The lock file (§7.1): a committed, greppable map from a note-local
 //! human label to a frozen opaque id. The id is what a cross-reference renders
 //! ("Figure k3f9") and what an eventual import/transclude (§16, M12) names, so it
@@ -158,10 +158,10 @@ why the map nests by file.
 //! Keyed by source file so two notes may reuse a label (`fig:pipeline`) without
 //! colliding once the forest imports both. Within one weave labels are still
 //! globally unique (E014); the per-file nesting is forward-looking.
-@
+````
 Ordered maps and sets so the serialized lock is deterministic, plus the reference
 \code{Kind} a label carries.
-<<imports>>=
+````chunk imports
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
@@ -169,32 +169,32 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::rewrite::Kind;
-@
+````
 Four base62 characters — about 14.8 million ids, ample for a hobby-scale forest.
 The alphabet is case-sensitive; \code{SPACE} is the count the minter reduces a raw value
 modulo.
-<<the id constants>>=
+````chunk the id constants
 /// A frozen id is four base62 characters (`[0-9A-Za-z]`, case-sensitive) — about
 /// 14.8M ids, enough for a hobby-scale forest (§7.1).
 pub const ID_LEN: u32 = 4;
 const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const SPACE: u64 = 62 * 62 * 62 * 62;
-@
+````
 One stored id and the kind of float or heading it labels.
-<<a lock entry>>=
+````chunk a lock entry
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct LockEntry {
     pub id: String,
     pub kind: Kind,
 }
-@
+````
 A fetch pin records what a remote import resolved to, so a later weave reads a
 cached index offline and a build stays reproducible (§13). It is the \code{git} URL and
 the author's request — a semver requirement, or a raw \code{rev} for an escape-hatch
 import — the resolved semver \code{version} (absent for a \code{rev} import), and the concrete
 commit \code{sha} \code{cob fetch} pinned them to. \code{cob fetch} writes it; weave reads it to
 find the cache.
-<<a fetch pin>>=
+````chunk a fetch pin
 /// One resolved remote import (§13): the `git` URL, the author's request (`req` —
 /// a semver requirement, or a raw `rev`), the resolved semver `version` (absent for
 /// a `rev` import), and the commit `sha` `cob fetch` pinned to. Keyed by import
@@ -208,10 +208,10 @@ pub struct FetchPin {
     pub version: Option<String>,
     pub sha: String,
 }
-@
+````
 Whether a weave may mint fresh ids, or must find every label already present.
 \code{Locked} is CI and the read-only Nix sandbox, where minting is forbidden (§7.1).
-<<the lock mode>>=
+````chunk the lock mode
 /// Whether a weave may mint fresh ids (dev-time) or must find every label
 /// already in the lock (`--locked`, for CI and the read-only Nix sandbox; §7.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,7 +219,7 @@ pub enum LockMode {
     Mint,
     Locked,
 }
-@
+````
 The on-disk document is the JSON cob reads and writes: a schema version, the labels
 map, and the fetch pins. The \code{fetch} map is skipped when empty, so a project with no
 remote imports keeps a clean two-key file. The \code{schema} is a semver string: cob
@@ -227,7 +227,7 @@ accepts a lock of the same major (a newer minor only adds fields it can ignore) 
 rejects a newer major (E038), the way Cargo rejects a lock from a newer toolchain. A
 missing \code{schema} or \code{fetch} defaults, so a hand-trimmed or older JSON lock still
 loads.
-<<the on-disk document>>=
+````chunk the on-disk document
 /// The JSON shape of `cob.lock` (§7.1): a semver schema, the `file → (label →
 /// entry)` id map, and the remote-import pins (§13). `fetch` is skipped when empty
 /// so a project with no imports keeps a clean file.
@@ -248,11 +248,11 @@ const SCHEMA_MAJOR: u64 = 1;
 fn default_schema() -> String {
     SCHEMA.to_string()
 }
-@
+````
 The lock is \code{file → (label → entry)} plus the fetch pins. \code{used} is a derived
 index of every id in play, so a mint rejects a collision in one lookup. It is
 rebuilt on load, never serialized.
-<<the lock file>>=
+````chunk the lock file
 /// `file → (label → entry)`, the remote-import pins, and `used` — a derived index
 /// of every id in play, so a mint can reject a collision in one lookup. `used` is
 /// rebuilt on load, never serialized.
@@ -262,10 +262,10 @@ pub struct LockFile {
     fetch: BTreeMap<String, FetchPin>,
     used: BTreeSet<String>,
 }
-@
+````
 Two codes. E031 is a label missing under \code{--locked} — the caller must run
 \code{cob lock} first. E032 is any read, parse, or write failure of the lock itself.
-<<the lock error>>=
+````chunk the lock error
 #[derive(Debug)]
 pub enum LockError {
     /// E031 — a label absent from `cob.lock` under `--locked` (§7.1).
@@ -297,13 +297,13 @@ impl fmt::Display for LockError {
 }
 
 impl std::error::Error for LockError {}
-@
+````
 A minter of fresh ids: SplitMix64 seeded from entropy. Determinism does not depend
 on the seed — a minted id is persisted and re-read forever after, so the RNG only
 ever decides an id's first value. \code{from_entropy} mixes a stack address with the
 clock; \code{seeded} is the reproducible test door; \code{next} is one SplitMix64 step reduced
 into the id space.
-<<the id minter>>=
+````chunk the id minter
 /// A minter of fresh ids. SplitMix64 seeded from entropy — deterministic weave
 /// does *not* depend on this seed, since minted ids are persisted to the lock and
 /// re-read on every later run; the RNG only ever decides an id's *first* value.
@@ -339,10 +339,10 @@ impl Minter {
         (z % SPACE) as u32
     }
 }
-@
+````
 A value below \code{SPACE} to its fixed four-character spelling, most-significant digit
 first.
-<<the base62 spelling>>=
+````chunk the base62 spelling
 /// `n < SPACE` → its four-character base62 spelling.
 fn base62(mut n: u32) -> String {
     let mut buf = [b'0'; ID_LEN as usize];
@@ -352,10 +352,10 @@ fn base62(mut n: u32) -> String {
     }
     String::from_utf8(buf.to_vec()).expect("base62 alphabet is ASCII")
 }
-@
+````
 The operations the rest of cob calls: load and save the whole file, look up or mint
 one id, list a file's labels, and count the total.
-<<the lock file operations>>=
+````chunk the lock file operations
 impl LockFile {
     <<load the lock>>
 
@@ -377,11 +377,11 @@ impl LockFile {
 
     <<count of frozen ids>>
 }
-@
+````
 The fetch pins are read and written by \code{cob fetch} and read by weave (§13).
 \code{fetch_pin} finds the pinned commit for an import alias; \code{set_fetch_pin} records
 one; \code{fetch_pins} lists them for a report.
-<<the fetch pins>>=
+````chunk the fetch pins
 /// The pinned commit for a remote import alias, if `cob fetch` recorded one (§13).
 pub fn fetch_pin(&self, alias: &str) -> Option<&FetchPin> {
     self.fetch.get(alias)
@@ -396,12 +396,12 @@ pub fn set_fetch_pin(&mut self, alias: String, pin: FetchPin) {
 pub fn fetch_pins(&self) -> impl Iterator<Item = (&String, &FetchPin)> {
     self.fetch.iter()
 }
-@
+````
 An absent lock is an empty lock, not an error — the first \code{cob lock} or \code{weave}
 mints into it. cob reads the JSON document; a file that is not JSON is read as a
 legacy TOML label map and upgraded on the next save, so no id is lost. Loading
 rebuilds the \code{used} index from every stored id.
-<<load the lock>>=
+````chunk load the lock
 /// Load `cob.lock`; an absent file is an empty lock, not an error (the first
 /// `cob lock`/`weave` mints into it). The current format is JSON (§7.1); a legacy
 /// TOML label map still loads and upgrades to JSON on the next save.
@@ -452,11 +452,11 @@ fn check_schema(schema: &str) -> Result<(), LockError> {
         _ => Ok(()),
     }
 }
-@
+````
 Deterministic by construction: sorted keys from the BTreeMaps and no timestamp.
 \code{serde_json}'s pretty printer is stable for a fixed input, so the output is
 byte-stable, which is what lets CI diff the lock.
-<<save the lock>>=
+````chunk save the lock
 /// Write the lock deterministically as JSON (BTreeMaps → sorted keys, no timestamp).
 pub fn save(&self, path: &Path) -> Result<(), LockError> {
     let doc = LockDoc {
@@ -469,17 +469,17 @@ pub fn save(&self, path: &Path) -> Result<(), LockError> {
     text.push('\n');
     std::fs::write(path, text).map_err(LockError::Io)
 }
-@
+````
 A plain two-level lookup by file, then label.
-<<look up an entry>>=
+````chunk look up an entry
 pub fn get(&self, file: &str, label: &str) -> Option<&LockEntry> {
     self.files.get(file).and_then(|m| m.get(label))
 }
-@
+````
 Idempotent: an existing label re-reads its frozen id. A fresh label rolls the
 minter until it lands on an id not already used, then records it. Re-rolling on
 collision is the reason \code{used} exists.
-<<mint or reuse an id>>=
+````chunk mint or reuse an id
 /// The existing id for `(file, label)`, or a freshly minted one written into
 /// the lock. A collision with an id already in use is re-rolled.
 pub fn mint(&mut self, file: &str, label: &str, kind: Kind, minter: &mut Minter) -> String {
@@ -499,13 +499,13 @@ pub fn mint(&mut self, file: &str, label: &str, kind: Kind, minter: &mut Minter)
         .insert(label.to_string(), LockEntry { id: id.clone(), kind });
     id
 }
-@
+````
 An auto-anchored section (§7.1, \code{section.rs}) has no author label, so \code{cob lock}
 mints its id first, then uses that id as its own label: the source anchor cob writes
 is \code{sec:<id>}. The id and its name are the same string until \code{cob rename-label}
 gives it a human one. Like \code{mint}, a collision with an id already in use is
 re-rolled. It returns the id so the caller can write the anchor.
-<<mint an auto section id>>=
+````chunk mint an auto section id
 /// Mint a fresh opaque id for an unlabelled section and record it under the label
 /// `sec:<id>` — the anchor cob writes into the source (§7.1). Returns the id.
 pub fn mint_section(&mut self, file: &str, minter: &mut Minter) -> String {
@@ -525,12 +525,12 @@ pub fn mint_section(&mut self, file: &str, minter: &mut Minter) -> String {
     );
     id
 }
-@
+````
 \code{cob rename-label} takes the frozen id and gives it a human name. First it finds the
 section entry that carries the id, then it moves the entry to the new label, keeping
 the id. The id never changes, so every reference and permalink still resolves. A
 move to a label already in the file is refused, so a name is never overwritten.
-<<find and rename a section>>=
+````chunk find and rename a section
 /// The `(file, label)` of the section entry whose frozen id is `id`, if any.
 pub fn find_section(&self, id: &str) -> Option<(String, String)> {
     for (file, inner) in &self.files {
@@ -561,14 +561,14 @@ pub fn rename(&mut self, file: &str, old: &str, new: &str) -> bool {
         None => false,
     }
 }
-@
+````
 \code{find_section} answers one narrow question (\code{cob rename-label}'s: which
 section carries this id). \code{cob find} asks the general one — a reader looking at
 "Proposition 7F5U" in a woven page, or a label they already know by name, wants the
 \code{.cob} file and label back, whatever kind of node it is. So this scans every
 kind, and matches on either the frozen id or the label's own name, since a reader
 may have either in hand.
-<<find any label by id or name>>=
+````chunk find any label by id or name
 /// The `(file, label, entry)` whose frozen id or label name is `needle`, if any —
 /// unlike `find_section`, not restricted to `Kind::Section` (§7.1, `cob find`).
 pub fn find_label(&self, needle: &str) -> Option<(String, String, LockEntry)> {
@@ -581,27 +581,27 @@ pub fn find_label(&self, needle: &str) -> Option<(String, String, LockEntry)> {
     }
     None
 }
-@
+````
 A file's label-to-entry pairs in sorted order, for \code{cob labels}.
-<<a file's labels>>=
+````chunk a file's labels
 /// A file's `label → entry` pairs in sorted order (for `cob labels`).
 pub fn labels(&self, file: &str) -> impl Iterator<Item = (&String, &LockEntry)> {
     self.files.get(file).into_iter().flat_map(|m| m.iter())
 }
-@
+````
 The total number of ids across every file, for the mint report.
-<<count of frozen ids>>=
+````chunk count of frozen ids
 /// The total number of frozen ids across every file — used by `cob lock` to
 /// report how many labels were newly minted.
 pub fn count(&self) -> usize {
     self.used.len()
 }
-@
+````
 The tests pin the frozen-id contract: minting is idempotent per label, distinct
 labels get distinct ids, a collision is re-rolled, the JSON round-trips and re-saves
 byte-stable, a legacy TOML lock upgrades without changing an id, a fetch pin
 round-trips, a newer major schema is rejected, and an absent lock loads empty.
-<<the tests>>=
+````chunk the tests
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -755,4 +755,4 @@ mod tests {
         assert!(lock.find_label("no-such-thing").is_none());
     }
 }
-@
+````
